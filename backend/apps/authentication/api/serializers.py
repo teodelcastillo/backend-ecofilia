@@ -55,6 +55,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email_verified",
             "approved",
             "mfa_enabled",
+            "organization",
         )
         read_only_fields = (
             "id",
@@ -64,6 +65,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email_verified",
             "approved",
             "mfa_enabled",
+            "organization",
         )
 
 

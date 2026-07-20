@@ -69,6 +69,12 @@ class User(AbstractUser):
         help_text=_("Controls the default permissions assigned to a user."),
     )
     last_password_change = models.DateTimeField(null=True, blank=True)
+    organization = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        help_text=_("Client organization slug (e.g. 'caf'). Null = internal user."),
+    )
 
     class Meta(AbstractUser.Meta):
         swappable = "AUTH_USER_MODEL"
