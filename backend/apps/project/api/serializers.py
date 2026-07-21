@@ -602,3 +602,21 @@ class ProjectDeliverableUpdateSerializer(serializers.Serializer):
     is_primary = serializers.BooleanField(required=False)
     position = serializers.IntegerField(required=False, min_value=1)
 
+
+# ---------------------------------------------------------------------------
+# AI fill
+# ---------------------------------------------------------------------------
+
+class AiFillRequestSerializer(serializers.Serializer):
+    """Request body for POST /projects/{slug}/ai-fill/."""
+
+    fields = serializers.ListField(
+        child=serializers.CharField(max_length=64),
+        min_length=1,
+        max_length=10,
+        help_text=(
+            "Claves de los campos a extraer del documento blueprint. "
+            "Consultá GET /projects/ai-fill-fields/ para ver las claves disponibles."
+        ),
+    )
+

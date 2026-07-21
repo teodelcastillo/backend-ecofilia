@@ -102,6 +102,9 @@ class Document(models.Model):
             name = os.path.splitext(name)[0] 
             self.name = name[:255]
 
+        if self.topics:
+            self.topics = [t.lower().strip() for t in self.topics if t and t.strip()]
+
         if self.category_ref_id:
             from django.apps import apps
 

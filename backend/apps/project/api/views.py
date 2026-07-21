@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from django.db.models import Count, OuterRef, Prefetch, Q, Subquery  # Count used in subquery helper
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
@@ -7,6 +9,8 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from apps.chat.models import ChatMessage, ChatSession, ChatSessionType, MessageRole
 from apps.chat.api.serializers import (
@@ -24,6 +28,7 @@ from apps.evaluation.api.serializers import EvaluationRunSerializer
 from apps.evaluation.models import EvaluationRun, PillarEvaluationResult
 from apps.project.api.permissions import ProjectAccessPermission
 from apps.project.api.serializers import (
+    AiFillRequestSerializer,
     CopilotAutocompleteSerializer,
     CopilotMessageCreateSerializer,
     InitializeStructureSerializer,
@@ -805,6 +810,63 @@ class ProjectViewSet(viewsets.ModelViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+    # ------------------------------------------------------------------
+    # AI fill
+    # ------------------------------------------------------------------
+
+    @action(detail=False, methods=["get"], url_path="ai-fill-fields")
+    def ai_fill_fields(self, request):
+        """
+        Return the list of fields that ``ai_fill`` can extract.
+
+        The frontend uses this to build the field picker UI without
+        hardcoding field keys or labels.
+        """
+        from apps.project.services.ai_fill import available_fields
+        return Response({"fields": available_fields()})
+
+    @action(detail=True, methods=["post"], url_path="ai-fill")
+    def ai_fill(self, request, slug=None):
+        """
+        Extract structured fields from the project's blueprint document using AI.
+
+        The extracted values are returned to the frontend for review — the user
+        decides which ones to accept before they are saved to ``context_notes``
+        via a standard PATCH on the project.  Nothing is persisted here.
+
+        Request body::
+
+            {"fields": ["objetivo", "componentes"]}
+
+        Response::
+
+            {"results": {"objetivo": "...", "componentes": "..."}}
+
+        Requires editor permission on the project.  The project must have a
+        blueprint document with extracted text.
+        """
+        project = self.get_object()
+        self._ensure_editor(project)
+
+        serializer = AiFillRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        field_keys = serializer.validated_data["fields"]
+
+        from apps.project.services.ai_fill import ai_fill_project
+
+        try:
+            results = ai_fill_project(project, field_keys)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            logger.exception("ai_fill failed for project=%s", project.slug)
+            return Response(
+                {"detail": "No se pudo extraer la información del documento."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        return Response({"results": results})
 
     def _ensure_editor(self, project: Project):
         if not project.can_edit(self.request.user):

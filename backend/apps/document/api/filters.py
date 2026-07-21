@@ -1,7 +1,19 @@
 import django_filters
 from apps.document.models import Document
 
+
+class TopicFilter(django_filters.CharFilter):
+    """Case-insensitive containment filter for the topics ArrayField."""
+
+    def filter(self, qs, value):
+        if not value:
+            return qs
+        return qs.filter(topics__contains=[value.lower().strip()])
+
+
 class DocumentFilter(django_filters.FilterSet):
+    topic = TopicFilter()
+
     class Meta:
         model = Document
         fields = {
