@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404
 
 from collections import defaultdict
 
-from django.db.models import Q, Count, Case, When, Value, CharField, F
+from django.db.models import Q, Count, Case, When, Value, CharField, F, Func, TextField
 from rest_framework.pagination import PageNumberPagination
 
 from apps.document.models import SmartChunk, Document, DocumentShare, Category
@@ -475,6 +475,16 @@ class DocumentListAPIView(ListAPIView):
                     ]
                 }
             )
+
+        if request.query_params.get("summary") == "topics":
+            qs = self.filter_queryset(self.get_queryset())
+            rows = (
+                qs.annotate(topic=Func("topics", function="unnest", output_field=TextField()))
+                .values("topic")
+                .annotate(count=Count("id", distinct=True))
+                .order_by("-count")
+            )
+            return Response([{"topic": r["topic"], "count": r["count"]} for r in rows if r["topic"]])
 
         ids_param = request.query_params.get("ids")
         if ids_param is not None and ids_param.strip() != "":
