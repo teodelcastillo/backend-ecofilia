@@ -53,18 +53,39 @@ _FIELD_LIST: list[ExtractableField] = [
         key="objetivo",
         label="Objetivo",
         description=(
-            "Objetivo general o propósito central del proyecto u operación. "
-            "Incluye el resultado esperado y la población o territorio beneficiado. "
+            "Propósito central de la operación: qué financia, para qué, y a "
+            "quién beneficia. Mantené el lenguaje/texto incluido en el "
+            "documento de la operación — no parafrasees ni resumas con "
+            "vocabulario propio si el documento ya lo define con precisión. "
+            "El documento de la operación casi siempre incluye una sección "
+            "DESCRIPCIÓN donde se detalla el objeto del préstamo y los "
+            "objetivos específicos; priorizá esa sección como fuente. "
             "Máximo 3 oraciones."
         ),
     ),
     ExtractableField(
         key="componentes",
-        label="Componentes / Actividades",
+        label="Actividades y componentes principales",
         description=(
-            "Lista de los componentes, subcomponentes o líneas de actividad "
-            "principales del proyecto. Texto plano con cada componente en una "
-            "línea separada, precedido por un guión (-)."
+            "Lista numerada de las actividades o componentes principales de "
+            "la operación. Incluí TODOS los componentes detectados en el "
+            "documento, aunque sean preliminares — no omitas ninguno. "
+            "El documento de la operación casi siempre incluye una sección "
+            "DESCRIPCIÓN donde se detalla la propuesta de Cuadro de Usos y "
+            "Fuentes del Programa; usala como fuente principal. Es muy "
+            "importante incluir todos los componentes y actividades "
+            "definidos, con una breve descripción de cada uno, priorizando "
+            "aquellas actividades que insumen gran parte de los recursos "
+            "del préstamo. Estas actividades son la base para luego evaluar "
+            "el proyecto respecto a la alineación con el Acuerdo de París, "
+            "por lo que la lista debe ser completa, clara y estratégica. "
+            "Devolvé el texto como una lista numerada, un ítem por línea, "
+            "con este formato exacto:\n"
+            "1. [actividad, haciendo referencia al componente específico de "
+            "la operación]\n"
+            "2. [actividad, haciendo referencia al componente específico de "
+            "la operación]\n"
+            "..."
         ),
     ),
 ]
