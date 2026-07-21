@@ -8,6 +8,7 @@ from apps.document.api.views import (
     DocumentListAPIView,
     DocumentViewSet,
     CategoryViewSet,
+    TopicsAutocompleteView,
 )
 
 router = DefaultRouter()
@@ -22,6 +23,7 @@ urlpatterns = [
     path('create/bulk/', DocumentBulkCreateAPIView.as_view(), name='documentbulkcreate'),
     path('bulk-public/', DocumentBulkPublicAPIView.as_view(), name='documentbulkpublic'),
     path('list/', DocumentListAPIView.as_view(), name='documentlist'),
+    path('topics/autocomplete/', TopicsAutocompleteView.as_view(), name='topics-autocomplete'),
     path('categories/', include(category_router.urls)),
     path('', include(router.urls)),
 ]

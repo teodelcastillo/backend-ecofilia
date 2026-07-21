@@ -7,6 +7,34 @@ from apps.user.models import UserRole
 User = get_user_model()
 
 
+class TopicListField(serializers.Field):
+    """
+    Accepts either a JSON array or a semicolon/comma-separated string.
+
+    Examples — all result in ["ndc", "argentina", "latam"]:
+        ["ndc", "argentina", "latam"]   ← preferred (JSON array)
+        "ndc; argentina; latam"
+        "ndc, argentina, latam"
+    """
+
+    default_error_messages = {
+        "invalid": "Expected a list or a semicolon/comma-separated string.",
+    }
+
+    def to_internal_value(self, data):
+        if data is None:
+            return []
+        if isinstance(data, str):
+            parts = [t.strip() for t in data.replace(",", ";").split(";")]
+            return [p for p in parts if p]
+        if isinstance(data, (list, tuple)):
+            return [str(t).strip() for t in data if str(t).strip()]
+        self.fail("invalid")
+
+    def to_representation(self, value):
+        return value if value is not None else []
+
+
 def _can_manage_public_documents(user) -> bool:
     if not user:
         return False
@@ -251,6 +279,10 @@ class DocumentSerializer(serializers.ModelSerializer):
             'chunking_status',
             'chunking_done',
             'last_error',
+            'topics',
+            'year',
+            'region',
+            'source',
         ]
         read_only_fields = [
             'id',
@@ -265,6 +297,10 @@ class DocumentSerializer(serializers.ModelSerializer):
             'category',
             'description',
             'content_summary',
+            'topics',
+            'year',
+            'region',
+            'source',
         ]
     
     def get_is_owner(self, obj):
@@ -312,6 +348,10 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             'chunking_done',
             'is_public',
             'owner_email',
+            'topics',
+            'year',
+            'region',
+            'source',
         ]
         read_only_fields = [
             'id',
@@ -343,6 +383,7 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
     category_slug = serializers.CharField(
         required=False, allow_blank=True, allow_null=True, write_only=True,
     )
+    topics = TopicListField(required=False, allow_null=True)
 
     class Meta:
         model = Document
@@ -352,6 +393,10 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
             'category_slug',
             'description',
             'is_public',
+            'topics',
+            'year',
+            'region',
+            'source',
         ]
     
     def validate_is_public(self, value):
@@ -422,6 +467,18 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user'):
             if not _can_manage_public_documents(request.user) and 'is_public' in validated_data:
                 validated_data.pop('is_public')
+
+        # Normalize topics: null → empty list, deduplicate, strip, lowercase
+        if 'topics' in validated_data:
+            raw_topics = validated_data.pop('topics') or []
+            seen = set()
+            clean = []
+            for t in raw_topics:
+                normalized = t.strip().lower()
+                if normalized and normalized not in seen:
+                    seen.add(normalized)
+                    clean.append(normalized)
+            validated_data['topics'] = clean
 
         instance = super().update(instance, validated_data)
         if category_changed:

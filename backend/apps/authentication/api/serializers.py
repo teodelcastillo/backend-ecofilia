@@ -43,6 +43,8 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
+    organization = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
@@ -55,6 +57,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email_verified",
             "approved",
             "mfa_enabled",
+            "organization",
         )
         read_only_fields = (
             "id",
@@ -64,7 +67,22 @@ class ProfileSerializer(serializers.ModelSerializer):
             "email_verified",
             "approved",
             "mfa_enabled",
+            "organization",
         )
+
+    def get_organization(self, obj):
+        org = obj.organization
+        if not org:
+            return None
+        return {
+            "slug": org.slug,
+            "name": org.name,
+            "restricted": org.restricted,
+            "enabled_features": org.enabled_features or [],
+            "enabled_skills": list(
+                org.enabled_skills.values_list("slug", flat=True)
+            ),
+        }
 
 
 class VerifyEmailSerializer(serializers.Serializer):

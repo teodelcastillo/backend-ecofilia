@@ -55,6 +55,9 @@ class SkillViewSet(viewsets.ModelViewSet):
             )
             .select_related("owner")
         )
+        # Restricted orgs (e.g. CAF) only see the skills Ecofilia enabled for them.
+        if getattr(user, "is_restricted", False):
+            qs = qs.filter(enabled_for_organizations=user.organization)
         skill_type = self.request.query_params.get("skill_type")
         if skill_type:
             qs = qs.filter(skill_type=skill_type)
@@ -88,6 +91,10 @@ class SkillViewSet(viewsets.ModelViewSet):
         return SkillSerializer
 
     def perform_create(self, serializer):
+        if getattr(self.request.user, "is_restricted", False):
+            raise PermissionDenied(
+                "Your organization cannot create skills; contact Ecofilia."
+            )
         serializer.save(owner=self.request.user, is_template=False)
 
     def perform_update(self, serializer):

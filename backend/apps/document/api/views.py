@@ -286,6 +286,42 @@ def _expand_ancestor_ids(used_ids: set) -> set:
     return out
 
 
+def _build_topic_tree_for_documents(qs):
+    """
+    Build a flat topic tree from documents' `topics` ArrayField.
+    Returns the same shape as _build_category_tree_for_documents so the
+    frontend can use LibraryCategoryTreeResponse for both.
+    """
+    from django.db.models import Func, CharField
+
+    class _Unnest(Func):
+        function = 'UNNEST'
+
+    topic_counts = (
+        qs
+        .filter(topics__len__gt=0)
+        .annotate(_topic=_Unnest('topics', output_field=CharField()))
+        .values('_topic')
+        .annotate(c=Count('id', distinct=True))
+        .order_by('_topic')
+    )
+
+    tree = [
+        {
+            "slug": row['_topic'],
+            "name": row['_topic'],
+            "parent_slug": None,
+            "document_count_direct": row['c'],
+            "document_count_total": row['c'],
+            "children": [],
+        }
+        for row in topic_counts
+        if row['_topic']
+    ]
+    unc = qs.filter(topics__len=0).count()
+    return {"uncategorized_count": unc, "tree": tree}
+
+
 def _build_category_tree_for_documents(qs):
     """
     Build nested category tree for a document queryset.
@@ -430,6 +466,17 @@ class DocumentListAPIView(ListAPIView):
         return qs
 
     def list(self, request, *args, **kwargs):
+        if request.query_params.get("summary") == "topic_tree":
+            scope = request.query_params.get("scope", "all")
+            if scope not in ("public", "own", "all"):
+                return Response(
+                    {"detail": "summary=topic_tree requires scope=public, own, or all"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            qs = self.filter_queryset(self.get_queryset())
+            tree_data = _build_topic_tree_for_documents(qs)
+            return Response(tree_data)
+
         if request.query_params.get("summary") == "category_tree":
             scope = request.query_params.get("scope", "all")
             if scope not in ("public", "own", "all"):
@@ -513,6 +560,12 @@ class DocumentListAPIView(ListAPIView):
                 queryset = _library_category_queryset(
                     queryset, library_category, subtree=subtree
                 )
+            topic = request.query_params.get("topic")
+            if topic:
+                if topic == "__uncategorized__":
+                    queryset = queryset.filter(topics__len=0)
+                else:
+                    queryset = queryset.filter(topics__contains=[topic])
             queryset = queryset.order_by(*_document_list_sort_order(request))
             paginator = PublicDocumentListPagination()
             page = paginator.paginate_queryset(queryset, request, view=self)
@@ -754,6 +807,54 @@ class DocumentViewSet(
             context={"request": request}
         )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class TopicsAutocompleteView(APIView):
+    """GET /document/topics/autocomplete/?q=<query>&limit=<n>
+    Returns a list of topic strings matching the query from documents the
+    user can access.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        q = request.query_params.get("q", "").strip().lower()
+        try:
+            limit = min(int(request.query_params.get("limit", 10)), 50)
+        except (TypeError, ValueError):
+            limit = 10
+
+        user = request.user
+        qs = Document.objects.all()
+        if not user.is_staff:
+            from apps.project.models import ProjectShare
+            shared_project_ids = ProjectShare.objects.filter(
+                user=user
+            ).values_list('project_id', flat=True)
+            qs = qs.filter(
+                Q(owner=user)
+                | Q(is_public=True)
+                | Q(shares__user=user)
+                | Q(projects__id__in=shared_project_ids)
+            ).distinct()
+
+        all_topics_lists = qs.exclude(topics__len=0).values_list('topics', flat=True)
+
+        seen = set()
+        results = []
+        for topic_list in all_topics_lists:
+            if not topic_list:
+                continue
+            for topic in topic_list:
+                if not topic:
+                    continue
+                if topic in seen:
+                    continue
+                if not q or q in topic.lower():
+                    seen.add(topic)
+                    results.append(topic)
+
+        results.sort()
+        return Response(results[:limit])
 
 
 class CategoryViewSet(viewsets.ModelViewSet):
