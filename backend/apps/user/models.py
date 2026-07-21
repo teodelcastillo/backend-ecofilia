@@ -10,6 +10,64 @@ class UserRole(models.TextChoices):
     MEMBER = "member", _("Member")
 
 
+# Feature slugs the frontend understands for sidebar/section gating.
+# Kept as data (not choices) so adding a feature doesn't need a migration.
+KNOWN_FEATURES = [
+    "projects",
+    "library",
+    "repositories",
+    "chat",
+    "skills",
+    "evaluations",
+    "tableros",
+    "inventories",
+]
+
+
+class Organization(models.Model):
+    """
+    Client organization (e.g. CAF). Groups users and defines their
+    entitlements: which sections of the app they see and which skills
+    (workflow agents) Ecofilia has enabled for them.
+    """
+
+    name = models.CharField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=64, unique=True)
+    restricted = models.BooleanField(
+        default=False,
+        help_text=_(
+            "When true, members only see the sections in enabled_features and "
+            "the skills in enabled_skills; they cannot create their own skills "
+            "or evaluations."
+        ),
+    )
+    enabled_features = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=_(
+            'Sections visible to members of a restricted org, e.g. '
+            '["projects", "library", "chat"]. Ignored when restricted=False.'
+        ),
+    )
+    enabled_skills = models.ManyToManyField(
+        "skill.Skill",
+        blank=True,
+        related_name="enabled_for_organizations",
+        help_text=_(
+            "Skills (including workflow agents) enabled for members of a "
+            "restricted org. Ignored when restricted=False."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
 class UserManager(DjangoUserManager):
     use_in_migrations = True
 
@@ -68,6 +126,14 @@ class User(AbstractUser):
         default=UserRole.MEMBER,
         help_text=_("Controls the default permissions assigned to a user."),
     )
+    organization = models.ForeignKey(
+        Organization,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="members",
+        help_text=_("Client organization this user belongs to (e.g. CAF)."),
+    )
     last_password_change = models.DateTimeField(null=True, blank=True)
     organization = models.CharField(
         max_length=50,
@@ -87,6 +153,11 @@ class User(AbstractUser):
         if not self.email_verified:
             self.email_verified_at = None
         return super(User, self).save(*args, **kwargs)
+
+    @property
+    def is_restricted(self) -> bool:
+        """True when the user belongs to a restricted org (e.g. CAF portal)."""
+        return bool(self.organization_id and self.organization.restricted)
 
     def mark_email_verified(self):
         self.email_verified = True

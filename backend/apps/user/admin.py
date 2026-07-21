@@ -2,7 +2,21 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import User
+from .models import Organization, User
+
+
+@admin.register(Organization)
+class OrganizationAdmin(admin.ModelAdmin):
+    list_display = ("id", "name", "slug", "restricted", "member_count")
+    list_filter = ("restricted",)
+    search_fields = ("name", "slug")
+    prepopulated_fields = {"slug": ("name",)}
+    filter_horizontal = ("enabled_skills",)
+
+    def member_count(self, obj):
+        return obj.members.count()
+
+    member_count.short_description = _("Members")
 
 
 class UserAdmin(DjUserAdmin):
@@ -14,6 +28,7 @@ class UserAdmin(DjUserAdmin):
             {
                 "fields": (
                     "role",
+                    "organization",
                     "approved",
                     "email_verified",
                     "email_verified_at",
@@ -51,6 +66,7 @@ class UserAdmin(DjUserAdmin):
         "email",
         "organization",
         "role",
+        "organization",
         "email_verified",
         "mfa_enabled",
         "is_active",

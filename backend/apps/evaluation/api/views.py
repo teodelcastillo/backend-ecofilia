@@ -75,6 +75,10 @@ class EvaluationViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     def create(self, request, *args, **kwargs):
+        if getattr(request.user, "is_restricted", False):
+            raise PermissionDenied(
+                "Your organization cannot create evaluations; contact Ecofilia."
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         evaluation = serializer.save(owner=request.user)
