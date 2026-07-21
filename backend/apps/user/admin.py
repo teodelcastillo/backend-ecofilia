@@ -22,7 +22,7 @@ class OrganizationAdmin(admin.ModelAdmin):
 class UserAdmin(DjUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        (_("Personal info"), {"fields": ("first_name", "last_name", "username", "organization")}),
+        (_("Personal info"), {"fields": ("first_name", "last_name", "username")}),
         (
             _("Security"),
             {
@@ -66,7 +66,6 @@ class UserAdmin(DjUserAdmin):
         "email",
         "organization",
         "role",
-        "organization",
         "email_verified",
         "mfa_enabled",
         "is_active",
