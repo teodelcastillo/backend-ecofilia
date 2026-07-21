@@ -103,7 +103,15 @@ class Document(models.Model):
             self.name = name[:255]
 
         if self.topics:
-            self.topics = [t.lower().strip() for t in self.topics if t and t.strip()]
+            normalized = []
+            for item in self.topics:
+                if not item:
+                    continue
+                for part in re.split(r"[;,|]+", item):
+                    part = part.lower().strip()
+                    if part and part not in normalized:
+                        normalized.append(part)
+            self.topics = normalized
 
         if self.category_ref_id:
             from django.apps import apps
