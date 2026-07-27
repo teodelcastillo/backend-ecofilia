@@ -3,7 +3,9 @@ import logging
 import os
 import tempfile
 import time
+import openai
 from celery import shared_task
+from celery.exceptions import MaxRetriesExceededError
 from django.db import transaction
 from apps.document.models import Document, SmartChunk, ChunkingStatus
 from apps.document.utils.chunker import chunk_text_and_embed
@@ -29,15 +31,28 @@ def _document_auto_summary_enabled() -> bool:
 def process_document_chunks(self, doc_id: int) -> str:
     tmp_path = None
     try:
+        # Atomically claim the document on the first attempt only. Two
+        # dispatches racing for the same doc_id (double-click, redelivery)
+        # will both reach this line, but only one UPDATE can flip a
+        # non-PROCESSING/DONE row to PROCESSING — the loser exits here
+        # instead of racing the winner into the chunk_index unique
+        # constraint below. On Celery-internal retries (self.retry) the
+        # status is already PROCESSING from the first attempt, so we skip
+        # the claim and just continue.
+        if self.request.retries == 0:
+            claimed = (
+                Document.objects.filter(pk=doc_id)
+                .exclude(chunking_status__in=[ChunkingStatus.PROCESSING, ChunkingStatus.DONE])
+                .update(chunking_status=ChunkingStatus.PROCESSING)
+            )
+            if not claimed:
+                logger.info(
+                    "Document %s already processing or done; skipping duplicate run.",
+                    doc_id,
+                )
+                return "already_claimed"
+
         doc = Document.objects.get(pk=doc_id)
-
-        # Skip if already processed
-        if doc.chunking_done or doc.chunking_status == ChunkingStatus.DONE:
-            logger.info("Document %s already processed; skipping.", doc_id)
-            return "already_done"
-
-        # Mark as processing
-        Document.objects.filter(pk=doc_id).update(chunking_status=ChunkingStatus.PROCESSING)
 
         # Ensure there's a file
         if not doc.file:
@@ -56,6 +71,9 @@ def process_document_chunks(self, doc_id: int) -> str:
                 f_tmp.write(chunk)
 
         text = parse_file(tmp_path) or ""
+        # Postgres text/varchar columns reject NUL (0x00) bytes outright;
+        # some PDF extractors emit them for malformed/binary-embedded content.
+        text = text.replace("\x00", "")
 
         # ── Early exit: no extractable text ──────────────────────────────────
         if not text.strip():
@@ -129,6 +147,36 @@ def process_document_chunks(self, doc_id: int) -> str:
     except Document.DoesNotExist:
         logger.error("Document %s not found for chunking.", doc_id)
         return "missing"
+
+    except (
+        openai.APIConnectionError,
+        openai.APITimeoutError,
+        openai.InternalServerError,
+        openai.RateLimitError,
+    ) as e:
+        # Transient network/upstream errors: retry with backoff instead of
+        # failing on the first hiccup. chunking_status stays PROCESSING so
+        # a concurrent dispatch can't jump the claim while we retry.
+        logger.warning(
+            "Transient error chunking document %s (attempt %d/%d): %s",
+            doc_id, self.request.retries + 1, self.max_retries + 1, e,
+        )
+        try:
+            # No exc= here: Celery re-raises `exc` as-is once retries are
+            # exhausted instead of MaxRetriesExceededError, which would
+            # bypass this except clause and leave the document stuck in
+            # PROCESSING with no last_error recorded.
+            raise self.retry(countdown=30 * (2 ** self.request.retries))
+        except MaxRetriesExceededError:
+            logger.exception("Failed to chunk document %s after retries: %s", doc_id, e)
+            try:
+                Document.objects.filter(pk=doc_id).update(
+                    last_error=str(e),
+                    chunking_status=ChunkingStatus.ERROR
+                )
+            except Exception:
+                pass
+            return "error"
 
     except Exception as e:
         logger.exception("Failed to chunk document %s: %s", doc_id, e)
