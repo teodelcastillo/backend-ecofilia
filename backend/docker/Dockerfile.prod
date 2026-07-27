@@ -18,7 +18,8 @@ RUN poetry config virtualenvs.create false \
 FROM python:3.12-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    TIKTOKEN_CACHE_DIR=/opt/tiktoken-cache
 
 # Install only runtime dependencies (libpq for psycopg2)
 RUN apt-get update \
@@ -33,6 +34,14 @@ WORKDIR /app
 # Copy installed packages from builder
 COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Warm the tiktoken vocabulary at build time. Otherwise every fresh task fetches
+# cl100k_base from openaipublic.blob.core.windows.net on its first token_count()
+# call — an egress dependency outside api.openai.com that, if it fails, breaks
+# ingestion for every document. Baked in, the runtime never needs that host.
+RUN mkdir -p "$TIKTOKEN_CACHE_DIR" \
+    && python -c "import tiktoken; tiktoken.encoding_for_model('text-embedding-3-small').encode('warmup')" \
+    && chmod -R a+rX "$TIKTOKEN_CACHE_DIR"
 
 # Copy application code
 COPY . /app

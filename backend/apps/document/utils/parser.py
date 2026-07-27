@@ -1,7 +1,10 @@
+import logging
 import os
 from typing import Callable, Dict
 
 import re
+
+logger = logging.getLogger(__name__)
 
 def clean_text_spacing(text: str) -> str:
     # Collapse single newlines to spaces, but PRESERVE them when the following
@@ -75,12 +78,33 @@ def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct:
 
 
 def _read_pdf_pypdf2(path: str) -> str:
-    """Fallback PDF reader when PyMuPDF yields nothing or isn't suitable."""
+    """Fallback PDF reader when PyMuPDF yields nothing or isn't suitable.
+
+    Emits the same <<<PAGE:N>>> markers as the PyMuPDF path so chunks keep their
+    page number when the fallback is what actually runs. Without them every
+    chunk coming from this reader would be stored with page_number = NULL.
+
+    A page whose extraction raises is skipped rather than aborting the whole
+    document: a single malformed page is common in the ESG corpus and the rest
+    of the text is still worth indexing.
+    """
     import PyPDF2
 
     with open(path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
-        return "\n".join((p.extract_text() or "").strip() for p in reader.pages).strip()
+        pages_out = []
+        for page_num, page in enumerate(reader.pages, start=1):
+            try:
+                text = (page.extract_text() or "").strip()
+            except Exception as exc:
+                logger.warning(
+                    "PyPDF2: página %d de %s no se pudo extraer (%s); se omite.",
+                    page_num, path, exc,
+                )
+                continue
+            if text:
+                pages_out.append(_make_page_marker(page_num) + "\n\n" + text)
+        return "\n\n".join(pages_out).strip()
 
 
 def _read_docx(path: str) -> str:
@@ -154,11 +178,36 @@ def _parse_file(file_path: str) -> str:
             text = _read_pdf_pymupdf(file_path)
             if text:
                 return text
-        except Exception:
-            # Fall through to PyPDF2 if PyMuPDF fails
-            pass
-        # PyMuPDF was empty or failed → try PyPDF2
+            logger.warning(
+                "PyMuPDF no extrajo texto de %s; se intenta con PyPDF2.", file_path
+            )
+        except ImportError:
+            # PyMuPDF ausente en la imagen: es una degradación permanente de todo
+            # el parseo de PDF, no un problema del archivo. Se loguea aparte para
+            # que no se confunda con un PDF corrupto.
+            logger.error(
+                "PyMuPDF (fitz) no está instalado: %s y todos los PDF se parsean "
+                "con el fallback PyPDF2, sin recorte de encabezados/pies.",
+                file_path,
+            )
+        except Exception as exc:
+            logger.warning(
+                "PyMuPDF falló sobre %s (%s); se intenta con PyPDF2.", file_path, exc
+            )
+        # PyMuPDF vacío o fallido → PyPDF2
         return _read_pdf_pypdf2(file_path)
+
+    if ext == ".doc":
+        # python-docx sólo lee OOXML. Un .doc binario (Word 97-2003) revienta con
+        # un error opaco de zipfile; algunos .doc son en realidad .docx renombrados,
+        # así que se intenta igual y sólo se traduce el fallo a un mensaje útil.
+        try:
+            return _read_docx(file_path)
+        except Exception as exc:
+            raise ValueError(
+                "Los archivos .doc (Word 97-2003) no están soportados. "
+                "Convertí el documento a .docx o .pdf y volvé a subirlo."
+            ) from exc
 
     if ext in readers:
         return readers[ext](file_path)
