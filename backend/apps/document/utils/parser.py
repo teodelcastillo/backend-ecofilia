@@ -1,7 +1,45 @@
+import logging
 import os
+from dataclasses import dataclass, field
 from typing import Callable, Dict
 
 import re
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ParseResult:
+    """Extracted text plus the coverage stats needed to judge completeness.
+
+    ``page_count`` / ``pages_with_text`` are only meaningful for PDFs; other
+    formats leave them at 0 and callers skip the coverage gate.
+    """
+
+    text: str = ""
+    page_count: int = 0
+    pages_with_text: int = 0
+    image_only_pages: int = 0
+    parser: str = ""
+
+    @property
+    def page_coverage(self) -> float:
+        if not self.page_count:
+            return 1.0
+        return self.pages_with_text / self.page_count
+
+    @property
+    def chars_per_page(self) -> float:
+        if not self.page_count:
+            return float(len(self.text))
+        return len(self.text) / self.page_count
+
+
+# A page yielding less than this is treated as having no usable text: scanned
+# pages often carry a few characters (a folio number, a vectorized header)
+# without any of the actual body content.
+MIN_CHARS_PER_PAGE = 40
+
 
 def clean_text_spacing(text: str) -> str:
     # Collapse single newlines to spaces, but PRESERVE them when the following
@@ -39,17 +77,23 @@ def _make_page_marker(page_num: int) -> str:
     return f"{_PAGE_MARKER_PREFIX}{page_num}{_PAGE_MARKER_SUFFIX}"
 
 
-def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct: float = HEADER_FOOTER_PCT) -> str:
+def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct: float = HEADER_FOOTER_PCT) -> ParseResult:
     """Extract text blocks from a PDF using PyMuPDF, removing headers/footers by position.
 
     Each page's content is prefixed with a <<<PAGE:N>>> marker so the chunker can
     track which source page each chunk came from.
+
+    Also counts how many pages actually yielded text and how many carry only
+    images, so the caller can tell "fully extracted" from "silently partial".
     """
     import fitz  # PyMuPDF
 
     doc = fitz.open(path)
     try:
         pages_out = []
+        pages_with_text = 0
+        image_only_pages = 0
+
         for page_num, page in enumerate(doc, start=1):
             height = page.rect.height
             top_y = height * top_pct
@@ -64,23 +108,54 @@ def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct:
                 if text:
                     blocks_out.append(text)
 
-            if blocks_out:
-                pages_out.append(
-                    _make_page_marker(page_num) + "\n\n" + "\n\n".join(blocks_out)
-                )
+            page_text = "\n\n".join(blocks_out)
+            if len(page_text.strip()) >= MIN_CHARS_PER_PAGE:
+                pages_with_text += 1
+            elif page.get_images(full=True):
+                # Scanned/graphic page: nothing to extract without OCR.
+                image_only_pages += 1
 
-        return "\n\n".join(pages_out).strip()
+            if blocks_out:
+                pages_out.append(_make_page_marker(page_num) + "\n\n" + page_text)
+
+        return ParseResult(
+            text="\n\n".join(pages_out).strip(),
+            page_count=doc.page_count,
+            pages_with_text=pages_with_text,
+            image_only_pages=image_only_pages,
+            parser="pymupdf",
+        )
     finally:
         doc.close()
 
 
-def _read_pdf_pypdf2(path: str) -> str:
-    """Fallback PDF reader when PyMuPDF yields nothing or isn't suitable."""
+def _read_pdf_pypdf2(path: str) -> ParseResult:
+    """Fallback PDF reader when PyMuPDF yields nothing or isn't suitable.
+
+    Emits no <<<PAGE:N>>> markers, so chunks parsed this way have no page
+    number — the ``parser`` field records which path produced the text.
+    """
     import PyPDF2
 
     with open(path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
-        return "\n".join((p.extract_text() or "").strip() for p in reader.pages).strip()
+        pages: list[str] = []
+        pages_with_text = 0
+        for p in reader.pages:
+            try:
+                page_text = (p.extract_text() or "").strip()
+            except Exception:
+                page_text = ""
+            if len(page_text) >= MIN_CHARS_PER_PAGE:
+                pages_with_text += 1
+            pages.append(page_text)
+
+        return ParseResult(
+            text="\n".join(pages).strip(),
+            page_count=len(reader.pages),
+            pages_with_text=pages_with_text,
+            parser="pypdf2",
+        )
 
 
 def _read_docx(path: str) -> str:
@@ -131,9 +206,9 @@ def _read_docx(path: str) -> str:
     return "\n\n".join(parts).strip()
 
 
-def _parse_file(file_path: str) -> str:
+def _parse_file(file_path: str) -> ParseResult:
     """
-    Parse a file and return its main textual content.
+    Parse a file and return its main textual content plus coverage stats.
 
     Supported:
       - .txt     (UTF-8, with 'replace' for bad bytes)
@@ -151,21 +226,38 @@ def _parse_file(file_path: str) -> str:
 
     if ext == ".pdf":
         try:
-            text = _read_pdf_pymupdf(file_path)
-            if text:
-                return text
+            result = _read_pdf_pymupdf(file_path)
+            if result.text:
+                return result
+            logger.warning(
+                "PyMuPDF extracted no text from %s (%d pages, %d image-only); "
+                "trying PyPDF2.",
+                file_path, result.page_count, result.image_only_pages,
+            )
         except Exception:
-            # Fall through to PyPDF2 if PyMuPDF fails
-            pass
-        # PyMuPDF was empty or failed → try PyPDF2
+            # PyMuPDF missing or broken. This used to be a silent `pass`, which
+            # hid a production-wide fallback to PyPDF2 (no page markers, far
+            # worse extraction) for months — never downgrade quietly again.
+            logger.exception(
+                "PyMuPDF unavailable or failed on %s; falling back to PyPDF2 "
+                "(no page numbers, degraded extraction).",
+                file_path,
+            )
         return _read_pdf_pypdf2(file_path)
 
     if ext in readers:
-        return readers[ext](file_path)
+        return ParseResult(text=readers[ext](file_path), parser=ext.lstrip("."))
 
     raise ValueError(f"Unsupported file type: {ext}")
 
+
+def parse_file_detailed(file_path: str) -> ParseResult:
+    """Parse a file, clean its text spacing, and keep the coverage stats."""
+    result = _parse_file(file_path)
+    result.text = clean_text_spacing(result.text)
+    return result
+
+
 def parse_file(file_path: str) -> str:
     """Wrapper to parse a file and clean its text spacing."""
-    text = _parse_file(file_path)
-    return clean_text_spacing(text)
+    return parse_file_detailed(file_path).text

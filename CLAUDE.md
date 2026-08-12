@@ -165,6 +165,39 @@ AWS_SES_REGION_NAME=us-east-2
 
 ---
 
+## Ingesta de documentos — cobertura y OCR
+
+El pipeline mide cuánto del documento realmente leyó y lo persiste en
+`page_count` / `pages_with_text` / `parser_used`.
+
+- Si lee menos del 80% de las páginas (`DOC_MIN_PAGE_COVERAGE`) o extrae menos
+  de 400 caracteres por página (`DOC_MIN_CHARS_PER_PAGE`), el documento queda en
+  estado **`partial`**, no en `done`: está indexado pero incompleto.
+- Los PDFs escaneados pasan por **Amazon Textract** (`apps/document/utils/ocr.py`)
+  antes de darse por perdidos. Se dispara solo cuando la extracción normal quedó
+  corta, así que no se paga OCR por documentos sanos.
+
+**Permiso IAM requerido en `ecofiliaTaskRole`:**
+```json
+{ "Effect": "Allow", "Action": ["textract:StartDocumentTextDetection", "textract:GetDocumentTextDetection"], "Resource": "*" }
+```
+
+**Variables de entorno:** `DOCUMENT_OCR_ENABLED` (default `1`), `OCR_MAX_PAGES`
+(default `1000`), `AWS_TEXTRACT_REGION` (default: la de S3).
+
+**Reprocesar documentos** (resetea el estado, así también destraba los colgados
+en `processing`):
+```bash
+python manage.py reprocess_documents --ids 55,88,726 --dry-run
+python manage.py reprocess_documents --status partial,error,processing
+```
+
+> `pymupdf` es dependencia obligatoria. Si falta, el parser cae a PyPDF2: sin
+> números de página y con extracción mucho peor. Estuvo sin declarar hasta
+> agosto de 2026 y el fallback era silencioso.
+
+---
+
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
 
 `SECRET_KEY`, `JWT_SIGNING_KEY`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`

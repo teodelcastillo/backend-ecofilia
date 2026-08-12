@@ -142,6 +142,19 @@ def _semantic_paragraphs(text: str) -> List[dict]:
         toks = token_count(merged)
         if toks >= MIN_TOKENS:
             segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page})
+            return
+
+        # Below MIN_TOKENS. This used to be dropped outright, which quietly
+        # deleted content from documents built out of short articles separated
+        # by headings — exactly how urban/legal codes are written. Fold the
+        # fragment into the previous segment instead; only when that would
+        # overflow the window does it become a small chunk of its own.
+        if segments and segments[-1]["tokens"] + toks <= MAX_TOKENS:
+            prev = segments[-1]
+            prev["text"] = f"{prev['text']}\n\n{merged}"
+            prev["tokens"] = token_count(prev["text"])
+        else:
+            segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page})
 
     def _slide_long(para: str, title: str) -> None:
         """
@@ -211,11 +224,14 @@ def _semantic_paragraphs(text: str) -> List[dict]:
             continue
 
         if _is_heading(para):
-            # Flush current accumulation before starting a new section
+            # Flush current accumulation before starting a new section.
+            # The heading also stays in the body of the next segment: it was
+            # previously kept only as metadata, so ALL-CAPS article headers
+            # ("ARTÍCULO 12", "ZONA R1") vanished from the retrievable text.
             _flush(current_parts, current_title)
             current_title = para
-            current_parts = []
-            current_tokens = 0
+            current_parts = [para]
+            current_tokens = token_count(para)
             continue
 
         para_tokens = token_count(para)

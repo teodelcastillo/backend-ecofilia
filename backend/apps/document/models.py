@@ -18,6 +18,10 @@ class ChunkingStatus(models.TextChoices):
     PENDING = "pending", "Pending"
     PROCESSING = "processing", "Processing"
     DONE = "done", "Done"
+    # Indexed, but a meaningful share of the source pages yielded no text
+    # (typically scanned pages with no OCR). Searchable, yet incomplete —
+    # the UI must never present these as fully processed.
+    PARTIAL = "partial", "Partial"
     ERROR = "error", "Error"
 
 
@@ -59,6 +63,21 @@ class Document(models.Model):
     chunking_done = models.BooleanField(default=False)
     last_error = models.TextField(blank=True)
     retry_count = models.IntegerField(default=0)
+    page_count = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Páginas del archivo original (solo PDF). Null si no aplica o no se pudo leer.",
+    )
+    pages_with_text = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Páginas de las que se extrajo texto utilizable. Comparar con page_count da la cobertura real.",
+    )
+    parser_used = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Extractor que produjo el texto (pymupdf, pypdf2, docx, txt).",
+    )
     is_public = models.BooleanField(default=False)
     year = models.IntegerField(blank=True, null=True, help_text="Año del documento")
     region = models.CharField(max_length=255, blank=True, null=True, help_text="Región del documento")
