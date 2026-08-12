@@ -8,11 +8,22 @@ from rest_framework import viewsets, mixins
 from django.shortcuts import get_object_or_404
 
 from collections import defaultdict
+from datetime import timedelta
+import os
 
+from django.db import transaction
 from django.db.models import Q, Count, Case, When, Value, CharField, F, Func, TextField
+from django.utils import timezone
 from rest_framework.pagination import PageNumberPagination
 
-from apps.document.models import SmartChunk, Document, DocumentShare, Category
+from apps.document.models import (
+    SmartChunk,
+    Document,
+    DocumentShare,
+    Category,
+    ChunkingStatus,
+)
+from apps.document.tasks import process_document_chunks
 from apps.document.category_utils import category_descendant_ids
 from apps.user.models import UserRole
 from apps.document.api.filters import DocumentFilter
@@ -686,6 +697,72 @@ class DocumentViewSet(
         )
         return Response(serializer.data)
     
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="reprocess",
+        url_name="reprocess",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def reprocess(self, request, slug=None):
+        """Vuelve a correr la ingesta sobre este documento.
+
+        Existe porque el pipeline mejora con el tiempo — mejor extractor, OCR,
+        tablas — y un documento ya cargado se queda con el resultado del día en
+        que se subió. Reprocesar la biblioteca entera no se justifica (se midió:
+        solo aporta números de página), así que la decisión queda en manos de
+        quien conoce el documento.
+
+        Resetea el estado antes de despachar: la guarda anti-duplicados de
+        ``process_document_chunks`` rechaza cualquier documento que ya esté en
+        PROCESSING o DONE, así que sin este reset la tarea saldría sin hacer
+        nada. Eso también permite recuperar documentos trabados en PROCESSING
+        porque murió el worker.
+        """
+        document = self.get_object()
+
+        if not document.can_edit(request.user):
+            return Response(
+                {"detail": "No tenés permisos para reprocesar este documento."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not document.file:
+            return Response(
+                {"detail": "El documento no tiene un archivo asociado."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Un documento que se está procesando ahora mismo no se toca: resetear
+        # su estado pondría dos corridas a escribir sobre los mismos chunks.
+        # Pasado el margen se asume worker muerto y se permite recuperarlo.
+        if document.chunking_status == ChunkingStatus.PROCESSING:
+            stale_after = timezone.now() - timedelta(
+                hours=int(os.environ.get("DOC_PROCESSING_STALE_HOURS", "2"))
+            )
+            started = document.created_at
+            if started and started > stale_after:
+                return Response(
+                    {"detail": "El documento ya se está procesando. Esperá a que termine."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        Document.objects.filter(pk=document.pk).update(
+            chunking_status=ChunkingStatus.PENDING,
+            chunking_done=False,
+            last_error="",
+            retry_count=F("retry_count") + 1,
+        )
+
+        transaction.on_commit(lambda: process_document_chunks.delay(document.pk))
+
+        document.refresh_from_db()
+        serializer = DocumentSerializer(
+            document,
+            context=self.get_serializer_context(),
+        )
+        return Response(serializer.data, status=status.HTTP_202_ACCEPTED)
+
     @action(
         detail=True,
         methods=["get", "post"],
