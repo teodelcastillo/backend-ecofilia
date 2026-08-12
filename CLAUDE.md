@@ -185,6 +185,32 @@ El pipeline mide cuánto del documento realmente leyó y lo persiste en
 **Variables de entorno:** `DOCUMENT_OCR_ENABLED` (default `1`), `OCR_MAX_PAGES`
 (default `1000`), `AWS_TEXTRACT_REGION` (default: la de S3).
 
+### Tablas
+
+`apps/document/utils/tables.py` detecta y extrae tablas con PyMuPDF (local,
+gratis) y las lineariza repitiendo los encabezados en cada fila, para que cada
+fila sea consultable por sí sola. Los chunks resultantes llevan
+`chunk_type="table"`.
+
+La validación es deliberadamente estricta: **ante la duda no se inventa un
+encabezado**. Si los nombres no tienen forma de etiqueta, no cubren la mayoría
+de las columnas, se repiten o aparecen como dato en el cuerpo, la fila cae a
+valores separados por `|` — incompleto pero nunca falso. Sin esa validación el
+detector ascendía filas de datos a encabezado y cada fila terminaba afirmando
+una relación inventada.
+
+> **Limitación abierta — códigos urbanos tipo CABA (doc 726).** El Código
+> Urbanístico de Buenos Aires tiene la capa de texto dañada: los diacríticos
+> aparecen separados de sus letras y las palabras vienen cortadas por guiones
+> (`nimo, de la cantidad de los m s: 30%, como m ² o m á í ó du-`). De sus 48
+> tablas aceptadas, **ninguna** produce encabezados utilizables, y ningún
+> extractor local puede recomponer eso. Quedan dos hipótesis sin dirimir: que
+> el PDF de origen esté mal generado, o que haga falta otra vuelta de
+> procesamiento (Textract `AnalyzeDocument` con `TABLES`, o normalización
+> Unicode de diacríticos combinantes y de-hyphenation). **El caso de uso de
+> códigos urbanos no está resuelto.** Conviene además verificar si esa
+> corrupción afecta al texto corrido del documento y no solo a sus tablas.
+
 **Reprocesar documentos** (resetea el estado, así también destraba los colgados
 en `processing`):
 ```bash
