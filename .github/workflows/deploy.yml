@@ -23,28 +23,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # TEMPORAL — diagnóstico del rechazo de sts:AssumeRoleWithWebIdentity.
-      # Publica solo los claims de identificación del token (nunca el token) como
-      # anotación, para comparar el `sub` real contra la política de confianza.
-      # Borrar este paso una vez corregida la confianza del rol.
-      - name: Debug OIDC subject (temporal)
-        run: |
-          python3 - <<'PY'
-          import base64, json, os, urllib.request
-          url = os.environ['ACTIONS_ID_TOKEN_REQUEST_URL'] + '&audience=sts.amazonaws.com'
-          req = urllib.request.Request(
-              url,
-              headers={'Authorization': 'bearer ' + os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']},
-          )
-          token = json.load(urllib.request.urlopen(req))['value']
-          payload = token.split('.')[1]
-          payload += '=' * (-len(payload) % 4)
-          claims = json.loads(base64.urlsafe_b64decode(payload))
-          print('::error::OIDC sub=[%s] aud=[%s] repository=[%s] ref=[%s]' % (
-              claims.get('sub'), claims.get('aud'),
-              claims.get('repository'), claims.get('ref')))
-          PY
-
+      # El `sub` del token OIDC usa la forma inmutable `nombre@id` (owner y repo),
+      # así que la confianza del rol se declara con los IDs numéricos: un renombre
+      # del repositorio ya no rompe el deploy. Ver ecofilia-github-deploy.
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
