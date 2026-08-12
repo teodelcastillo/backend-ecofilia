@@ -22,6 +22,7 @@ from typing import List
 from apps.document.models import SmartChunk
 from apps.document.utils.client_openia import embed_text, generate_chunk_context
 from apps.document.utils.client_tiktoken import decode_text, encode_text, token_count
+from apps.document.utils.tables import split_table_rows, unwrap_table_block
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +142,7 @@ def _semantic_paragraphs(text: str) -> List[dict]:
         merged = "\n\n".join(parts)
         toks = token_count(merged)
         if toks >= MIN_TOKENS:
-            segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page})
+            segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page, "kind": "prose"})
             return
 
         # Below MIN_TOKENS. This used to be dropped outright, which quietly
@@ -149,12 +150,52 @@ def _semantic_paragraphs(text: str) -> List[dict]:
         # by headings — exactly how urban/legal codes are written. Fold the
         # fragment into the previous segment instead; only when that would
         # overflow the window does it become a small chunk of its own.
-        if segments and segments[-1]["tokens"] + toks <= MAX_TOKENS:
+        # Nunca se funde con un segmento de tabla: mezclar prosa dentro de una
+        # tabla linealizada rompe la propiedad de que cada línea es una fila.
+        if (
+            segments
+            and segments[-1]["kind"] == "prose"
+            and segments[-1]["tokens"] + toks <= MAX_TOKENS
+        ):
             prev = segments[-1]
             prev["text"] = f"{prev['text']}\n\n{merged}"
             prev["tokens"] = token_count(prev["text"])
         else:
-            segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page})
+            segments.append({"text": merged, "title": title, "tokens": toks, "page": current_page, "kind": "prose"})
+
+    def _emit_table(body: str, title: str) -> None:
+        """Emite una tabla linealizada como segmentos propios.
+
+        Cada línea ya es una fila auto-contenida (lleva sus encabezados), así que
+        una tabla que excede la ventana se parte **por filas** y ningún trozo
+        queda sin referencia. Nunca se corta una fila por la mitad.
+        """
+        rows = split_table_rows(body)
+        if not rows:
+            return
+
+        group: List[str] = []
+        group_tokens = 0
+        for row in rows:
+            row_tokens = token_count(row)
+            if group and group_tokens + row_tokens > MAX_TOKENS:
+                text = "\n".join(group)
+                segments.append({
+                    "text": text, "title": title,
+                    "tokens": token_count(text), "page": current_page,
+                    "kind": "table",
+                })
+                group, group_tokens = [], 0
+            group.append(row)
+            group_tokens += row_tokens
+
+        if group:
+            text = "\n".join(group)
+            segments.append({
+                "text": text, "title": title,
+                "tokens": token_count(text), "page": current_page,
+                "kind": "table",
+            })
 
     def _slide_long(para: str, title: str) -> None:
         """
@@ -179,7 +220,7 @@ def _semantic_paragraphs(text: str) -> List[dict]:
             i = 0
             while i < len(tokens):
                 window = tokens[i: i + MAX_TOKENS]
-                segments.append({"text": decode_text(window), "title": title, "tokens": len(window), "page": current_page})
+                segments.append({"text": decode_text(window), "title": title, "tokens": len(window), "page": current_page, "kind": "prose"})
                 i += MAX_TOKENS - OVERLAP_TOKENS
             return
 
@@ -193,20 +234,20 @@ def _semantic_paragraphs(text: str) -> List[dict]:
                 # Flush accumulated sentences first
                 if current_sentences:
                     merged = " ".join(current_sentences)
-                    segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page})
+                    segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page, "kind": "prose"})
                     current_sentences, current_toks = [], 0
                 # Single sentence too long → token-window for this sentence only
                 toks = encode_text(sentence)
                 i = 0
                 while i < len(toks):
                     window = toks[i: i + MAX_TOKENS]
-                    segments.append({"text": decode_text(window), "title": title, "tokens": len(window), "page": current_page})
+                    segments.append({"text": decode_text(window), "title": title, "tokens": len(window), "page": current_page, "kind": "prose"})
                     i += MAX_TOKENS - OVERLAP_TOKENS
                 continue
 
             if current_toks + s_toks > MAX_TOKENS and current_sentences:
                 merged = " ".join(current_sentences)
-                segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page})
+                segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page, "kind": "prose"})
                 current_sentences, current_toks = [], 0
 
             current_sentences.append(sentence)
@@ -214,13 +255,22 @@ def _semantic_paragraphs(text: str) -> List[dict]:
 
         if current_sentences:
             merged = " ".join(current_sentences)
-            segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page})
+            segments.append({"text": merged, "title": title, "tokens": token_count(merged), "page": current_page, "kind": "prose"})
 
     for para in raw_paras:
         # ── Page marker (<<<PAGE:N>>>) — update current page, never store ──────
         page_match = _PAGE_MARKER_RE.match(para)
         if page_match:
             current_page = int(page_match.group(1))
+            continue
+
+        # ── Bloque de tabla ya linealizado por el parser ─────────────────────
+        table_body = unwrap_table_block(para)
+        if table_body is not None:
+            _flush(current_parts, current_title)
+            current_parts = []
+            current_tokens = 0
+            _emit_table(table_body, current_title)
             continue
 
         if _is_heading(para):
@@ -362,6 +412,7 @@ def chunk_text_and_embed(
             SmartChunk(
                 document_id=document_id,
                 chunk_index=idx,
+                chunk_type=seg.get("kind") or "prose",
                 content=chunk_content,
                 context_summary=ctx,
                 title=chunk_title or None,

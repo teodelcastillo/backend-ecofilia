@@ -200,9 +200,22 @@ class SmartChunkQuerySet(QuerySet):
             distance=CosineDistance("embedding", query_embedding)
         ).order_by("distance")[:top_n]
 
+class ChunkType(models.TextChoices):
+    PROSE = "prose", "Prose"
+    # Filas de tabla linealizadas, cada una con sus encabezados repetidos.
+    # Se separan de la prosa para poder tratarlas distinto en recuperación.
+    TABLE = "table", "Table"
+
+
 class SmartChunk(models.Model):
     document = models.ForeignKey(Document, on_delete=models.CASCADE, related_name='chunks')
     chunk_index = models.IntegerField()
+    chunk_type = models.CharField(
+        max_length=10,
+        choices=ChunkType.choices,
+        default=ChunkType.PROSE,
+        db_index=True,
+    )
     content = models.TextField()
     content_norm = GeneratedField(
         expression=Func(Lower(F("content")), function="immutable_unaccent"),

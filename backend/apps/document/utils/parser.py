@@ -5,6 +5,12 @@ from typing import Callable, Dict
 
 import re
 
+from apps.document.utils.tables import (
+    TABLE_BLOCK_RE,
+    block_is_inside_tables,
+    extract_page_tables,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,6 +27,8 @@ class ParseResult:
     pages_with_text: int = 0
     image_only_pages: int = 0
     parser: str = ""
+    tables_found: int = 0
+    pages_with_tables: int = 0
 
     @property
     def page_coverage(self) -> float:
@@ -41,7 +49,7 @@ class ParseResult:
 MIN_CHARS_PER_PAGE = 40
 
 
-def clean_text_spacing(text: str) -> str:
+def _clean_prose_spacing(text: str) -> str:
     # Collapse single newlines to spaces, but PRESERVE them when the following
     # line starts with a list marker (-, *, •, or digit + . / )) or a page
     # marker (<<<PAGE:N>>>) so structural information survives extraction.
@@ -57,6 +65,30 @@ def clean_text_spacing(text: str) -> str:
     # Collapse 3+ newlines to 2
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
+
+
+def clean_text_spacing(text: str) -> str:
+    """Normaliza espaciado sin tocar el interior de los bloques de tabla.
+
+    En una tabla linealizada cada salto de línea separa una fila, así que
+    colapsarlos convertiría la tabla en una tira ilegible. Se limpia solo la
+    prosa y las tablas quedan como párrafos propios.
+    """
+    source = text or ""
+    cleaned: list[str] = []
+    cursor = 0
+    for match in TABLE_BLOCK_RE.finditer(source):
+        prose = _clean_prose_spacing(source[cursor:match.start()])
+        if prose:
+            cleaned.append(prose)
+        cleaned.append(match.group(0).strip())
+        cursor = match.end()
+
+    tail = _clean_prose_spacing(source[cursor:])
+    if tail:
+        cleaned.append(tail)
+
+    return "\n\n".join(cleaned).strip()
 
 
 # Lazy imports inside helpers so you don't pay the cost unless needed.
@@ -93,21 +125,34 @@ def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct:
         pages_out = []
         pages_with_text = 0
         image_only_pages = 0
+        tables_found = 0
+        pages_with_tables = 0
 
         for page_num, page in enumerate(doc, start=1):
             height = page.rect.height
             top_y = height * top_pct
             bottom_y = height * (1 - bottom_pct)
 
+            # Tablas primero: se linealizan aparte y su región se excluye del
+            # texto corrido para no emitir el mismo contenido dos veces, una
+            # como filas y otra como cifras sueltas.
+            table_blocks, table_bboxes = extract_page_tables(page)
+            if table_blocks:
+                tables_found += len(table_blocks)
+                pages_with_tables += 1
+
             # Each block: (x0, y0, x1, y1, text, block_no, block_type, ...)
             blocks_out = []
             for x0, y0, x1, y1, text, *_ in page.get_text("blocks"):
                 if y1 < top_y or y0 > bottom_y:
                     continue
+                if table_bboxes and block_is_inside_tables((x0, y0, x1, y1), table_bboxes):
+                    continue
                 text = (text or "").strip()
                 if text:
                     blocks_out.append(text)
 
+            blocks_out.extend(table_blocks)
             page_text = "\n\n".join(blocks_out)
             if len(page_text.strip()) >= MIN_CHARS_PER_PAGE:
                 pages_with_text += 1
@@ -118,12 +163,20 @@ def _read_pdf_pymupdf(path: str, top_pct: float = HEADER_FOOTER_PCT, bottom_pct:
             if blocks_out:
                 pages_out.append(_make_page_marker(page_num) + "\n\n" + page_text)
 
+        if tables_found:
+            logger.info(
+                "PyMuPDF: %d tablas linealizadas en %d páginas de %s.",
+                tables_found, pages_with_tables, path,
+            )
+
         return ParseResult(
             text="\n\n".join(pages_out).strip(),
             page_count=doc.page_count,
             pages_with_text=pages_with_text,
             image_only_pages=image_only_pages,
             parser="pymupdf",
+            tables_found=tables_found,
+            pages_with_tables=pages_with_tables,
         )
     finally:
         doc.close()
