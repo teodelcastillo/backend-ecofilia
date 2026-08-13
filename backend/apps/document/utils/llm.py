@@ -53,8 +53,8 @@ ROLE_DEEP = "deep"          # complex multi-step synthesis
 
 _ANTHROPIC_TIER_DEFAULTS = {
     ROLE_FAST: "claude-haiku-4-5",
-    ROLE_BALANCED: "claude-sonnet-4-6",
-    ROLE_DEEP: "claude-opus-4-8",
+    ROLE_BALANCED: "claude-sonnet-5",
+    ROLE_DEEP: "claude-opus-5",
 }
 
 
@@ -81,21 +81,24 @@ def is_anthropic_model(model: str | None) -> bool:
     return bool(model) and str(model).lower().startswith(("claude", "anthropic."))
 
 
-def effective_chat_model(stored: str | None) -> str:
+def effective_chat_model(stored: str | None, role: str = ROLE_BALANCED) -> str:
     """Model to actually use for plain chat/answer generation.
 
     Sessions freeze ``model`` at creation time, so flipping ``LLM_PROVIDER``
     would otherwise never reach sessions that already exist. Resolution rules:
     - an explicit Claude id is honored (deliberate per-session override);
     - under ``LLM_PROVIDER=anthropic`` a legacy OpenAI id is upgraded to the
-      balanced tier, so existing sessions follow the provider switch;
+      given tier, so existing sessions follow the provider switch;
     - under the OpenAI provider the stored id is preserved (no behaviour change).
+
+    ``role`` lets a caller ask for a tier other than the balanced default —
+    multi-step workflows resolve to DEEP, which is what that tier is for.
     """
     if is_anthropic_model(stored):
         return stored
     if _provider() == "anthropic":
-        return resolve_model(ROLE_BALANCED)
-    return stored or resolve_model(ROLE_BALANCED)
+        return resolve_model(role)
+    return stored or resolve_model(role)
 
 
 def _anthropic_tools_enabled() -> bool:
@@ -104,7 +107,7 @@ def _anthropic_tools_enabled() -> bool:
     )
 
 
-def tool_capable_model(stored: str | None) -> str:
+def tool_capable_model(stored: str | None, role: str = ROLE_BALANCED) -> str:
     """Model for tool-use paths (copilot / agentic skills).
 
     The Anthropic tool loop is implemented (``anthropic_chat_with_tools``), so
@@ -113,7 +116,7 @@ def tool_capable_model(stored: str | None) -> str:
     paths back to an OpenAI model (escape hatch if the ported loop misbehaves).
     """
     if _anthropic_tools_enabled():
-        return effective_chat_model(stored)
+        return effective_chat_model(stored, role)
     if not stored or is_anthropic_model(stored):
         return os.environ.get("MODEL_COMPLETION", "gpt-4o-mini")
     return stored

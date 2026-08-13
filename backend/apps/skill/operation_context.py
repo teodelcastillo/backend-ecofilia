@@ -41,6 +41,8 @@ _LABELS: list[tuple[str, str]] = [
     ("year", "Año"),
     ("cliente", "Cliente"),
     ("ejecutor", "Ejecutor"),
+    ("ecosistemas_estrategicos", "Ecosistemas estratégicos"),
+    ("ecosistemas_estrategicos_otros", "Otros ecosistemas estratégicos"),
 ]
 
 # Se presentan aparte, como bloques de texto, porque son párrafos y no datos.
@@ -71,8 +73,20 @@ _ESTADO_LABELS = {
 
 
 def _clean(value) -> str:
+    """
+    Valor listo para el prompt.
+
+    Las listas se aplanan con comas: los ecosistemas estratégicos se guardan
+    como array desde el formulario, y sin esto llegarían al modelo como el
+    `repr` de una lista de Python.
+    """
     if value is None:
         return ""
+    if isinstance(value, (list, tuple, set)):
+        parts = [_clean(item) for item in value]
+        return ", ".join(part for part in parts if part)
+    if isinstance(value, bool):
+        return "Sí" if value else "No"
     text = str(value).strip()
     return "" if text.lower() in ("", "none", "null") else text
 

@@ -103,3 +103,17 @@ class BuildOperationContextBlockTests(SimpleTestCase):
         block = build_operation_context_block(_project())
 
         self.assertIn("No completes con conocimiento general", block)
+
+    def test_list_values_are_flattened_not_repr_ed(self):
+        """Los ecosistemas se guardan como array desde el formulario."""
+        project = _project(
+            context_notes={
+                "pais": "Argentina",
+                "ecosistemas_estrategicos": ["Andes tropicales", "Mar Caribe"],
+            }
+        )
+
+        block = build_operation_context_block(project)
+
+        self.assertIn("Andes tropicales, Mar Caribe", block)
+        self.assertNotIn("['Andes", block)

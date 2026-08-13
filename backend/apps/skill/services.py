@@ -19,7 +19,12 @@ from apps.chat.services.query_analysis import recommend_strategy
 from apps.chat.services.retrieval import lexical_search, rrf_fuse
 from apps.document.models import Document, SmartChunk
 from apps.document.utils.client_openia import generate_chat_completion, generate_with_tools
-from apps.document.utils.llm import effective_chat_model, tool_capable_model
+from apps.document.utils.llm import (
+    ROLE_BALANCED,
+    ROLE_DEEP,
+    effective_chat_model,
+    tool_capable_model,
+)
 from apps.skill.models import (
     ExecutionOutputMode,
     ExecutionStatus,
@@ -399,22 +404,28 @@ def _call_model(
     Dispatch to generate_with_tools or generate_chat_completion depending on
     whether the skill has tools_enabled and a valid tool context is provided.
     """
+    # Un workflow encadena pasos que razonan sobre documentos largos y se
+    # apoyan en las salidas anteriores: eso es exactamente lo que describe el
+    # tier DEEP. Las skills de un solo paso siguen en el tier balanceado.
+    role = ROLE_DEEP if skill.skill_type == SkillType.COPILOT else ROLE_BALANCED
+
     if skill.tools_enabled and tool_ctx is not None:
         from apps.skill.tools import ALL_TOOLS, execute_tool
 
         def _executor(name: str, args_json: str) -> str:
             return execute_tool(name, args_json, tool_ctx)
 
-        # Tool-use stays on OpenAI (Anthropic tool protocol not ported yet).
         return generate_with_tools(
             messages,
             tools=ALL_TOOLS,
             tool_executor=_executor,
-            model=tool_capable_model(skill.model),
+            model=tool_capable_model(skill.model, role),
             temperature=skill.temperature,
         )
     return generate_chat_completion(
-        messages, model=effective_chat_model(skill.model), temperature=skill.temperature
+        messages,
+        model=effective_chat_model(skill.model, role),
+        temperature=skill.temperature,
     )
 
 
