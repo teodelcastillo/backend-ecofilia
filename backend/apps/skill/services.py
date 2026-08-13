@@ -360,6 +360,35 @@ def _table_summary_for_history(title: str, table: dict) -> str:
 # Tool-aware completion helper
 # ---------------------------------------------------------------------------
 
+def _with_operation_context(base_system_prompt: str, execution: SkillExecution) -> str:
+    """
+    Antepone al system prompt el contexto de la operación de la ejecución.
+
+    Un workflow de CAF corre siempre sobre una operación, y el modelo tiene
+    que saber de cuál se trata en todos los pasos: país, monto, objetivo,
+    componentes y el documento principal. Va en el system prompt —y no en el
+    prompt de cada paso— para que sea exactamente el mismo a lo largo de todo
+    el workflow.
+
+    Se calcula una sola vez por corrida y se guarda en la propia ejecución,
+    que vive lo que dura el proceso: un workflow de diez pasos, si no, pegaría
+    diez veces contra la base para reconstruir el mismo texto.
+
+    Sin operación (ejecuciones sobre repositorio o documento suelto) devuelve
+    el prompt intacto.
+    """
+    cached = getattr(execution, "_operation_context_block", None)
+    if cached is None:
+        from apps.skill.operation_context import build_operation_context_block
+
+        cached = build_operation_context_block(execution.project)
+        execution._operation_context_block = cached
+
+    if not cached:
+        return base_system_prompt
+    return f"{base_system_prompt}\n\n{cached}"
+
+
 def _call_model(
     messages: list[dict],
     *,
@@ -565,10 +594,11 @@ def _run_quick(execution: SkillExecution, documents: QuerySet[Document]) -> None
     is_table = execution.output_mode == ExecutionOutputMode.TABLE
     table_schema = execution.metadata.get("table_schema") or {}
 
+    base_system_prompt = _with_operation_context(skill.system_prompt, execution)
     system_prompt = (
-        build_table_system_prompt(skill.system_prompt, table_schema)
+        build_table_system_prompt(base_system_prompt, table_schema)
         if is_table
-        else skill.system_prompt
+        else base_system_prompt
     )
     messages = [
         {"role": "system", "content": system_prompt},
@@ -756,7 +786,7 @@ def _run_skill_ref_step(
         prompt = f"{prompt}\n\n## Secciones previas del documento:\n{prior}"
 
     messages = [
-        {"role": "system", "content": linked.system_prompt},
+        {"role": "system", "content": _with_operation_context(linked.system_prompt, execution)},
         {"role": "user", "content": prompt},
     ]
     tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
@@ -944,10 +974,14 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 lines.append(f"\n{COPILOT_DELIVERABLE_STANDARD}")
 
             prompt = "\n".join(lines)
+            # El contexto de la operación va en el system prompt, no en el
+            # prompt del paso: así es idéntico para todos los pasos del
+            # workflow y queda como prefijo estable de la corrida.
+            step_system_prompt = _with_operation_context(skill.system_prompt, execution)
             system_prompt = (
-                build_table_system_prompt(skill.system_prompt, step_table_schema)
+                build_table_system_prompt(step_system_prompt, step_table_schema)
                 if is_table_step
-                else skill.system_prompt
+                else step_system_prompt
             )
             messages = [
                 {"role": "system", "content": system_prompt},
