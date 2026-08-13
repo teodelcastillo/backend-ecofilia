@@ -58,6 +58,18 @@ class Organization(models.Model):
             "restricted org. Ignored when restricted=False."
         ),
     )
+    default_project_skills = models.ManyToManyField(
+        "skill.Skill",
+        blank=True,
+        related_name="default_for_organizations",
+        help_text=_(
+            "Skills every NEW project of this org starts with. Distinct from "
+            "enabled_skills, which only controls visibility: a restricted org "
+            "may see several agents but have only one attached by default. "
+            "Members of restricted orgs cannot assign skills themselves, so "
+            "without this their projects would be born with an empty workspace."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

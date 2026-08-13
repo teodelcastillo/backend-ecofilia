@@ -23,6 +23,19 @@ from apps.skill.models import Skill
 User = get_user_model()
 
 
+def _default_skills_for(user) -> list:
+    """Skills a new project inherits from its owner's organization.
+
+    Members of restricted orgs (CAF) have no UI to attach an agent to an
+    operation, so a project created without an explicit skill list would be
+    born with an empty workspace and no way out of it from the portal.
+    """
+    org = getattr(user, "organization", None)
+    if org is None:
+        return []
+    return list(org.default_project_skills.all())
+
+
 class ProjectDocumentSerializer(serializers.ModelSerializer):
     slug = serializers.CharField(source="document.slug", read_only=True)
     name = serializers.CharField(source="document.name", read_only=True)
@@ -210,12 +223,19 @@ class ProjectWriteSerializer(ProjectSerializer):
 
     def create(self, validated_data):
         document_slugs = validated_data.pop("document_slugs", [])
+        # Absent vs. explicitly empty are different intents: an omitted key
+        # means "give me the org defaults", `[]` means "no agents".
+        sent_skills = "enabled_skill_slugs" in validated_data
         validated_data.pop("enabled_skill_slugs", None)
         blueprint_slug = validated_data.pop("blueprint_document_slug", None)
         project = Project.objects.create(**validated_data)
         self._sync_documents(project, document_slugs)
         self._sync_blueprint(project, blueprint_slug)
-        project.enabled_skills.set(self.context.get("validated_enabled_skills", []))
+        project.enabled_skills.set(
+            self.context.get("validated_enabled_skills", [])
+            if sent_skills
+            else _default_skills_for(project.owner)
+        )
         return project
 
     def update(self, instance, validated_data):

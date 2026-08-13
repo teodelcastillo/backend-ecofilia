@@ -11,7 +11,7 @@ class OrganizationAdmin(admin.ModelAdmin):
     list_filter = ("restricted",)
     search_fields = ("name", "slug")
     prepopulated_fields = {"slug": ("name",)}
-    filter_horizontal = ("enabled_skills",)
+    filter_horizontal = ("enabled_skills", "default_project_skills")
 
     def member_count(self, obj):
         return obj.members.count()
