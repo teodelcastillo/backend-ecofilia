@@ -25,8 +25,8 @@ Correctness notes for the Anthropic Messages API (vs OpenAI chat):
 - ``system`` is a top-level parameter, not a role inside ``messages``. We lift
   every ``system`` message out and concatenate them.
 - ``max_tokens`` is **required** — we default it when the caller passes None.
-- ``temperature`` is **removed** on Opus 4.x / Fable (400 if sent); we only send
-  it for models that still accept it (Sonnet / Haiku).
+- ``temperature`` is **removed** on the current model generation (400 if
+  sent) — confirmed for Opus 5 and Sonnet 5, so we never send it.
 - Prompt caching: a ``cache_control`` breakpoint is placed on the system block
   so the (large, reused) RAG context prefix is cached across a session's turns.
 
@@ -147,9 +147,15 @@ def _anthropic_client():
 
 
 def _model_accepts_temperature(model: str) -> bool:
-    """Opus 4.x and Fable reject temperature (400). Sonnet/Haiku still accept it."""
-    m = (model or "").lower()
-    return not ("opus" in m or "fable" in m)
+    """Whether ``temperature`` can be sent to this model.
+
+    Confirmed in prod (2026-08-13) that claude-sonnet-5 also rejects it —
+    ``400 'temperature' is deprecated for this model`` — not just Opus/Fable
+    as originally assumed. The whole current generation (Haiku 4.5, Sonnet 5,
+    Opus 5) has dropped it, so until Anthropic reintroduces it for some tier,
+    never send it rather than trying to keep an allow/deny list in sync.
+    """
+    return False
 
 
 def _thinking_enabled() -> bool:
