@@ -16,6 +16,7 @@ from apps.skill.models import (
     SkillParameterType,
     SkillStep,
     SkillStepType,
+    SkillTier,
     SkillType,
 )
 from apps.skill.table_schema import (
@@ -130,6 +131,7 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "instructions",
             "position",
             "step_type",
+            "tier",
             "linked_skill_slug",
             "linked_skill_name",
             "document_slugs",
@@ -149,7 +151,7 @@ class SkillSerializer(serializers.ModelSerializer):
         fields = (
             "id", "slug", "name", "description", "skill_type",
             "allowed_contexts", "system_prompt", "prompt_template",
-            "model", "temperature",
+            "tier", "model", "temperature",
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
@@ -180,6 +182,13 @@ class SkillStepWriteSerializer(serializers.Serializer):
         choices=SkillStepType.choices,
         required=False,
         default=SkillStepType.INSTRUCTION,
+    )
+    tier = serializers.ChoiceField(
+        choices=SkillTier.choices,
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text="Vacío hereda el tier del workflow.",
     )
     linked_skill_slug = serializers.SlugField(
         required=False, allow_null=True, allow_blank=True, default=None,
@@ -253,7 +262,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         fields = (
             "name", "description", "skill_type",
             "allowed_contexts", "system_prompt", "prompt_template",
-            "model", "temperature",
+            "tier", "model", "temperature",
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",

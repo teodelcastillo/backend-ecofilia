@@ -26,6 +26,22 @@ class SkillContext(models.TextChoices):
     ANY = "any", _("Any")
 
 
+class SkillTier(models.TextChoices):
+    """
+    Capacidad pedida, no un modelo concreto.
+
+    Guardar un id de modelo en la base envejece mal: el workflow del IET quedó
+    con `gpt-4o-mini` congelado desde su migración y nadie se enteró hasta que
+    se auditó por qué las corridas variaban. El tier evita repetirlo — el autor
+    elige cuánta capacidad necesita el paso y el modelo concreto lo resuelve
+    `LLM_MODEL_FAST` / `_BALANCED` / `_DEEP` en tiempo de request, así que una
+    generación nueva de modelos se adopta cambiando una variable de entorno.
+    """
+    FAST = "fast", _("Rápido")
+    BALANCED = "balanced", _("Equilibrado")
+    DEEP = "deep", _("Profundo")
+
+
 class ExecutionStatus(models.TextChoices):
     PENDING = "pending", _("Pending")
     RUNNING = "running", _("Running")
@@ -85,6 +101,18 @@ class Skill(models.Model):
             "and {{extra_instructions}} for optional user instructions."
         ),
     )
+    tier = models.CharField(
+        max_length=20,
+        choices=SkillTier.choices,
+        default=SkillTier.BALANCED,
+        help_text=(
+            "Capacidad por defecto de la skill. Cada paso puede pedir otra. "
+            "El equilibrado alcanza para redacción muy instruida sobre "
+            "evidencia acotada; el profundo es para síntesis y juicio."
+        ),
+    )
+    # Precede al tier sólo si guarda un id de Claude explícito: es la escotilla
+    # de escape para fijar un modelo puntual, no el control primario.
     model = models.CharField(max_length=100, default=DEFAULT_MODEL)
     temperature = models.FloatField(default=0.3)
     comparative_mode_enabled = models.BooleanField(
@@ -328,6 +356,18 @@ class SkillStep(models.Model):
         help_text=(
             "Optional subset of document slugs this step runs against. "
             "Empty = all documents in the execution context."
+        ),
+    )
+    tier = models.CharField(
+        max_length=20,
+        choices=SkillTier.choices,
+        blank=True,
+        default="",
+        help_text=(
+            "Capacidad para este paso. Vacío = la del workflow. Los pasos de un "
+            "mismo informe no son homogéneos: describir un marco de políticas a "
+            "partir de documentos no pide lo mismo que integrar criterios en una "
+            "determinación."
         ),
     )
     output_mode = models.CharField(

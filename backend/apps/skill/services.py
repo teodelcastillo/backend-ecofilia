@@ -22,7 +22,6 @@ from apps.document.models import Document, SmartChunk
 from apps.document.utils.client_openia import generate_chat_completion, generate_with_tools
 from apps.document.utils.llm import (
     ROLE_BALANCED,
-    ROLE_DEEP,
     effective_chat_model,
     tool_capable_model,
 )
@@ -33,6 +32,7 @@ from apps.skill.models import (
     SkillExecution,
     SkillStep,
     SkillStepType,
+    SkillTier,
     SkillType,
 )
 from apps.skill.table_schema import schema_has_columns
@@ -176,6 +176,7 @@ def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
     vez de atribuirle la diferencia al modelo.
     """
     payload = {
+        "tier": skill.tier,
         "system_prompt": skill.system_prompt,
         "prompt_template": skill.prompt_template,
         "temperature": skill.temperature,
@@ -194,6 +195,7 @@ def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
         "steps": [
             {
                 "position": step.position,
+                "tier": step.tier,
                 "title": step.title,
                 "instructions": step.instructions,
                 "step_type": step.step_type,
@@ -258,6 +260,7 @@ def build_run_manifest(execution: SkillExecution, steps: List[SkillStep]) -> dic
         "skill": {
             "slug": skill.slug,
             "type": skill.skill_type,
+            "tier": skill.tier,
             "model_configured": skill.model,
             "temperature": skill.temperature,
         },
@@ -553,10 +556,29 @@ def _with_operation_context(base_system_prompt: str, execution: SkillExecution) 
     return f"{base_system_prompt}\n\n{cached}"
 
 
+def resolve_tier(skill, step: SkillStep | None = None) -> str:
+    """
+    Capacidad efectiva: la del paso si la declara, si no la del workflow.
+
+    Los pasos de un mismo informe no piden lo mismo. Describir el marco de
+    políticas de un país a partir de sus documentos es extracción; integrar
+    tres criterios técnicos en una determinación es juicio. Que el tier sea
+    por paso permite pagar capacidad donde hace falta en vez de elegir un
+    modelo para el peor caso y correr los diecisiete ahí.
+
+    Los valores de ``SkillTier`` coinciden a propósito con los roles de
+    ``apps.document.utils.llm``, así que esto se pasa tal cual como ``role``.
+    """
+    if step is not None and step.tier:
+        return step.tier
+    return skill.tier or SkillTier.BALANCED
+
+
 def _call_model(
     messages: list[dict],
     *,
     skill,
+    tier: str,
     tool_ctx=None,
 ) -> tuple[str, dict, str]:
     """
@@ -569,10 +591,7 @@ def _call_model(
     resuelve el provider en tiempo de request. Una ejecución que no registre
     esto no permite distinguir después en qué modelo corrió.
     """
-    # Un workflow encadena pasos que razonan sobre documentos largos y se
-    # apoyan en las salidas anteriores: eso es exactamente lo que describe el
-    # tier DEEP. Las skills de un solo paso siguen en el tier balanceado.
-    role = ROLE_DEEP if skill.skill_type == SkillType.COPILOT else ROLE_BALANCED
+    role = tier or ROLE_BALANCED
 
     if skill.tools_enabled and tool_ctx is not None:
         from apps.skill.tools import ALL_TOOLS, execute_tool
@@ -787,7 +806,10 @@ def _run_quick(execution: SkillExecution, documents: QuerySet[Document]) -> None
     ]
 
     tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=documents)
-    output_text, usage, model_used = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
+    tier_used = resolve_tier(skill)
+    output_text, usage, model_used = _call_model(
+        messages, skill=skill, tier=tier_used, tool_ctx=tool_ctx
+    )
     all_chunks = final_chunks + tool_ctx.additional_chunks
 
     if is_table:
@@ -970,7 +992,10 @@ def _run_skill_ref_step(
         {"role": "user", "content": prompt},
     ]
     tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-    content, usage, model_used = _call_model(messages, skill=linked, tool_ctx=tool_ctx)
+    tier_used = resolve_tier(linked, step)
+    content, usage, model_used = _call_model(
+        messages, skill=linked, tier=tier_used, tool_ctx=tool_ctx
+    )
     chunks = final_chunks + tool_ctx.additional_chunks
 
     step_entry = {
@@ -981,6 +1006,7 @@ def _run_skill_ref_step(
         "via_skill": linked.slug,
         "via_skill_name": linked.name,
         "model": model_used,
+        "tier": tier_used,
         "sources": _chunks_to_sources(chunks),
     }
     previous_outputs.append(f"### {step.title}\n{content}")
@@ -1170,7 +1196,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             ]
 
             tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-            content, usage, model_used = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
+            tier_used = resolve_tier(skill, step)
+            content, usage, model_used = _call_model(
+                messages, skill=skill, tier=tier_used, tool_ctx=tool_ctx
+            )
             all_step_chunks.extend(tool_ctx.additional_chunks)
 
             step_entry: dict = {
@@ -1178,6 +1207,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "title": step.title,
                 "output_mode": step_output_mode,
                 "model": model_used,
+                "tier": tier_used,
                 "sources": _chunks_to_sources(chunks + tool_ctx.additional_chunks),
             }
             if is_table_step:
