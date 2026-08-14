@@ -22,20 +22,44 @@ SQS_REGION = os.environ.get("SQS_REGION", "us-east-2")
 if not SQS_QUEUE_URL:
     raise RuntimeError("SQS_QUEUE_URL environment variable is not set")
 
+# Cola dedicada al trabajo interactivo (skills, workflows, evaluaciones).
+#
+# Sin esta separación todo comparte una sola cola y los mismos slots del worker,
+# así que una ingesta de documentos —que puede ocupar un slot 90 minutos— deja a
+# un workflow esperando en "pendiente" con una persona mirando la pantalla. SQS
+# no tiene prioridades: la única forma de que el lote no mate de hambre a lo
+# interactivo es que vayan por colas distintas, con workers distintos.
+INTERACTIVE_SQS_QUEUE_URL = os.environ.get("INTERACTIVE_SQS_QUEUE_URL")
+
+CELERY_TASK_DEFAULT_QUEUE = "celery"
+CELERY_TASK_INTERACTIVE_QUEUE = "interactive"
+
+_predefined_queues = {
+    "celery": {  # name must match CELERY_TASK_DEFAULT_QUEUE
+        "url": SQS_QUEUE_URL
+    }
+}
+
+# El transporte SQS exige que toda cola usada esté declarada acá; si la cola
+# interactiva todavía no existe, el ruteo no se aplica y todo sigue yendo a la
+# cola por defecto — degradación limpia en vez de tareas que se pierden.
+if INTERACTIVE_SQS_QUEUE_URL:
+    _predefined_queues[CELERY_TASK_INTERACTIVE_QUEUE] = {
+        "url": INTERACTIVE_SQS_QUEUE_URL
+    }
+    CELERY_TASK_ROUTES = {
+        "skill.run": {"queue": CELERY_TASK_INTERACTIVE_QUEUE},
+        "evaluation.run": {"queue": CELERY_TASK_INTERACTIVE_QUEUE},
+        "evaluation.asg_run": {"queue": CELERY_TASK_INTERACTIVE_QUEUE},
+    }
+
 CELERY_BROKER_TRANSPORT_OPTIONS = {
     "region": SQS_REGION,
     "wait_time_seconds": 20,      # long polling
     "visibility_timeout": 3600,   # >= max task runtime
-    "predefined_queues": {
-        "celery": {  # name must match CELERY_TASK_DEFAULT_QUEUE
-            "url": SQS_QUEUE_URL
-        }
-    },
+    "predefined_queues": _predefined_queues,
     "queue_name_prefix": ""       # keep names exact
 }
-
-# Default queue name
-CELERY_TASK_DEFAULT_QUEUE = "celery"
 
 # Reliability settings for SQS
 CELERY_TASK_ACKS_LATE = True

@@ -19,8 +19,21 @@ Stack: Django · DRF · SimpleJWT · Celery · PostgreSQL + pgvector · Docker �
 | Servicio | Task Definition | Función |
 |---|---|---|
 | `ecofilia-api` | `ecofilia-api` | Django/Gunicorn — API REST |
-| `ecofilia-worker` | `ecofilia-worker` | Celery worker (procesa docs, evaluaciones) |
+| `ecofilia-worker` | `ecofilia-worker` | Celery worker — cola `celery`: ingesta de documentos |
+| `ecofilia-worker-interactive` | `ecofilia-worker-interactive` | Celery worker — cola `interactive`: skills, workflows, evaluaciones |
 | `ecofilia-beat` | `ecofilia-beat` | Celery beat scheduler |
+
+### Por qué dos workers
+
+Con una sola cola, una ingesta de documentos puede ocupar un slot 90 minutos y
+dejar un workflow en `pending` con una persona esperando frente a la pantalla.
+SQS **no tiene prioridades**, así que la única forma de que el trabajo por lotes
+no mate de hambre al interactivo es separar colas y workers.
+
+El ruteo vive en `main/settings/prod.py` (`CELERY_TASK_ROUTES`): `skill.run`,
+`evaluation.run` y `evaluation.asg_run` van a `interactive`; todo lo demás a
+`celery`. Si `INTERACTIVE_SQS_QUEUE_URL` no está seteada el ruteo no se aplica y
+todo vuelve a la cola por defecto, sin perder tareas.
 
 - Imagen Docker: `028780196116.dkr.ecr.us-east-2.amazonaws.com/ecofilia-api:<git-sha>`
 - Subnets ECS (privadas, sin IP pública): `subnet-0eeb7c030c003896d`, `subnet-084c6ea560cf05512`, `subnet-0bf0864eb1124711d`
