@@ -80,6 +80,24 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
+      # Worker dedicado a skills, workflows y evaluaciones (cola `interactive`).
+      # Existe para que la ingesta de documentos no le ocupe los slots.
+      - name: Update Interactive Worker task definition
+        id: interactive-task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-arn: arn:aws:ecs:us-east-2:028780196116:task-definition/ecofilia-worker-interactive
+          container-name: worker
+          image: ${{ steps.build.outputs.image }}
+
+      - name: Deploy Interactive Worker service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.interactive-task.outputs.task-definition }}
+          service: ecofilia-worker-interactive
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+
       - name: Update Beat task definition
         id: beat-task
         uses: aws-actions/amazon-ecs-render-task-definition@v1
