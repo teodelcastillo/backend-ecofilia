@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 from typing import List
 
-from django.db.models import QuerySet
+from django.db.models import Count, Max, QuerySet
 from django.utils import timezone
 
 from apps.chat.services.rag import (
@@ -132,10 +133,168 @@ def resolve_documents(execution: SkillExecution) -> QuerySet[Document]:
 
 
 def build_document_snapshot(documents: QuerySet[Document]) -> list:
-    return [
-        {"id": d.id, "slug": d.slug, "name": d.name}
-        for d in documents.only("id", "slug", "name")
-    ]
+    """
+    Identidad y huella de cada documento del alcance de la corrida.
+
+    Además del identificador va una huella del texto indexado
+    (``chunk_count`` + ``last_chunk_id``), que cambia en cuanto el documento se
+    reprocesa. Sin ella, dos corridas "sobre los mismos documentos" pueden en
+    realidad haber leído textos distintos y no habría manera de detectarlo al
+    comparar los resultados.
+
+    Ordenado por id para que el snapshot de dos corridas sea comparable
+    directamente, sin depender del orden en que la base devuelva las filas.
+    """
+    rows = (
+        documents.annotate(
+            chunk_count=Count("chunks"),
+            last_chunk_id=Max("chunks__id"),
+        )
+        .values(
+            "id", "slug", "name", "chunking_status",
+            "page_count", "chunk_count", "last_chunk_id",
+        )
+        .order_by("id")
+    )
+    return [dict(row) for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# Manifiesto de corrida
+# ---------------------------------------------------------------------------
+
+RUN_MANIFEST_SCHEMA = 1
+
+
+def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
+    """
+    Huella de la definición del workflow tal como se ejecutó.
+
+    Dos corridas solo son comparables si corrieron la misma definición. Como
+    todavía no hay versionado de skills, esta huella es lo que permite darse
+    cuenta de que alguien editó un paso entre una corrida y la siguiente, en
+    vez de atribuirle la diferencia al modelo.
+    """
+    payload = {
+        "system_prompt": skill.system_prompt,
+        "prompt_template": skill.prompt_template,
+        "temperature": skill.temperature,
+        "comparative_mode_enabled": skill.comparative_mode_enabled,
+        "strict_missing_evidence": skill.strict_missing_evidence,
+        "research_phase_enabled": skill.research_phase_enabled,
+        "research_queries": list(skill.research_queries or []),
+        "tools_enabled": skill.tools_enabled,
+        "retrieval": {
+            "strategy": skill.retrieval_strategy,
+            "query_template": skill.retrieval_query_template,
+            "k_per_doc": skill.k_per_doc,
+            "total_limit": skill.total_limit,
+            "max_per_doc_after_rerank": skill.max_per_doc_after_rerank,
+        },
+        "steps": [
+            {
+                "position": step.position,
+                "title": step.title,
+                "instructions": step.instructions,
+                "step_type": step.step_type,
+                "linked_skill_id": step.linked_skill_id,
+                "document_slugs": list(step.document_slugs or []),
+                "output_mode": step.output_mode,
+                "table_schema": step.table_schema or {},
+                "approval_required": step.approval_required,
+            }
+            for step in steps
+        ],
+    }
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _retrieval_runtime_config() -> dict:
+    """
+    Los flags que deciden *qué fragmentos ve el modelo*, tal como estaban.
+
+    Se leen de los módulos que realmente los aplican, no se reimplementan acá:
+    un default que se desincronice haría que el manifiesto mienta justo sobre
+    lo que se quiere auditar.
+    """
+    from apps.chat.services import rag as rag_module
+    from apps.chat.services.context_builder import is_mmr_enabled
+    from apps.chat.services.query_analysis import (
+        is_llm_router_enabled,
+        is_query_expansion_enabled,
+    )
+    from apps.chat.services.reranker import is_reranker_enabled
+
+    return {
+        "llm_router_enabled": is_llm_router_enabled(),
+        "query_expansion_enabled": is_query_expansion_enabled(),
+        "reranker_enabled": is_reranker_enabled(),
+        "rerank_pool": rag_module.RAG_RERANK_POOL,
+        "min_similarity": rag_module.RAG_MIN_SIMILARITY,
+        "recall_mode": rag_module.RAG_RECALL_MODE,
+        "parent_expansion": rag_module.RAG_PARENT_EXPANSION,
+        "parent_window": rag_module.RAG_PARENT_WINDOW,
+        "mmr_enabled": is_mmr_enabled(),
+        "copilot_step_chunks": COPILOT_STEP_CHUNKS,
+        "default_chunks": DEFAULT_CHUNKS,
+    }
+
+
+def build_run_manifest(execution: SkillExecution, steps: List[SkillStep]) -> dict:
+    """
+    Todo lo que hace falta para afirmar que dos corridas tuvieron el mismo input.
+
+    Deliberadamente **no** incluye los documentos: esos viven en
+    ``execution.document_snapshot``, que es un campo de primera clase del
+    modelo y ya lleva la huella de cada uno. Duplicarlos acá solo abriría la
+    puerta a que las dos copias se contradigan.
+    """
+    metadata = execution.metadata or {}
+    skill = execution.skill
+    return {
+        "schema": RUN_MANIFEST_SCHEMA,
+        "provider": os.environ.get("LLM_PROVIDER", "openai").strip().lower(),
+        "skill": {
+            "slug": skill.slug,
+            "type": skill.skill_type,
+            "model_configured": skill.model,
+            "temperature": skill.temperature,
+        },
+        "definition_fingerprint": _definition_fingerprint(skill, steps),
+        "retrieval": _retrieval_runtime_config(),
+        "scope": {
+            "document_slugs_filter": list(metadata.get("document_slugs_filter") or []),
+            "step_document_overrides": dict(metadata.get("step_document_overrides") or {}),
+            "pinned_document_slugs": list(skill.pinned_document_slugs or []),
+        },
+        "input_values": dict(execution.input_values or {}),
+        "extra_instructions": execution.extra_instructions or "",
+    }
+
+
+def _preserved_metadata(execution: SkillExecution, *, models_used) -> dict:
+    """
+    Claves de ``metadata`` que tienen que sobrevivir a la escritura final.
+
+    Los runners rearman ``metadata`` desde cero al terminar. Sin esto se
+    perdían el alcance documental que eligió el usuario al lanzar y el
+    manifiesto de la corrida — es decir, exactamente lo que después hace falta
+    para saber sobre qué se corrió. Una ejecución completada quedaba sin
+    registro de su propio input.
+    """
+    metadata = execution.metadata or {}
+    manifest = dict(metadata.get("run_manifest") or {})
+    if manifest:
+        manifest["models_used"] = sorted({m for m in models_used if m})
+    return {
+        "run_manifest": manifest,
+        "document_slugs_filter": list(metadata.get("document_slugs_filter") or []),
+        "step_document_overrides": dict(metadata.get("step_document_overrides") or {}),
+        "review_each_step": bool(metadata.get("review_each_step")),
+        "table_columns": metadata.get("table_columns", []),
+        "table_schema": metadata.get("table_schema", {}),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -399,10 +558,16 @@ def _call_model(
     *,
     skill,
     tool_ctx=None,
-) -> tuple[str, dict]:
+) -> tuple[str, dict, str]:
     """
     Dispatch to generate_with_tools or generate_chat_completion depending on
     whether the skill has tools_enabled and a valid tool context is provided.
+
+    Devuelve ``(texto, usage, modelo)``. El modelo se devuelve —en vez de
+    recalcularlo en el llamador— porque es el único punto donde se sabe cuál
+    se usó de verdad: ``skill.model`` es solo el valor de partida y el tier lo
+    resuelve el provider en tiempo de request. Una ejecución que no registre
+    esto no permite distinguir después en qué modelo corrió.
     """
     # Un workflow encadena pasos que razonan sobre documentos largos y se
     # apoyan en las salidas anteriores: eso es exactamente lo que describe el
@@ -415,18 +580,23 @@ def _call_model(
         def _executor(name: str, args_json: str) -> str:
             return execute_tool(name, args_json, tool_ctx)
 
-        return generate_with_tools(
+        model = tool_capable_model(skill.model, role)
+        text, usage = generate_with_tools(
             messages,
             tools=ALL_TOOLS,
             tool_executor=_executor,
-            model=tool_capable_model(skill.model, role),
+            model=model,
             temperature=skill.temperature,
         )
-    return generate_chat_completion(
+        return text, usage, model
+
+    model = effective_chat_model(skill.model, role)
+    text, usage = generate_chat_completion(
         messages,
-        model=effective_chat_model(skill.model, role),
+        model=model,
         temperature=skill.temperature,
     )
+    return text, usage, model
 
 
 # ---------------------------------------------------------------------------
@@ -617,7 +787,7 @@ def _run_quick(execution: SkillExecution, documents: QuerySet[Document]) -> None
     ]
 
     tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=documents)
-    output_text, usage = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
+    output_text, usage, model_used = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
     all_chunks = final_chunks + tool_ctx.additional_chunks
 
     if is_table:
@@ -648,8 +818,7 @@ def _run_quick(execution: SkillExecution, documents: QuerySet[Document]) -> None
             }
             for c in all_chunks
         ],
-        "table_columns": execution.metadata.get("table_columns", []),
-        "table_schema": execution.metadata.get("table_schema", {}),
+        **_preserved_metadata(execution, models_used={model_used}),
     }
 
 
@@ -801,7 +970,7 @@ def _run_skill_ref_step(
         {"role": "user", "content": prompt},
     ]
     tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-    content, usage = _call_model(messages, skill=linked, tool_ctx=tool_ctx)
+    content, usage, model_used = _call_model(messages, skill=linked, tool_ctx=tool_ctx)
     chunks = final_chunks + tool_ctx.additional_chunks
 
     step_entry = {
@@ -811,6 +980,7 @@ def _run_skill_ref_step(
         "content": content,
         "via_skill": linked.slug,
         "via_skill_name": linked.name,
+        "model": model_used,
         "sources": _chunks_to_sources(chunks),
     }
     previous_outputs.append(f"### {step.title}\n{content}")
@@ -1000,13 +1170,14 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             ]
 
             tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-            content, usage = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
+            content, usage, model_used = _call_model(messages, skill=skill, tool_ctx=tool_ctx)
             all_step_chunks.extend(tool_ctx.additional_chunks)
 
             step_entry: dict = {
                 "step_id": step.id,
                 "title": step.title,
                 "output_mode": step_output_mode,
+                "model": model_used,
                 "sources": _chunks_to_sources(chunks + tool_ctx.additional_chunks),
             }
             if is_table_step:
@@ -1071,17 +1242,20 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 continue
             seen_sources.add(key)
             global_sources.append(src)
+    # Los modelos salen de `step_results` y no de una variable local porque en
+    # una corrida reanudada los pasos previos los ejecutó otro segmento: la
+    # variable local solo conoce el último tramo, el registro por paso conoce
+    # la corrida entera.
+    models_used = {entry.get("model") for entry in step_results}
     execution.metadata = {
         "usage": total_usage,
         "research_phase_enabled": skill.research_phase_enabled,
         "comparative_mode_enabled": skill.comparative_mode_enabled,
         "strict_missing_evidence": skill.strict_missing_evidence,
         "retrieval_strategy_used": effective_retrieval_strategy,
-        "review_each_step": review_each_step,
         **source_stats,
         "sources": global_sources,
-        "table_columns": execution.metadata.get("table_columns", []),
-        "table_schema": execution.metadata.get("table_schema", {}),
+        **_preserved_metadata(execution, models_used=models_used),
     }
 
 
@@ -1128,7 +1302,27 @@ class SkillRunner:
         execution.started_at = timezone.now()
         execution.document_snapshot = build_document_snapshot(documents)
         execution.error_message = ""
-        execution.save(update_fields=["status", "started_at", "document_snapshot", "error_message"])
+
+        # El manifiesto se arma una sola vez, en el primer tramo. Una corrida
+        # reanudada tras una aprobación no lo reescribe: lo que se quiere
+        # registrar es el input con el que empezó. Si mientras tanto alguien
+        # editó la definición, eso se anota en vez de pisarse en silencio —
+        # es justo la diferencia que después explicaría dos salidas distintas.
+        metadata = execution.metadata or {}
+        steps = list(execution.skill.steps.all())
+        manifest = build_run_manifest(execution, steps)
+        existing = metadata.get("run_manifest") or {}
+        if existing:
+            if existing.get("definition_fingerprint") != manifest["definition_fingerprint"]:
+                existing["definition_changed_during_run"] = True
+                metadata["run_manifest"] = existing
+        else:
+            metadata["run_manifest"] = manifest
+        execution.metadata = metadata
+
+        execution.save(update_fields=[
+            "status", "started_at", "document_snapshot", "error_message", "metadata",
+        ])
 
         try:
             if execution.skill.skill_type == SkillType.QUICK:

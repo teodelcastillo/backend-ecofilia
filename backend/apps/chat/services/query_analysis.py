@@ -343,8 +343,27 @@ _LLM_ROUTER_SYSTEM_PROMPT = (
 )
 
 
-def _llm_router_enabled() -> bool:
+def is_llm_router_enabled() -> bool:
+    """
+    ¿El router LLM está activo?
+
+    Público a propósito: el manifiesto de corrida
+    (``apps.skill.services``) necesita registrar el valor efectivo, y leerlo de
+    acá evita que un default reimplementado se desincronice y haga que el
+    manifiesto mienta sobre la corrida que dice describir.
+    """
     return os.environ.get("RAG_LLM_ROUTER_ENABLED", "1").lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+# Alias interno histórico; el resto del módulo lo usa con este nombre.
+_llm_router_enabled = is_llm_router_enabled
+
+
+def is_query_expansion_enabled() -> bool:
+    """¿La expansión de sub-consultas por LLM está activa? Ver nota en ``is_llm_router_enabled``."""
+    return os.environ.get("RAG_QUERY_EXPANSION_ENABLED", "0").lower() in (
         "1", "true", "yes", "on",
     )
 
@@ -564,10 +583,7 @@ def expand_query_with_llm(
     Use an LLM to produce focused sub-queries for broad questions.
     Disabled by default; opt-in via RAG_QUERY_EXPANSION_ENABLED=1.
     """
-    enabled = os.environ.get("RAG_QUERY_EXPANSION_ENABLED", "0").lower() in (
-        "1", "true", "yes", "on",
-    )
-    if not enabled or not analysis.is_general:
+    if not is_query_expansion_enabled() or not analysis.is_general:
         return []
     try:
         from apps.document.utils.client_openia import generate_chat_completion
