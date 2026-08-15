@@ -315,6 +315,20 @@ class SkillStepType(models.TextChoices):
     SKILL_REF = "skill_ref", _("Run existing skill")
 
 
+class StepEvidenceMode(models.TextChoices):
+    """
+    De dónde saca su material un paso.
+
+    No todos los pasos de un informe leen documentos. Los que integran —"indicá
+    la determinación a partir de los tres criterios anteriores"— trabajan sobre
+    lo ya redactado, y darles evidencia documental además de sobrar los expone a
+    citar documentos que no corresponden a esa sección.
+    """
+    DOCUMENTS = "documents", _("Solo documentos")
+    PREVIOUS = "previous_steps", _("Solo pasos previos")
+    BOTH = "both", _("Documentos y pasos previos")
+
+
 class SkillStep(models.Model):
     skill = models.ForeignKey(Skill, related_name="steps", on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
@@ -368,6 +382,16 @@ class SkillStep(models.Model):
             "mismo informe no son homogéneos: describir un marco de políticas a "
             "partir de documentos no pide lo mismo que integrar criterios en una "
             "determinación."
+        ),
+    )
+    evidence_mode = models.CharField(
+        max_length=20,
+        choices=StepEvidenceMode.choices,
+        default=StepEvidenceMode.BOTH,
+        help_text=(
+            "Con qué material trabaja el paso. Los pasos que integran resultados "
+            "anteriores no deberían recibir documentos: no los necesitan y es una "
+            "vía por la que terminan citando fuentes ajenas a su sección."
         ),
     )
     output_mode = models.CharField(

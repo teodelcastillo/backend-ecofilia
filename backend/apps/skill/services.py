@@ -34,6 +34,7 @@ from apps.skill.models import (
     SkillStepType,
     SkillTier,
     SkillType,
+    StepEvidenceMode,
 )
 from apps.skill.table_schema import schema_has_columns
 
@@ -54,6 +55,22 @@ DEFAULT_CHUNKS = int(os.environ.get("SKILL_CONTEXT_CHUNKS", "6"))
 # complete, professional deliverables. Kept separate from DEFAULT_CHUNKS so
 # synchronous quick skills are not slowed down.
 COPILOT_STEP_CHUNKS = int(os.environ.get("SKILL_COPILOT_STEP_CHUNKS", "12"))
+
+# Historial: cuántas secciones previas viajan completas y con cuánto presupuesto
+# se compacta el resto. Son variables de entorno y no campos del modelo porque
+# todavía no sabemos el valor correcto: conviene poder ajustarlo sin migrar.
+HISTORY_FULL_STEPS = int(os.environ.get("SKILL_HISTORY_FULL_STEPS", "2"))
+HISTORY_SUMMARY_CHARS = int(os.environ.get("SKILL_HISTORY_SUMMARY_CHARS", "1200"))
+
+# Subconjunto de los diagnósticos de recuperación que se persiste por paso.
+# `retrieve_for_chat` calcula bastante más, pero esto es lo que permite explicar
+# por qué un paso recibió la evidencia que recibió — o por qué no recibió nada.
+RETRIEVAL_DIAGNOSTIC_KEYS = (
+    "retrieval_mode", "retrieval_skipped_reason", "query_type", "coverage_mode",
+    "vector_candidates", "lexical_candidates", "fused_candidates",
+    "final_chunks", "unique_documents", "retrieval_confidence",
+    "max_similarity", "retrieval_timed_out", "coverage_met",
+)
 
 # Maximum chunks assembled from the research phase scratchpad.
 RESEARCH_SCRATCHPAD_MAX_CHUNKS = int(os.environ.get("SKILL_RESEARCH_SCRATCHPAD_CHUNKS", "20"))
@@ -196,6 +213,7 @@ def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
             {
                 "position": step.position,
                 "tier": step.tier,
+                "evidence_mode": step.evidence_mode,
                 "title": step.title,
                 "instructions": step.instructions,
                 "step_type": step.step_type,
@@ -864,19 +882,77 @@ def _resolve_step_output_config(step: SkillStep) -> tuple[str, dict]:
     return output_mode, table_schema
 
 
-def _rebuild_previous_outputs(step_results: list[dict]) -> List[str]:
+def _rebuild_previous_sections(step_results: list[dict]) -> list[tuple[str, str]]:
     """
-    Reconstruct the previous_outputs list from already-completed step entries.
-    Used when resuming a paused execution so context is preserved for later steps.
+    Reconstruye ``(título, cuerpo)`` de los pasos ya completados.
+
+    Se guardan en crudo y se rinden recién al armar el prompt: así el mismo
+    historial puede entrar completo para los pasos recientes y compactado para
+    los viejos, sin tener que reconstruirlo dos veces.
     """
-    previous_outputs: List[str] = []
+    sections: list[tuple[str, str]] = []
     for entry in step_results:
         title = entry.get("title", "")
         if entry.get("output_mode") == ExecutionOutputMode.TABLE and "table" in entry:
-            previous_outputs.append(_table_summary_for_history(title, entry["table"]))
+            sections.append((title, _table_summary_for_history(title, entry["table"])))
         else:
-            previous_outputs.append(f"### {title}\n{entry.get('content', '')}")
-    return previous_outputs
+            sections.append((title, entry.get("content", "")))
+    return sections
+
+
+def _compact_section(title: str, body: str, *, max_chars: int) -> str:
+    """
+    Una sección previa reducida a lo que los pasos siguientes necesitan de ella.
+
+    Conserva el primer párrafo —que enmarca— y todos los últimos que entren en
+    el presupuesto, porque en un entregable de consultoría la determinación vive
+    al final. Lo del medio es desarrollo: si un paso posterior necesita un dato
+    puntual, la fuente son los documentos y no la prosa de otra sección.
+    """
+    body = (body or "").strip()
+    if len(body) <= max_chars:
+        return f"### {title}\n{body}"
+
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    if len(paragraphs) < 2:
+        return f"### {title}\n{body[:max_chars].rstrip()}\n[…]"
+
+    head, rest = paragraphs[0], paragraphs[1:]
+    tail: list[str] = []
+    used = len(head)
+    for paragraph in reversed(rest):
+        if used + len(paragraph) > max_chars:
+            break
+        tail.insert(0, paragraph)
+        used += len(paragraph)
+
+    kept = [head]
+    if len(tail) < len(rest):
+        kept.append("[…]")
+    kept.extend(tail)
+    return f"### {title}\n" + "\n\n".join(kept)
+
+
+def _render_history(
+    sections: list[tuple[str, str]], *, full_steps: int, max_chars: int
+) -> list[str]:
+    """
+    Las secciones previas tal como las ve el paso actual.
+
+    Las últimas ``full_steps`` van completas para que no se corte el hilo
+    narrativo; las anteriores, compactadas. En la corrida 313, con las
+    diecisiete completas, el historial acumulado fue el 56% de los tokens de
+    entrada — más de seis veces lo que ocupó la evidencia documental. Ese
+    presupuesto es el que hace falta para mandar los documentos.
+    """
+    cutoff = len(sections) - max(0, full_steps)
+    rendered: list[str] = []
+    for index, (title, body) in enumerate(sections):
+        if index >= cutoff:
+            rendered.append(f"### {title}\n{body}")
+        else:
+            rendered.append(_compact_section(title, body, max_chars=max_chars))
+    return rendered
 
 
 def _resolve_step_documents(
@@ -918,7 +994,7 @@ def _run_skill_ref_step(
     execution: SkillExecution,
     step: SkillStep,
     step_documents: QuerySet[Document],
-    previous_outputs: List[str],
+    previous_sections: list[tuple[str, str]],
 ) -> tuple[dict, dict, list]:
     """
     Execute a workflow step that delegates to an existing QUICK skill.
@@ -983,8 +1059,11 @@ def _run_skill_ref_step(
 
     # Give the linked skill awareness of the workflow context so its output
     # connects with the sections written before it.
-    if previous_outputs:
-        prior = "\n".join(previous_outputs[-2:])
+    if previous_sections:
+        prior = "\n".join(
+            _render_history(previous_sections[-2:], full_steps=HISTORY_FULL_STEPS,
+                            max_chars=HISTORY_SUMMARY_CHARS)
+        )
         prompt = f"{prompt}\n\n## Secciones previas del documento:\n{prior}"
 
     messages = [
@@ -1009,7 +1088,7 @@ def _run_skill_ref_step(
         "tier": tier_used,
         "sources": _chunks_to_sources(chunks),
     }
-    previous_outputs.append(f"### {step.title}\n{content}")
+    previous_sections.append((step.title, content))
     return step_entry, usage, chunks
 
 
@@ -1036,7 +1115,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
     step_results: list[dict] = list(already_done)
     total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
     # Rebuild conversation context from completed steps so later steps have full history.
-    previous_outputs: List[str] = _rebuild_previous_outputs(already_done)
+    previous_sections: list[tuple[str, str]] = _rebuild_previous_sections(already_done)
     all_step_chunks: list = []
     effective_retrieval_strategy = _resolve_skill_strategy(
         skill,
@@ -1090,7 +1169,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 execution=execution,
                 step=step,
                 step_documents=step_documents,
-                previous_outputs=previous_outputs,
+                previous_sections=previous_sections,
             )
             all_step_chunks.extend(ref_chunks)
             seen_chunk_ids.update(c.id for c in ref_chunks if hasattr(c, "id"))
@@ -1105,27 +1184,43 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 document_id__in=step_doc_ids_local
             ).exclude(embedding__isnull=True)
 
+            # Con qué material trabaja este paso.
+            evidence_mode = step.evidence_mode or StepEvidenceMode.BOTH
+            wants_documents = evidence_mode != StepEvidenceMode.PREVIOUS
+            wants_history = evidence_mode != StepEvidenceMode.DOCUMENTS
+
             # Enrich the query with a brief hint from the most recent step output
             # so the embedding pulls toward the thread of the current section.
-            prev_hint = (previous_outputs[-1] if previous_outputs else "")[:300]
+            prev_hint = (previous_sections[-1][1] if previous_sections else "")[:300]
             query_text = f"{step.title}. {step.instructions}. {prev_hint}".strip()
 
             # Vector + lexical + fusion via the unified engine (Phase 5).
-            try:
-                step_retrieval = retrieve_for_chat(
-                    user=execution.owner,
-                    query_text=query_text,
-                    allowed_documents=step_documents,
-                    top_n=COPILOT_STEP_CHUNKS,
-                    total_limit=skill.total_limit,
-                    max_chunks_per_doc=skill.max_per_doc_after_rerank,
-                    k_per_doc=skill.k_per_doc,
-                    retrieval_strategy=effective_retrieval_strategy,
-                )
-                fused = list(step_retrieval.chunks)
-            except Exception as exc:
-                logger.warning("Step %s retrieval failed: %s", step.id, exc)
+            step_diagnostics: dict = {}
+            if not wants_documents:
                 fused = []
+                step_diagnostics = {"retrieval_skipped_reason": "evidence_mode"}
+            else:
+                try:
+                    step_retrieval = retrieve_for_chat(
+                        user=execution.owner,
+                        query_text=query_text,
+                        allowed_documents=step_documents,
+                        top_n=COPILOT_STEP_CHUNKS,
+                        total_limit=skill.total_limit,
+                        max_chunks_per_doc=skill.max_per_doc_after_rerank,
+                        k_per_doc=skill.k_per_doc,
+                        retrieval_strategy=effective_retrieval_strategy,
+                    )
+                    fused = list(step_retrieval.chunks)
+                    step_diagnostics = {
+                        key: step_retrieval.diagnostics[key]
+                        for key in RETRIEVAL_DIAGNOSTIC_KEYS
+                        if key in step_retrieval.diagnostics
+                    }
+                except Exception as exc:
+                    logger.warning("Step %s retrieval failed: %s", step.id, exc)
+                    fused = []
+                    step_diagnostics = {"retrieval_error": str(exc)[:200]}
 
             # Prioritise chunks not yet seen in earlier steps; fall back to repeats if needed.
             new_chunks = [c for c in fused if c.id not in seen_chunk_ids]
@@ -1160,16 +1255,25 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
 
             if execution.extra_instructions:
                 lines.append(f"\nAdditional instructions from user: {execution.extra_instructions}")
-            if previous_outputs:
-                lines.append("\n## Previous sections already written:")
-                for prev in previous_outputs:
-                    lines.append(prev)
+            if wants_history and previous_sections:
+                lines.append("\n## Secciones previas de este informe:")
+                lines.extend(
+                    _render_history(
+                        previous_sections,
+                        full_steps=HISTORY_FULL_STEPS,
+                        max_chars=HISTORY_SUMMARY_CHARS,
+                    )
+                )
             # Shared research scratchpad (Sprint 2A)
             if shared_scratchpad:
                 lines.append(f"\n## Research scratchpad (broad corpus overview):\n{shared_scratchpad}")
             if context_block:
                 lines.append(f"\n## Document context (targeted for this section):\n{context_block}")
-            else:
+            elif wants_documents:
+                # Sólo se avisa de la ausencia cuando el paso esperaba evidencia.
+                # A un paso que integra resultados anteriores decirle que "no se
+                # encontró contenido documental" lo empuja a declarar una carencia
+                # que no existe.
                 lines.append("\n(No document content found for this section — note this in your output.)")
             if skill.comparative_mode_enabled and not is_table_step:
                 lines.append(
@@ -1208,6 +1312,8 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "output_mode": step_output_mode,
                 "model": model_used,
                 "tier": tier_used,
+                "evidence_mode": evidence_mode,
+                "retrieval": step_diagnostics,
                 "sources": _chunks_to_sources(chunks + tool_ctx.additional_chunks),
             }
             if is_table_step:
@@ -1225,14 +1331,16 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     step_entry["output_mode"] = ExecutionOutputMode.TEXT
                     step_entry["content"] = content
                     step_entry["table_error"] = str(exc)
-                    previous_outputs.append(f"### {step.title}\n{content}")
+                    previous_sections.append((step.title, content))
                 else:
                     step_entry["table"] = table
                     step_entry["content"] = ""
-                    previous_outputs.append(_table_summary_for_history(step.title, table))
+                    previous_sections.append(
+                        (step.title, _table_summary_for_history(step.title, table))
+                    )
             else:
                 step_entry["content"] = content
-                previous_outputs.append(f"### {step.title}\n{content}")
+                previous_sections.append((step.title, content))
 
         step_results.append(step_entry)
 

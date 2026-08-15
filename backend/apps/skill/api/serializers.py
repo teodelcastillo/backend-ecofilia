@@ -17,6 +17,7 @@ from apps.skill.models import (
     SkillStep,
     SkillStepType,
     SkillTier,
+    StepEvidenceMode,
     SkillType,
 )
 from apps.skill.table_schema import (
@@ -132,6 +133,7 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "position",
             "step_type",
             "tier",
+            "evidence_mode",
             "linked_skill_slug",
             "linked_skill_name",
             "document_slugs",
@@ -189,6 +191,12 @@ class SkillStepWriteSerializer(serializers.Serializer):
         allow_blank=True,
         default="",
         help_text="Vacío hereda el tier del workflow.",
+    )
+    evidence_mode = serializers.ChoiceField(
+        choices=StepEvidenceMode.choices,
+        required=False,
+        default=StepEvidenceMode.BOTH,
+        help_text="Con qué material trabaja el paso: documentos, pasos previos, o ambos.",
     )
     linked_skill_slug = serializers.SlugField(
         required=False, allow_null=True, allow_blank=True, default=None,
