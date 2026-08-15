@@ -162,8 +162,18 @@ def _thinking_enabled() -> bool:
     return os.environ.get("LLM_THINKING", "0").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _prompt_caching_enabled() -> bool:
+def is_prompt_caching_enabled() -> bool:
+    """Si se colocan puntos de caché en el pedido.
+
+    Es público porque el motor de workflows también pone uno —sobre el corpus
+    documental, que es el prefijo grande y estable de una corrida— y las dos
+    decisiones tienen que apagarse juntas. Un flag que apaga la mitad de la
+    caché no sirve para diagnosticar nada.
+    """
     return os.environ.get("LLM_PROMPT_CACHING", "1").strip().lower() in ("1", "true", "yes", "on")
+
+
+_prompt_caching_enabled = is_prompt_caching_enabled  # alias interno histórico
 
 
 def _default_max_tokens() -> int:
@@ -271,16 +281,32 @@ def anthropic_chat_completion_stream(
 
 
 def _usage_dict(usage_obj) -> dict:
+    """Consumo de una llamada, con el desglose de caché conservado.
+
+    ``input_tokens`` sigue siendo el total —lo que esperan los llamadores de
+    siempre— pero las dos porciones de caché se devuelven aparte. Sumadas y
+    olvidadas, un corpus de medio millón de tokens leído desde la caché es
+    indistinguible de uno pagado entero, y esa es justamente la diferencia
+    entre que una corrida cueste cinco dólares o treinta.
+    """
     if usage_obj is None:
-        return {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
-    in_tok = (getattr(usage_obj, "input_tokens", 0) or 0)
-    in_tok += (getattr(usage_obj, "cache_read_input_tokens", 0) or 0)
-    in_tok += (getattr(usage_obj, "cache_creation_input_tokens", 0) or 0)
+        return {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "cache_creation_input_tokens": 0,
+        }
+    cache_read = getattr(usage_obj, "cache_read_input_tokens", 0) or 0
+    cache_write = getattr(usage_obj, "cache_creation_input_tokens", 0) or 0
+    in_tok = (getattr(usage_obj, "input_tokens", 0) or 0) + cache_read + cache_write
     out_tok = getattr(usage_obj, "output_tokens", 0) or 0
     return {
         "input_tokens": in_tok,
         "output_tokens": out_tok,
         "total_tokens": in_tok + out_tok,
+        "cache_read_input_tokens": cache_read,
+        "cache_creation_input_tokens": cache_write,
     }
 
 
@@ -351,7 +377,13 @@ def anthropic_chat_with_tools(
     params["tools"] = _to_anthropic_tools(tools)
     convo = params["messages"]
 
-    total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    total_usage = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
     caller = client.with_options(timeout=timeout) if timeout else client
 
     def _call():

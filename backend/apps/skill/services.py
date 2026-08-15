@@ -18,13 +18,16 @@ from apps.chat.services.rag import (
 )
 from apps.chat.services.query_analysis import recommend_strategy
 from apps.chat.services.retrieval import lexical_search, rrf_fuse
-from apps.document.models import Document, SmartChunk
+from apps.document.models import Document
 from apps.document.utils.client_openia import generate_chat_completion, generate_with_tools
 from apps.document.utils.llm import (
     ROLE_BALANCED,
     effective_chat_model,
+    is_anthropic_model,
+    is_prompt_caching_enabled,
     tool_capable_model,
 )
+from apps.skill import context_budget
 from apps.skill.models import (
     ExecutionOutputMode,
     ExecutionStatus,
@@ -61,6 +64,25 @@ COPILOT_STEP_CHUNKS = int(os.environ.get("SKILL_COPILOT_STEP_CHUNKS", "12"))
 # todavía no sabemos el valor correcto: conviene poder ajustarlo sin migrar.
 HISTORY_FULL_STEPS = int(os.environ.get("SKILL_HISTORY_FULL_STEPS", "2"))
 HISTORY_SUMMARY_CHARS = int(os.environ.get("SKILL_HISTORY_SUMMARY_CHARS", "1200"))
+
+
+def _flag(name: str, default: str) -> bool:
+    return os.environ.get(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+# Contexto-primero: mandar los documentos, no fragmentos de los documentos.
+# Es una variable y no una constante porque invierte el camino principal del
+# motor: si una corrida sale mal, se vuelve al esquema anterior apagando esto
+# en la task definition, sin desplegar.
+def is_context_first_enabled() -> bool:
+    return _flag("SKILL_CONTEXT_FIRST", "1")
+
+
+# TTL del punto de caché sobre el corpus. Vacío usa el default del proveedor
+# (5 minutos, que se renuevan con cada lectura). Un workflow de diecisiete
+# pasos con pausas de aprobación puede superarlo; ahí conviene "1h", que
+# cuesta el doble escribir y se amortiza a partir del tercer paso.
+CONTEXT_CACHE_TTL = os.environ.get("SKILL_CONTEXT_CACHE_TTL", "").strip()
 
 # Subconjunto de los diagnósticos de recuperación que se persiste por paso.
 # `retrieve_for_chat` calcula bastante más, pero esto es lo que permite explicar
@@ -258,6 +280,15 @@ def _retrieval_runtime_config() -> dict:
         "mmr_enabled": is_mmr_enabled(),
         "copilot_step_chunks": COPILOT_STEP_CHUNKS,
         "default_chunks": DEFAULT_CHUNKS,
+        # Cómo llegó la base documental al modelo. Es lo primero que hay que
+        # mirar al comparar dos corridas: bajo contexto-primero la mayoría de
+        # los flags de arriba no se aplican a ningún paso.
+        "context_first": is_context_first_enabled(),
+        "context_window": context_budget.CONTEXT_WINDOW,
+        "context_safety_margin": context_budget.CONTEXT_SAFETY_MARGIN,
+        "degraded_doc_tokens": context_budget.DEGRADED_DOC_TOKENS,
+        "chars_per_token": context_budget.CHARS_PER_TOKEN,
+        "context_cache_ttl": CONTEXT_CACHE_TTL or "default",
     }
 
 
@@ -397,6 +428,36 @@ def _chunks_to_sources(chunks) -> list[dict]:
             }
         )
     return sources
+
+
+def _collect_source_stats_from_sources(sources: list[dict], total_docs: int) -> dict:
+    """Cobertura documental a partir de las fuentes ya serializadas.
+
+    ``chunks_per_document`` sigue contando solo fragmentos —es lo que la
+    interfaz usa para el visor— pero la cobertura cuenta documentos, que es lo
+    que la pregunta "¿leyó todo el expediente?" quiere saber.
+    """
+    docs_covered: set[str] = set()
+    chunks_per_document: dict[str, int] = {}
+    documents_delivered_full: set[str] = set()
+    for source in sources:
+        slug = source.get("document_slug")
+        if not slug:
+            continue
+        docs_covered.add(slug)
+        if source.get("delivery") == context_budget.FULL:
+            documents_delivered_full.add(slug)
+        if source.get("chunk_index") is not None:
+            chunks_per_document[slug] = chunks_per_document.get(slug, 0) + 1
+    return {
+        "docs_total": total_docs,
+        "docs_covered": len(docs_covered),
+        "doc_coverage_ratio": (
+            round(len(docs_covered) / total_docs, 4) if total_docs else 0
+        ),
+        "docs_delivered_full": sorted(documents_delivered_full),
+        "chunks_per_document": chunks_per_document,
+    }
 
 
 def _collect_source_stats(chunks, total_docs: int) -> dict:
@@ -592,6 +653,20 @@ def resolve_tier(skill, step: SkillStep | None = None) -> str:
     return skill.tier or SkillTier.BALANCED
 
 
+def _resolve_model(skill, tier: str) -> str:
+    """El modelo que va a atender esta llamada.
+
+    Existe aparte de ``_call_model`` porque hay que saberlo *antes* de armar el
+    pedido: el corpus documental viaja como bloques con punto de caché si el
+    proveedor es Anthropic, y como texto inline si no. Resolverlo en dos
+    lugares distintos sería la forma segura de que un día dejen de coincidir.
+    """
+    role = tier or ROLE_BALANCED
+    if skill.tools_enabled:
+        return tool_capable_model(skill.model, role)
+    return effective_chat_model(skill.model, role)
+
+
 def _call_model(
     messages: list[dict],
     *,
@@ -617,7 +692,7 @@ def _call_model(
         def _executor(name: str, args_json: str) -> str:
             return execute_tool(name, args_json, tool_ctx)
 
-        model = tool_capable_model(skill.model, role)
+        model = _resolve_model(skill, role)
         text, usage = generate_with_tools(
             messages,
             tools=ALL_TOOLS,
@@ -986,7 +1061,188 @@ def _resolve_step_documents(
     # Defensive: if the slugs reference docs not in the context (e.g. removed
     # after the workflow was authored), fall back to the full context so the
     # step still produces something rather than running on an empty corpus.
-    return scoped if scoped.exists() else documents
+    #
+    # La caída se avisa. Antes era silenciosa, y bajo contexto-primero eso pasó
+    # de ser un detalle a ser el problema: un paso que el autor acotó a un
+    # documento termina recibiendo el expediente entero sin que nada lo diga.
+    if scoped.exists():
+        return scoped
+    logger.warning(
+        "El paso %s referencia documentos que no están en el alcance (%s); "
+        "se usa el contexto completo.",
+        step.id,
+        ", ".join(effective_slugs),
+    )
+    return documents
+
+
+# ---------------------------------------------------------------------------
+# Contexto-primero
+# ---------------------------------------------------------------------------
+
+def _load_document_texts(documents, cache: dict[int, str]) -> dict[int, str]:
+    """Texto extraído de cada documento, leído una sola vez por corrida.
+
+    Se cachea por ejecución porque el mismo expediente vuelve en cada paso: sin
+    esto, diecisiete pasos releen del disco el mismo millón de caracteres.
+    """
+    missing = [d.id for d in documents if d.id not in cache]
+    if missing:
+        for doc_id, text in Document.objects.filter(id__in=missing).values_list(
+            "id", "extracted_text"
+        ):
+            cache[doc_id] = text or ""
+    return cache
+
+
+def _cache_control() -> dict | None:
+    if not is_prompt_caching_enabled():
+        return None
+    control = {"type": "ephemeral"}
+    if CONTEXT_CACHE_TTL:
+        control["ttl"] = CONTEXT_CACHE_TTL
+    return control
+
+
+def _messages_with_corpus(
+    *, system_prompt: str, corpus_text: str, step_prompt: str, model: str
+) -> list[dict]:
+    """Arma el pedido poniendo el corpus como prefijo cacheable.
+
+    El orden no es estético: la caché de prompts es un match de prefijo, así
+    que el corpus tiene que ir **antes** de lo que cambia en cada paso. Con
+    diecisiete pasos sobre el mismo expediente, eso es la diferencia entre
+    pagar el corpus una vez o diecisiete.
+
+    Si el modelo no es de Anthropic el corpus va inline, sin bloques ni caché:
+    correcto pero caro. Es una ruta de escape, no el camino previsto.
+    """
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    if not corpus_text:
+        messages.append({"role": "user", "content": step_prompt})
+    elif not is_anthropic_model(model):
+        messages.append({"role": "user", "content": f"{corpus_text}\n\n{step_prompt}"})
+    else:
+        corpus_block: dict = {"type": "text", "text": corpus_text}
+        control = _cache_control()
+        if control:
+            corpus_block["cache_control"] = control
+        messages.append(
+            {
+                "role": "user",
+                "content": [corpus_block, {"type": "text", "text": step_prompt}],
+            }
+        )
+    return messages
+
+
+def _plan_sources(plan, chunks) -> list[dict]:
+    """Las fuentes de un paso bajo contexto-primero.
+
+    Un documento que viajó entero es una fuente aunque no haya fragmentos que
+    mostrar: el registro de la corrida tiene que decir qué leyó el modelo, no
+    qué trajo una búsqueda. Los fragmentos de los documentos degradados se
+    agregan como hasta ahora, para que la interfaz siga resolviendo el visor.
+    """
+    sources: list[dict] = [
+        {
+            "document_slug": delivery.slug,
+            "document_name": delivery.name,
+            "chunk_index": None,
+            "delivery": delivery.mode,
+        }
+        for delivery in plan.deliveries
+    ]
+    sources.extend(_chunks_to_sources(chunks))
+    return sources
+
+
+def _retrieve_partial_blocks(
+    *, execution, plan, query_text: str, strategy: str | None
+) -> tuple[dict[int, str], list]:
+    """Recuperación acotada a cada documento que no entró completo.
+
+    Buscar dentro de un documento es un problema distinto —y mucho más
+    tratable— que buscar en el expediente: no hay que decidir qué documento
+    mira el paso, eso ya está decidido. El presupuesto tampoco se reparte: es
+    el del documento degradado y de nadie más.
+    """
+    blocks: dict[int, str] = {}
+    collected: list = []
+    for delivery in plan.degraded:
+        wanted = context_budget.chunks_for_budget(delivery.tokens)
+        try:
+            retrieval = retrieve_for_chat(
+                user=execution.owner,
+                query_text=query_text,
+                allowed_documents=Document.objects.filter(id=delivery.document.id),
+                top_n=wanted,
+                # Los tres topes van explícitos y en el mismo valor. Los
+                # defaults reparten el presupuesto *entre* documentos —con uno
+                # solo, el tope por documento cae a tres fragmentos— y acá el
+                # documento es uno solo por definición: todo el presupuesto es
+                # suyo. Sin esto, degradar un documento equivale a perderlo.
+                total_limit=wanted,
+                max_chunks_per_doc=wanted,
+                k_per_doc=wanted,
+                retrieval_strategy=strategy,
+            )
+            chunks = list(retrieval.chunks)
+        except Exception as exc:
+            logger.warning(
+                "Falló la recuperación dentro de %s: %s", delivery.slug, exc
+            )
+            continue
+        if not chunks:
+            continue
+        collected.extend(chunks)
+        blocks[delivery.document.id] = build_context_block(chunks)
+    return blocks, collected
+
+
+def build_step_corpus(
+    *,
+    execution,
+    step_documents,
+    query_text: str,
+    reserved_tokens: int,
+    blueprint_id: int | None,
+    document_texts: dict[int, str],
+    strategy: str | None = None,
+    retrieve_partials: bool = True,
+) -> tuple[str, list, "context_budget.ContextPlan"]:
+    """La base documental de un paso, tal como la va a ver el modelo.
+
+    Está afuera de ``_run_copilot`` para que se pueda armar sin ejecutar el
+    workflow: ``manage.py preview_workflow_context`` la usa para mostrar qué
+    recibe cada paso antes de gastar una corrida en averiguarlo. La pregunta
+    "¿qué le estamos mandando al modelo?" no debería requerir mandárselo.
+
+    Devuelve ``(corpus, fragmentos, plan)``.
+    """
+    planned_documents = list(step_documents.defer("extracted_text"))
+    _load_document_texts(planned_documents, document_texts)
+    plan = context_budget.plan_context(
+        planned_documents,
+        reserved_tokens=reserved_tokens,
+        blueprint_id=blueprint_id,
+        texts=document_texts,
+    )
+    if retrieve_partials:
+        partial_blocks, chunks = _retrieve_partial_blocks(
+            execution=execution, plan=plan, query_text=query_text, strategy=strategy
+        )
+    else:
+        partial_blocks, chunks = {}, []
+    corpus = "\n\n".join(
+        (
+            context_budget.render_inventory(plan),
+            context_budget.render_corpus(
+                plan, texts=document_texts, partial_blocks=partial_blocks
+            ),
+        )
+    )
+    return corpus, chunks, plan
 
 
 def _run_skill_ref_step(
@@ -1113,7 +1369,13 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
     resume_from_position = len(already_done)
 
     step_results: list[dict] = list(already_done)
-    total_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    total_usage = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
     # Rebuild conversation context from completed steps so later steps have full history.
     previous_sections: list[tuple[str, str]] = _rebuild_previous_sections(already_done)
     all_step_chunks: list = []
@@ -1122,14 +1384,13 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
         f"{skill.name}. {skill.description}. {execution.extra_instructions or ''}",
     )
 
-    # Shared lexical scope for all steps (computed once, not per step).
-    step_doc_ids = list(documents.values_list("id", flat=True))
-    step_base_qs = SmartChunk.objects.filter(
-        document_id__in=step_doc_ids
-    ).exclude(embedding__isnull=True)
-
     # Track chunk IDs already seen so each step can prioritise fresh coverage.
     seen_chunk_ids: set[int] = set()
+
+    # Contexto-primero: estado compartido por toda la corrida.
+    context_first = is_context_first_enabled()
+    document_texts: dict[int, str] = {}
+    blueprint_id = getattr(execution.project, "blueprint_document_id", None)
 
     # ------------------------------------------------------------------ #
     # Research phase (Sprint 2A)                                          #
@@ -1178,28 +1439,33 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             step_output_mode, step_table_schema = _resolve_step_output_config(step)
             is_table_step = step_output_mode == ExecutionOutputMode.TABLE
 
-            # Per-step lexical base queryset (scoped to the step's documents).
-            step_doc_ids_local = list(step_documents.values_list("id", flat=True))
-            step_base_qs_local = SmartChunk.objects.filter(
-                document_id__in=step_doc_ids_local
-            ).exclude(embedding__isnull=True)
-
             # Con qué material trabaja este paso.
             evidence_mode = step.evidence_mode or StepEvidenceMode.BOTH
             wants_documents = evidence_mode != StepEvidenceMode.PREVIOUS
             wants_history = evidence_mode != StepEvidenceMode.DOCUMENTS
 
-            # Enrich the query with a brief hint from the most recent step output
-            # so the embedding pulls toward the thread of the current section.
-            prev_hint = (previous_sections[-1][1] if previous_sections else "")[:300]
-            query_text = f"{step.title}. {step.instructions}. {prev_hint}".strip()
+            # La consulta sale del paso y de nada más. Antes se le pegaba un
+            # fragmento de la sección anterior para "encauzar" el embedding, y
+            # con eso lo que el paso recuperaba dependía de lo que el modelo
+            # había escrito recién: dos corridas divergían en el paso 3 y no
+            # volvían a coincidir nunca. Un input del workflow no puede ser un
+            # output del workflow.
+            query_text = f"{step.title}. {step.instructions}".strip()
 
-            # Vector + lexical + fusion via the unified engine (Phase 5).
             step_diagnostics: dict = {}
+            chunks: list = []
+            context_block = ""
+            plan = None
+            # Contexto-primero arma el corpus recién después del prompt del
+            # paso: el presupuesto documental es lo que sobra una vez contado
+            # todo lo demás, así que hay que tener lo demás para poder contarlo.
+            use_context_first = context_first and wants_documents
+
             if not wants_documents:
-                fused = []
                 step_diagnostics = {"retrieval_skipped_reason": "evidence_mode"}
-            else:
+            elif not use_context_first:
+                # Camino anterior: fragmentos elegidos por la búsqueda sobre
+                # todo el alcance del paso.
                 try:
                     step_retrieval = retrieve_for_chat(
                         user=execution.owner,
@@ -1211,7 +1477,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                         k_per_doc=skill.k_per_doc,
                         retrieval_strategy=effective_retrieval_strategy,
                     )
-                    fused = list(step_retrieval.chunks)
+                    chunks = list(step_retrieval.chunks)
                     step_diagnostics = {
                         key: step_retrieval.diagnostics[key]
                         for key in RETRIEVAL_DIAGNOSTIC_KEYS
@@ -1219,17 +1485,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     }
                 except Exception as exc:
                     logger.warning("Step %s retrieval failed: %s", step.id, exc)
-                    fused = []
                     step_diagnostics = {"retrieval_error": str(exc)[:200]}
-
-            # Prioritise chunks not yet seen in earlier steps; fall back to repeats if needed.
-            new_chunks = [c for c in fused if c.id not in seen_chunk_ids]
-            repeat_chunks = [c for c in fused if c.id in seen_chunk_ids]
-            chunks = (new_chunks + repeat_chunks)[:COPILOT_STEP_CHUNKS]
-
-            seen_chunk_ids.update(c.id for c in chunks)
-            all_step_chunks.extend(chunks)
-            context_block = build_context_block(chunks)
+                seen_chunk_ids.update(c.id for c in chunks)
+                all_step_chunks.extend(chunks)
+                context_block = build_context_block(chunks)
 
             # Compose the user prompt for this step
             lines = [
@@ -1269,7 +1528,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 lines.append(f"\n## Research scratchpad (broad corpus overview):\n{shared_scratchpad}")
             if context_block:
                 lines.append(f"\n## Document context (targeted for this section):\n{context_block}")
-            elif wants_documents:
+            elif wants_documents and not use_context_first:
                 # Sólo se avisa de la ausencia cuando el paso esperaba evidencia.
                 # A un paso que integra resultados anteriores decirle que "no se
                 # encontró contenido documental" lo empuja a declarar una carencia
@@ -1284,6 +1543,12 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             if not is_table_step:
                 lines.append(f"\n{COPILOT_DELIVERABLE_STANDARD}")
 
+            if use_context_first:
+                lines.append(
+                    "\nCeñite a la base documental listada al comienzo de este "
+                    "mensaje y a sus reglas de uso."
+                )
+
             prompt = "\n".join(lines)
             # El contexto de la operación va en el system prompt, no en el
             # prompt del paso: así es idéntico para todos los pasos del
@@ -1294,18 +1559,47 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 if is_table_step
                 else step_system_prompt
             )
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ]
+
+            tier_used = resolve_tier(skill, step)
+            corpus_text = ""
+            if use_context_first:
+                # El presupuesto documental es lo que queda de la ventana una
+                # vez descontado todo lo que ya está comprometido. Se mide con
+                # el prompt real del paso, no con un promedio: un paso con
+                # secciones previas largas tiene menos lugar para documentos
+                # que uno del principio, y esa diferencia es la que decide.
+                reserved = (
+                    context_budget.estimate_tokens(system_prompt)
+                    + context_budget.estimate_tokens(prompt)
+                    + context_budget.output_reserve()
+                )
+                corpus_text, chunks, plan = build_step_corpus(
+                    execution=execution,
+                    step_documents=step_documents,
+                    query_text=query_text,
+                    reserved_tokens=reserved,
+                    blueprint_id=blueprint_id,
+                    document_texts=document_texts,
+                    strategy=effective_retrieval_strategy,
+                )
+                seen_chunk_ids.update(c.id for c in chunks)
+                all_step_chunks.extend(chunks)
+                step_diagnostics = plan.diagnostics()
+
+            messages = _messages_with_corpus(
+                system_prompt=system_prompt,
+                corpus_text=corpus_text,
+                step_prompt=prompt,
+                model=_resolve_model(skill, tier_used),
+            )
 
             tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-            tier_used = resolve_tier(skill, step)
             content, usage, model_used = _call_model(
                 messages, skill=skill, tier=tier_used, tool_ctx=tool_ctx
             )
             all_step_chunks.extend(tool_ctx.additional_chunks)
 
+            step_sources = chunks + tool_ctx.additional_chunks
             step_entry: dict = {
                 "step_id": step.id,
                 "title": step.title,
@@ -1314,7 +1608,11 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "tier": tier_used,
                 "evidence_mode": evidence_mode,
                 "retrieval": step_diagnostics,
-                "sources": _chunks_to_sources(chunks + tool_ctx.additional_chunks),
+                "sources": (
+                    _plan_sources(plan, step_sources)
+                    if plan is not None
+                    else _chunks_to_sources(step_sources)
+                ),
             }
             if is_table_step:
                 try:
@@ -1367,7 +1665,6 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
 
     # Final metadata written once all steps complete.
     execution.output_structured = {"steps": step_results}
-    source_stats = _collect_source_stats(all_step_chunks, total_docs=documents.count())
     # Aggregate global sources from each step's persisted sources rather than
     # all_step_chunks: on resumed (HITL) runs all_step_chunks only holds chunks
     # from the last segment, but step_results carries every step's sources.
@@ -1380,6 +1677,13 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 continue
             seen_sources.add(key)
             global_sources.append(src)
+    # La cobertura se calcula sobre las fuentes registradas y no sobre los
+    # fragmentos: bajo contexto-primero un documento que viajó entero no deja
+    # ni un fragmento detrás, y contarlo por fragmentos daría cobertura cero
+    # justo en la corrida que leyó todo.
+    source_stats = _collect_source_stats_from_sources(
+        global_sources, total_docs=documents.count()
+    )
     # Los modelos salen de `step_results` y no de una variable local porque en
     # una corrida reanudada los pasos previos los ejecutó otro segmento: la
     # variable local solo conoce el último tramo, el registro por paso conoce
