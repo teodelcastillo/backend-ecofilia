@@ -192,6 +192,15 @@ class Command(BaseCommand):
 
         steps = len(cached)
         stable = cached[0]
+        if steps < 2:
+            # Con un solo paso la caché sólo se escribe: cuesta 1,25× y no hay
+            # lecturas que lo amorticen. Informar un "ahorro" negativo ahí
+            # confunde — no dice nada del esquema, dice que se pidió un paso.
+            self.stdout.write(
+                f"Parte cacheable: {stable:,} tokens. Con un solo paso no hay "
+                "ahorro que medir — corré sin --step para el número real."
+            )
+            return
         variable = sum(uncached)
         # Escritura de caché 1,25x, lectura 0,1x.
         with_cache = stable * 1.25 + stable * 0.1 * (steps - 1) + variable
