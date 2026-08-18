@@ -94,6 +94,13 @@ def resolve_citations(citations: list[dict], payloads: list) -> list[dict]:
                 "cited_text": citation.get("cited_text", ""),
                 "char_start": start,
                 "char_end": end,
+                # Dónde, dentro del texto que escribió el modelo, está la
+                # afirmación que esta cita sostiene. `char_*` apunta al
+                # documento fuente y `content_*` al informe: son los dos
+                # extremos del vínculo, y sin el segundo una cita sólo se puede
+                # mostrar al pie de la sección y no junto a lo que sostiene.
+                "content_start": citation.get("content_start"),
+                "content_end": citation.get("content_end"),
                 "verified": _verify(payload, start, end, citation.get("cited_text", "")),
             }
         )

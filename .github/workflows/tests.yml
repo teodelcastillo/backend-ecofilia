@@ -105,6 +105,7 @@ jobs:
           python manage.py test --verbosity 2 \
             apps.skill.tests.test_context_budget \
             apps.skill.tests.test_citations \
+            apps.skill.tests.test_citation_anchors \
             apps.skill.tests.test_deliverable_standard \
             apps.skill.tests.test_table_contract \
             apps.skill.tests.test_operation_context \

@@ -1527,6 +1527,7 @@ def _coerce_with_retry(
     tool_ctx,
     step,
     execution,
+    citations_out: list | None = None,
 ) -> tuple[dict, str, dict]:
     """Valida la tabla y, si no cumple, le da al modelo una segunda oportunidad.
 
@@ -1537,6 +1538,11 @@ def _coerce_with_retry(
 
     El reintento no reformula la tarea ni afloja el contrato: repite el mismo
     pedido agregando el error concreto. Si tampoco cumple, el paso falla.
+
+    ``citations_out`` trae las citas del primer intento y, si hay reintento, se
+    reemplaza por las del segundo. Sin eso el paso quedaba con las citas de una
+    respuesta que se descartó: las filas venían del reintento y las fuentes de
+    lo anterior, sin que nada lo delatara.
 
     Devuelve ``(tabla, contenido_usado, usage_del_reintento)``.
     """
@@ -1573,9 +1579,19 @@ def _coerce_with_retry(
         "del JSON."
     )
     reintento = list(messages) + [{"role": "user", "content": correccion}]
+    citas_reintento: list[dict] = []
     nuevo_contenido, usage, _ = _call_model(
-        reintento, skill=skill, tier=tier, tool_ctx=tool_ctx
+        reintento,
+        skill=skill,
+        tier=tier,
+        tool_ctx=tool_ctx,
+        citations_out=citas_reintento,
     )
+    if citations_out is not None:
+        # Las del primer intento describen un texto que ya no existe, así que se
+        # reemplazan enteras en vez de acumularse.
+        citations_out.clear()
+        citations_out.extend(citas_reintento)
     # Si el segundo intento tampoco cumple, la excepción sube y el paso falla:
     # dos intentos contra un contrato explícito es suficiente evidencia de que
     # el problema no es el modelo teniendo un mal día.
@@ -1865,11 +1881,6 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             )
             all_step_chunks.extend(tool_ctx.additional_chunks)
 
-            step_citations: list[dict] = []
-            if corpus is not None and raw_citations:
-                step_citations = resolve_citations(raw_citations, corpus.documents)
-                step_diagnostics = {**step_diagnostics, **citation_stats(step_citations)}
-
             step_sources = chunks + tool_ctx.additional_chunks
             step_entry: dict = {
                 "step_id": step.id,
@@ -1884,7 +1895,6 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     if plan is not None
                     else _chunks_to_sources(step_sources)
                 ),
-                "citations": step_citations,
             }
             if is_table_step:
                 strict = is_strict_step(step)
@@ -1899,6 +1909,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                         tool_ctx=tool_ctx,
                         step=step,
                         execution=execution,
+                        citations_out=raw_citations,
                     )
                 except ValueError as exc:
                     if strict:
@@ -1935,6 +1946,19 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             else:
                 step_entry["content"] = content
                 previous_sections.append((step.title, content))
+
+            # Las citas se resuelven acá y no antes de la coerción: un paso
+            # tabular que reintenta descarta su primera respuesta, y con ella
+            # sus citas. Resolverlas arriba dejaba el paso con las filas del
+            # reintento y las fuentes de la respuesta que se tiró.
+            step_citations: list[dict] = []
+            if corpus is not None and raw_citations:
+                step_citations = resolve_citations(raw_citations, corpus.documents)
+                step_entry["retrieval"] = {
+                    **step_entry.get("retrieval", {}),
+                    **citation_stats(step_citations),
+                }
+            step_entry["citations"] = step_citations
 
         step_results.append(step_entry)
 

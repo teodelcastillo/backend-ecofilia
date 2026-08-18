@@ -249,21 +249,51 @@ def _citation_to_dict(citation) -> dict:
     }
 
 
-def _collect_citations(content) -> list[dict]:
-    """Las citas de una respuesta, en orden de aparición.
+def _text_and_citations(content) -> Tuple[str, list[dict]]:
+    """El texto de una respuesta y sus citas, ancladas al texto.
 
     Con citas activadas la respuesta deja de ser un bloque de texto y pasa a
     ser varios: los que sostienen una afirmación citada llevan un array
-    ``citations`` y los demás no. Concatenar los textos reconstruye la
-    respuesta; recorrer los arrays reconstruye de dónde salió cada parte.
+    ``citations`` y los demás no. El corte entre bloques es, exactamente, el
+    tramo de respuesta que cada cita sostiene.
+
+    Esa correspondencia se perdía: se recorrían los bloques quedándose sólo con
+    los arrays y descartando su ``text``, así que una cita terminaba diciendo
+    qué pasaje del documento se citó pero no qué frase del informe lo usaba.
+    Reconstruirlo después es imposible —``cited_text`` es texto de la fuente, no
+    del informe— y por eso el texto y las citas salen ahora del mismo recorrido:
+    calcularlos por separado es cómo se desincronizaron la primera vez.
+
+    Cada cita lleva ``content_start`` / ``content_end``, offsets sobre el texto
+    devuelto. Van ya corregidos por el ``strip()`` final, así que apuntan al
+    mismo string que el llamador persiste.
     """
     citations: list[dict] = []
+    parts: list[str] = []
+    offset = 0
     for block in content or []:
         if getattr(block, "type", None) != "text":
             continue
+        text = getattr(block, "text", "") or ""
         for citation in getattr(block, "citations", None) or []:
-            citations.append(_citation_to_dict(citation))
-    return citations
+            entry = _citation_to_dict(citation)
+            entry["content_start"] = offset
+            entry["content_end"] = offset + len(text)
+            citations.append(entry)
+        parts.append(text)
+        offset += len(text)
+
+    raw = "".join(parts)
+    stripped = raw.strip()
+    # El texto se devuelve con `strip()`, así que los offsets se corren lo que
+    # se haya sacado adelante y se recortan a lo que quedó. Sin esto, una cita
+    # sobre el primer bloque apuntaría unos caracteres más allá de donde está.
+    lead = len(raw) - len(raw.lstrip())
+    limit = len(stripped)
+    for entry in citations:
+        entry["content_start"] = max(0, min(entry["content_start"] - lead, limit))
+        entry["content_end"] = max(0, min(entry["content_end"] - lead, limit))
+    return stripped, citations
 
 
 # --- Completions ------------------------------------------------------------
@@ -295,14 +325,10 @@ def anthropic_chat_completion(
     caller = client.with_options(timeout=timeout) if timeout else client
     response = caller.messages.create(**params)
 
-    text = "".join(
-        getattr(b, "text", "")
-        for b in response.content
-        if getattr(b, "type", None) == "text"
-    ).strip()
+    text, citations = _text_and_citations(response.content)
 
     if citations_out is not None:
-        citations_out.extend(_collect_citations(response.content))
+        citations_out.extend(citations)
 
     usage = _usage_dict(getattr(response, "usage", None))
     if not text:
