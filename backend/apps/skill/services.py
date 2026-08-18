@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -27,6 +26,7 @@ from apps.document.utils.llm import (
     tool_capable_model,
 )
 from apps.skill import context_budget
+from apps.skill import definition as definition_module
 from apps.skill.citations import citation_stats, resolve_citations
 from apps.skill.models import (
     ExecutionOutputMode,
@@ -242,51 +242,16 @@ def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
     """
     Huella de la definición del workflow tal como se ejecutó.
 
-    Dos corridas solo son comparables si corrieron la misma definición. Como
-    todavía no hay versionado de skills, esta huella es lo que permite darse
-    cuenta de que alguien editó un paso entre una corrida y la siguiente, en
-    vez de atribuirle la diferencia al modelo.
+    Delega en ``apps.skill.definition``, que es donde vive la lista de campos que
+    forman la definición. Antes esa lista estaba acá, escrita a mano y sin nada
+    que la mantuviera al día: un campo nuevo en ``SkillStep`` no entraba en la
+    huella y dos corridas con ese campo distinto se veían idénticas. Ahora la
+    misma serialización que se guarda como versión es la que se hashea, así que
+    huella y snapshot no pueden divergir.
     """
-    payload = {
-        "tier": skill.tier,
-        "system_prompt": skill.system_prompt,
-        "prompt_template": skill.prompt_template,
-        "temperature": skill.temperature,
-        "comparative_mode_enabled": skill.comparative_mode_enabled,
-        "strict_missing_evidence": skill.strict_missing_evidence,
-        "research_phase_enabled": skill.research_phase_enabled,
-        "research_queries": list(skill.research_queries or []),
-        "tools_enabled": skill.tools_enabled,
-        "retrieval": {
-            "strategy": skill.retrieval_strategy,
-            "query_template": skill.retrieval_query_template,
-            "k_per_doc": skill.k_per_doc,
-            "total_limit": skill.total_limit,
-            "max_per_doc_after_rerank": skill.max_per_doc_after_rerank,
-        },
-        "steps": [
-            {
-                "position": step.position,
-                "tier": step.tier,
-                "evidence_mode": step.evidence_mode,
-                # Dos corridas con distinta política de validación no son
-                # comparables: una toleró celdas fuera del vocabulario y la otra
-                # habría fallado. Sin esto, la comparación las vería iguales.
-                "output_validation": step.output_validation,
-                "title": step.title,
-                "instructions": step.instructions,
-                "step_type": step.step_type,
-                "linked_skill_id": step.linked_skill_id,
-                "document_slugs": list(step.document_slugs or []),
-                "output_mode": step.output_mode,
-                "table_schema": step.table_schema or {},
-                "approval_required": step.approval_required,
-            }
-            for step in steps
-        ],
-    }
-    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
-    return "sha256:" + hashlib.sha256(blob.encode("utf-8")).hexdigest()
+    return definition_module.fingerprint(
+        definition_module.serialize_definition(skill, steps=steps)
+    )
 
 
 def _retrieval_runtime_config() -> dict:
@@ -362,6 +327,14 @@ def build_run_manifest(execution: SkillExecution, steps: List[SkillStep]) -> dic
             "temperature": skill.temperature,
         },
         "definition_fingerprint": _definition_fingerprint(skill, steps),
+        # El número de versión es lo que se muestra y lo que permite recuperar la
+        # definición entera; la huella queda porque es la identidad real y sirve
+        # para comparar contra corridas viejas, anteriores al versionado.
+        "definition_version": (
+            execution.definition_version.version_number
+            if execution.definition_version_id
+            else None
+        ),
         "retrieval": _retrieval_runtime_config(),
         "scope": {
             "document_slugs_filter": list(metadata.get("document_slugs_filter") or []),
@@ -400,6 +373,14 @@ def _preserved_metadata(execution: SkillExecution, *, models_used) -> dict:
         "review_each_step": bool(metadata.get("review_each_step")),
         "table_columns": metadata.get("table_columns", []),
         "table_schema": metadata.get("table_schema", {}),
+        # Parámetros que llegaron sin estar declarados. Es parte del registro del
+        # input: si el prompt salió con un `{{token}}` sin resolver, esto es lo
+        # que lo explica.
+        "input_value_warnings": metadata.get("input_value_warnings", []),
+        # Id de la corrida original, si esta es una repetición. Es lo que
+        # ``compare_executions`` reporta como identidad de la comparación; sin
+        # preservarlo, el runner lo pisaría al rearmar metadata desde cero.
+        **({"rerun_of": metadata["rerun_of"]} if metadata.get("rerun_of") is not None else {}),
     }
 
 
@@ -2071,18 +2052,34 @@ class SkillRunner:
         # es justo la diferencia que después explicaría dos salidas distintas.
         metadata = execution.metadata or {}
         steps = list(execution.skill.steps.all())
+
+        # La corrida queda clavada a una versión de la definición. Se resuelve
+        # siempre —incluso al reanudar— porque comparar la versión actual con la
+        # que quedó fijada es justamente cómo se detecta que alguien editó el
+        # workflow en el medio.
+        current_version = definition_module.resolve_definition_version(
+            execution.skill, steps=steps
+        )
+        definition_changed = False
+        if execution.definition_version_id is None:
+            execution.definition_version = current_version
+        elif execution.definition_version_id != current_version.id:
+            definition_changed = True
+
         manifest = build_run_manifest(execution, steps)
         existing = metadata.get("run_manifest") or {}
         if existing:
-            if existing.get("definition_fingerprint") != manifest["definition_fingerprint"]:
+            if definition_changed:
                 existing["definition_changed_during_run"] = True
+                existing["definition_version_now"] = current_version.version_number
                 metadata["run_manifest"] = existing
         else:
             metadata["run_manifest"] = manifest
         execution.metadata = metadata
 
         execution.save(update_fields=[
-            "status", "started_at", "document_snapshot", "error_message", "metadata",
+            "status", "started_at", "document_snapshot", "error_message",
+            "metadata", "definition_version",
         ])
 
         try:
@@ -2171,6 +2168,68 @@ def execution_to_markdown(execution: SkillExecution) -> str:
 
 def execute_skill(execution: SkillExecution) -> SkillExecution:
     return SkillRunner().run(execution.id)
+
+
+# ---------------------------------------------------------------------------
+# Volver a correr
+# ---------------------------------------------------------------------------
+
+# Claves de `metadata` que forman parte del input de la corrida y por lo tanto
+# tienen que viajar a la repetición. El resto —usage, manifiesto, diagnósticos—
+# es resultado: copiarlo sería falsificar el registro de la corrida nueva.
+RERUN_METADATA_KEYS = (
+    "table_columns",
+    "table_schema",
+    "document_slugs_filter",
+    "step_document_overrides",
+    "review_each_step",
+)
+
+
+def rerun_execution(
+    execution: SkillExecution,
+    *,
+    owner=None,
+    review_each_step: bool | None = None,
+) -> SkillExecution:
+    """
+    Repetir una corrida con el mismo input, en una ejecución nueva.
+
+    Es la herramienta que hacía falta para poder afirmar algo sobre el
+    determinismo: reproduce a mano el alcance documental, los parámetros y las
+    instrucciones extra de la corrida original, de modo que si las dos salidas
+    difieren la explicación no puede ser el input.
+
+    **No** copia la versión de definición: la repetición corre la definición de
+    hoy y queda apuntando a la versión que le toque. Si alguien editó el workflow
+    en el medio, la comparación lo va a decir — que es precisamente lo que se
+    quiere ver, en vez de una repetición que finge ser idéntica.
+
+    Tampoco copia la salida ni la edición humana: la corrida nueva empieza en
+    blanco.
+    """
+    source_metadata = execution.metadata or {}
+    metadata = {
+        key: source_metadata[key]
+        for key in RERUN_METADATA_KEYS
+        if source_metadata.get(key) is not None
+    }
+    if review_each_step is not None:
+        metadata["review_each_step"] = bool(review_each_step)
+    metadata["rerun_of"] = execution.id
+
+    return SkillExecution.objects.create(
+        skill=execution.skill,
+        owner=owner or execution.owner,
+        repository=execution.repository,
+        project=execution.project,
+        document=execution.document,
+        extra_instructions=execution.extra_instructions,
+        input_values=dict(execution.input_values or {}),
+        output_mode=execution.output_mode,
+        metadata=metadata,
+        status=ExecutionStatus.PENDING,
+    )
 
 
 # ---------------------------------------------------------------------------

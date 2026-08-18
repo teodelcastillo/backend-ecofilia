@@ -15,8 +15,10 @@ from apps.skill.access import (
 
 from apps.skill.api.serializers import (
     ApproveStepSerializer,
+    RerunExecutionSerializer,
     RunSkillSerializer,
     SaveExecutionEditSerializer,
+    SkillDefinitionVersionSerializer,
     SkillExecutionSerializer,
     SkillExecutionVersionSerializer,
     SkillSerializer,
@@ -31,8 +33,10 @@ from apps.skill.models import (
     SkillStep,
     SkillType,
 )
+from apps.skill import parameters as parameters_module
+from apps.skill.comparison import compare_executions
 from apps.skill.table_schema import schema_has_columns
-from apps.skill.services import approve_step, regenerate_step
+from apps.skill.services import approve_step, regenerate_step, rerun_execution
 from apps.skill.tasks import run_skill_task
 
 
@@ -145,6 +149,24 @@ class SkillViewSet(viewsets.ModelViewSet):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Parámetros declarados: se aplican defaults y se verifica el tipo antes
+        # de lanzar. Un obligatorio que falta o un valor fuera del vocabulario se
+        # arregla acá, con alguien esperando la respuesta; si pasa, el prompt sale
+        # con un `{{token}}` literal adentro y la corrida termina "bien".
+        input_values, issues = parameters_module.resolve_input_values(
+            skill.parameters.all(), data.get("input_values")
+        )
+        blocking = parameters_module.blocking_issues(issues)
+        if blocking:
+            return Response(
+                {
+                    "detail": "Los parámetros de la corrida no son válidos.",
+                    "parameter_issues": blocking,
+                    "messages": [parameters_module.describe_issue(i) for i in blocking],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Per-run document filter — narrows the context's documents to the
         # explicit selection the user is acting on. Stored in metadata so
         # resolve_documents() can pick it up at execution time.
@@ -157,7 +179,7 @@ class SkillViewSet(viewsets.ModelViewSet):
             project=data.get("project"),
             document=data.get("document"),
             extra_instructions=data.get("extra_instructions", ""),
-            input_values=data.get("input_values") or {},
+            input_values=input_values,
             output_mode=effective_output_mode,
             metadata={
                 "table_columns": [
@@ -169,6 +191,15 @@ class SkillViewSet(viewsets.ModelViewSet):
                 "document_slugs_filter": requested_doc_slugs,
                 "step_document_overrides": data.get("step_document_overrides") or {},
                 "review_each_step": bool(data.get("review_each_step")),
+                # Claves que no corresponden a ningún parámetro declarado. No
+                # bloquean —romperían a cualquier llamador que hoy manda campos
+                # de más— pero quedan registradas: casi siempre son un typo, y
+                # un typo acá deja un `{{token}}` sin resolver en el prompt.
+                **(
+                    {"input_value_warnings": issues}
+                    if issues
+                    else {}
+                ),
             },
             status=ExecutionStatus.PENDING,
         )
@@ -188,6 +219,21 @@ class SkillViewSet(viewsets.ModelViewSet):
                 SkillExecutionSerializer(execution).data,
                 status=status.HTTP_202_ACCEPTED,
             )
+
+    @action(detail=True, methods=["get"], url_path="definition-versions")
+    def definition_versions(self, request, slug=None):
+        """
+        Las definiciones con las que este workflow corrió alguna vez.
+
+        GET /api/skills/{slug}/definition-versions/
+
+        Sirve para dos cosas que hoy no se pueden hacer: leer con qué
+        instrucciones se produjo un informe viejo, y ver qué se editó desde
+        entonces.
+        """
+        skill = self.get_object()
+        versions = skill.definition_versions.order_by("-version_number")
+        return Response(SkillDefinitionVersionSerializer(versions, many=True).data)
 
     def _skill_enabled_for_context(self, skill: Skill, context_type: str, data: dict) -> bool:
         if context_type == "document":
@@ -258,7 +304,9 @@ class SkillExecutionViewSet(
         user = self.request.user
         qs = (
             executions_queryset_for_user(user)
-            .select_related("skill", "repository", "project", "document")
+            .select_related(
+                "skill", "repository", "project", "document", "definition_version"
+            )
         )
         if skill_slug := self.request.query_params.get("skill"):
             qs = qs.filter(skill__slug=skill_slug)
@@ -326,6 +374,86 @@ class SkillExecutionViewSet(
 
         run_skill_task.delay(execution.id)
         return Response(SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED)
+
+    # ------------------------------------------------------------------
+    # Repetir y comparar
+    # ------------------------------------------------------------------
+
+    @action(detail=True, methods=["post"], url_path="rerun")
+    def rerun(self, request, pk=None):
+        """
+        Volver a correr con el mismo input, en una ejecución nueva.
+
+        POST /api/skill-executions/{id}/rerun/
+        Body: { "review_each_step": false }   (opcional)
+
+        No toca la corrida original: la repetición es otra ejecución, y las dos
+        quedan disponibles para comparar. Corre la definición de hoy, no la de la
+        corrida original — si alguien la editó, la comparación lo dice en vez de
+        que la repetición finja ser idéntica.
+        """
+        execution = self.get_object()
+        # Repetir cuesta una corrida entera de modelo: se pide el mismo permiso
+        # que para modificarla, no el de sólo verla.
+        if not user_can_mutate_execution(request.user, execution):
+            raise PermissionDenied("No tienes permisos para repetir esta ejecución.")
+        serializer = RerunExecutionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_execution = rerun_execution(
+            execution,
+            owner=request.user,
+            review_each_step=serializer.validated_data.get("review_each_step"),
+        )
+
+        if new_execution.skill.skill_type == SkillType.QUICK:
+            run_skill_task(new_execution.id)
+            new_execution.refresh_from_db()
+            return Response(
+                SkillExecutionSerializer(new_execution).data, status=status.HTTP_200_OK
+            )
+        run_skill_task.delay(new_execution.id)
+        return Response(
+            SkillExecutionSerializer(new_execution).data, status=status.HTTP_202_ACCEPTED
+        )
+
+    @action(detail=True, methods=["get"], url_path="compare")
+    def compare(self, request, pk=None):
+        """
+        Comparar esta corrida con otra.
+
+        GET /api/skill-executions/{id}/compare/?against={other_id}
+
+        Responde primero si las dos son **comparables** —mismo input en todos sus
+        ejes— y sólo después en qué difiere la salida. Dos corridas que no son
+        comparables pueden diferir por diez razones legítimas; tratar eso como
+        falta de determinismo es el error que esta vista existe para evitar.
+        """
+        execution = self.get_object()
+        against = request.query_params.get("against")
+        if not against:
+            return Response(
+                {"detail": "Falta el parámetro 'against' con el id de la otra corrida."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            # Sin acotar por el queryset del usuario a propósito: la
+            # comparación tiene que poder distinguir "no existe" (404) de "no
+            # tenés permiso para verla" (403), y con el queryset ya filtrado
+            # las dos situaciones se ven idénticas.
+            other = (
+                SkillExecution.objects.select_related("definition_version")
+                .get(pk=int(against))
+            )
+        except (SkillExecution.DoesNotExist, ValueError):
+            return Response(
+                {"detail": "No se encontró la corrida contra la que comparar."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not user_can_view_execution(request.user, other):
+            raise PermissionDenied("No tienes permisos para ver esa ejecución.")
+
+        return Response(compare_executions(execution, other))
 
     # ------------------------------------------------------------------
     # Editable output + version history

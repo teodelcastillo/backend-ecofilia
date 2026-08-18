@@ -455,6 +455,65 @@ class SkillStep(models.Model):
 
 
 # ---------------------------------------------------------------------------
+# Definition versions
+# ---------------------------------------------------------------------------
+
+class SkillDefinitionVersion(models.Model):
+    """
+    Una definición de workflow congelada, tal como se ejecutó.
+
+    La definición vive editable en la base: eso es deliberado —el template y las
+    instrucciones tienen que poder mutar— pero deja las corridas sin suelo. Se
+    corrige la instrucción de un paso, se vuelve a correr, sale distinto, y no
+    hay forma de saber si cambió el modelo o cambió el pedido.
+
+    Cada corrida queda apuntando a la fila que corresponde a la definición con la
+    que arrancó. La versión no se publica a mano: se deriva de la definición
+    misma (ver ``definition.resolve_definition_version``), así que no depende de
+    que alguien se acuerde. La identidad es la huella, no el número — dos
+    definiciones idénticas son la misma versión aunque se haya editado y
+    revertido en el medio, porque para comparar corridas eso es justamente lo
+    que importa.
+    """
+
+    skill = models.ForeignKey(
+        Skill, related_name="definition_versions", on_delete=models.CASCADE
+    )
+    version_number = models.PositiveIntegerField()
+    fingerprint = models.CharField(
+        max_length=80,
+        help_text="sha256 de la definición serializada. Es su identidad real.",
+    )
+    schema = models.PositiveSmallIntegerField(
+        default=1,
+        help_text=(
+            "Versión del formato de serialización. Cambiarlo mueve todas las "
+            "huellas, así que sin este campo un cambio nuestro sería "
+            "indistinguible de un cambio del autor del workflow."
+        ),
+    )
+    definition = models.JSONField(
+        help_text="Snapshot completo: skill, pasos y parámetros declarados.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("skill", "-version_number")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("skill", "version_number"), name="skill_definition_version_number"
+            ),
+            models.UniqueConstraint(
+                fields=("skill", "fingerprint"), name="skill_definition_version_fingerprint"
+            ),
+        ]
+        indexes = [models.Index(fields=("skill", "fingerprint"))]
+
+    def __str__(self) -> str:
+        return f"{self.skill.slug} def v{self.version_number}"
+
+
+# ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
 
@@ -463,6 +522,19 @@ class SkillExecution(models.Model):
     A single run of a Skill against a specific context.
     """
     skill = models.ForeignKey(Skill, related_name="executions", on_delete=models.CASCADE)
+    definition_version = models.ForeignKey(
+        SkillDefinitionVersion,
+        related_name="executions",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text=(
+            "La definición con la que arrancó esta corrida. Vacío en las "
+            "corridas anteriores al versionado: no se rellenan con una versión "
+            "sintética porque afirmaría que corrieron la definición de hoy, que "
+            "es exactamente la mentira que el versionado viene a evitar."
+        ),
+    )
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         related_name="skill_executions",

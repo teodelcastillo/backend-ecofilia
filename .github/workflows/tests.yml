@@ -109,7 +109,12 @@ jobs:
             apps.skill.tests.test_table_contract \
             apps.skill.tests.test_operation_context \
             apps.skill.tests.test_model_tiers \
-            apps.skill.tests.test_services.CopilotTabularStepsTestCase
+            apps.skill.tests.test_services.CopilotTabularStepsTestCase \
+            apps.skill.tests.test_definition \
+            apps.skill.tests.test_definition_version \
+            apps.skill.tests.test_parameters \
+            apps.skill.tests.test_comparison \
+            apps.skill.tests.test_workflow_versioning_api
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

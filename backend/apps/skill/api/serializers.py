@@ -11,6 +11,7 @@ from apps.skill.models import (
     RetrievalStrategy,
     Skill,
     SkillContext,
+    SkillDefinitionVersion,
     SkillExecution,
     SkillExecutionVersion,
     SkillParameter,
@@ -510,6 +511,14 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
     # Editable output state
     edited_by_email = serializers.EmailField(source="edited_by.email", read_only=True, allow_null=True)
     versions_count = serializers.SerializerMethodField()
+    # Qué definición corrió. Sin esto el frente puede mostrar la salida pero no
+    # con qué instrucciones se produjo, que es la mitad de la trazabilidad.
+    definition_version_number = serializers.IntegerField(
+        source="definition_version.version_number", read_only=True, allow_null=True,
+    )
+    definition_fingerprint = serializers.CharField(
+        source="definition_version.fingerprint", read_only=True, allow_null=True,
+    )
 
     class Meta:
         model = SkillExecution
@@ -522,12 +531,40 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "edited_output", "edited_at", "edited_by_email", "versions_count",
             "steps_completed", "steps_total", "current_step_position",
             "document_snapshot", "metadata", "error_message",
+            "definition_version", "definition_version_number", "definition_fingerprint",
             "started_at", "finished_at", "created_at",
         )
         read_only_fields = fields
 
     def get_versions_count(self, obj) -> int:
         return obj.versions.count() if obj.pk else 0
+
+
+class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
+    """Una versión de la definición, para poder leer con qué se corrió."""
+
+    skill_slug = serializers.SlugField(source="skill.slug", read_only=True)
+    executions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SkillDefinitionVersion
+        fields = (
+            "id", "skill_slug", "version_number", "fingerprint",
+            "schema", "definition", "executions_count", "created_at",
+        )
+        read_only_fields = fields
+
+    def get_executions_count(self, obj) -> int:
+        return obj.executions.count()
+
+
+class RerunExecutionSerializer(serializers.Serializer):
+    """Input para POST /api/skill-executions/{id}/rerun/"""
+
+    # Por defecto se hereda de la corrida original. Para una comparación de
+    # reproducibilidad conviene apagarlo: nadie quiere aprobar diecisiete pasos
+    # a mano para medir si el motor repite.
+    review_each_step = serializers.BooleanField(required=False, allow_null=True, default=None)
 
 
 class SkillExecutionVersionSerializer(serializers.ModelSerializer):
