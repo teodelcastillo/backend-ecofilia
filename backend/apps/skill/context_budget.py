@@ -103,6 +103,10 @@ class DocumentDelivery:
     tokens: int          # lo que ocupa tal como se va a mandar
     full_tokens: int     # lo que ocuparía entero (para explicar la degradación)
     reason: str = ""
+    # El documento principal de la operación: el que dice qué se financia. Los
+    # demás son el marco contra el que se lo evalúa. No es una prioridad de
+    # presupuesto, es una diferencia de naturaleza — ver `render_inventory`.
+    is_blueprint: bool = False
 
     @property
     def slug(self) -> str:
@@ -124,6 +128,10 @@ class ContextPlan:
     # Documentos degradados de los que no se pudo traer ni un fragmento, por
     # slug y motivo. Lo llena el runner después de intentar la recuperación.
     partial_failures: dict = field(default_factory=dict)
+
+    @property
+    def blueprint(self) -> DocumentDelivery | None:
+        return next((d for d in self.deliveries if d.is_blueprint), None)
 
     @property
     def degraded(self) -> list[DocumentDelivery]:
@@ -156,6 +164,7 @@ class ContextPlan:
             "documents_partial": [d.slug for d in self.degraded],
             "documents_unavailable": [d.slug for d in self.unavailable],
             "scope_complete": self.complete,
+            "blueprint": (self.blueprint.slug if self.blueprint else None),
             "chars_per_token": CHARS_PER_TOKEN,
         }
 
@@ -185,6 +194,7 @@ def plan_context(
 
     deliveries: list[DocumentDelivery] = []
     for document in documents:
+        is_blueprint = blueprint_id is not None and document.id == blueprint_id
         text = (texts or {}).get(document.id) if texts else None
         if text is None:
             text = document.extracted_text or ""
@@ -197,20 +207,24 @@ def plan_context(
                     tokens=0,
                     full_tokens=0,
                     reason="el documento no tiene texto extraído",
+                    is_blueprint=is_blueprint,
                 )
             )
         else:
             deliveries.append(
                 DocumentDelivery(
-                    document=document, mode=FULL, tokens=tokens, full_tokens=tokens
+                    document=document,
+                    mode=FULL,
+                    tokens=tokens,
+                    full_tokens=tokens,
+                    is_blueprint=is_blueprint,
                 )
             )
 
     # Degradar de mayor a menor hasta que el conjunto entre. El principal va
     # al final de la cola de candidatos, no importa cuánto pese.
     def _degrade_order(delivery: DocumentDelivery) -> tuple[int, int]:
-        is_blueprint = blueprint_id is not None and delivery.document.id == blueprint_id
-        return (1 if is_blueprint else 0, -delivery.full_tokens)
+        return (1 if delivery.is_blueprint else 0, -delivery.full_tokens)
 
     candidates = sorted(
         (d for d in deliveries if d.mode == FULL), key=_degrade_order
@@ -280,7 +294,8 @@ def render_inventory(plan: ContextPlan) -> str:
 
     lines.append("Estos son los únicos documentos que tenés. No hay otros.")
     lines.append("")
-    for index, delivery in enumerate(plan.deliveries, start=1):
+
+    def _entry(index: int, delivery: DocumentDelivery) -> str:
         pages = getattr(delivery.document, "page_count", None)
         extent = f" · {pages} páginas" if pages else ""
         entry = (
@@ -289,7 +304,35 @@ def render_inventory(plan: ContextPlan) -> str:
         )
         if delivery.reason:
             entry += f" ({delivery.reason})"
-        lines.append(entry)
+        return entry
+
+    # Los dos grupos no son una comodidad de presentación. Uno describe la
+    # operación que se evalúa; los otros son el marco contra el que se la
+    # evalúa. Aplanarlos invita a confundir "la operación no hace X" con "el
+    # marco no exige X", que son hallazgos distintos y se presentan con la
+    # misma seguridad.
+    blueprint = plan.blueprint
+    if blueprint is not None and len(plan.deliveries) > 1:
+        lines.append("**Documento de la operación** — describe qué se financia:")
+        lines.append(_entry(1, blueprint))
+        lines.append("")
+        lines.append("**Marco de referencia** — contra esto se evalúa la operación:")
+        index = 2
+        for delivery in plan.deliveries:
+            if delivery.is_blueprint:
+                continue
+            lines.append(_entry(index, delivery))
+            index += 1
+        lines.append("")
+        lines.append(
+            "La distinción importa al declarar una ausencia: si algo no está en el "
+            "documento de la operación, el hallazgo es **sobre la operación**; si no "
+            "está en el marco, el hallazgo es **sobre el marco**. No son lo mismo y no "
+            "se redactan igual."
+        )
+    else:
+        for index, delivery in enumerate(plan.deliveries, start=1):
+            lines.append(_entry(index, delivery))
 
     lines.extend(["", "Reglas de uso de esta base:", ""])
     lines.append(

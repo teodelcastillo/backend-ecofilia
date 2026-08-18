@@ -114,7 +114,7 @@ def _format_notes(context_notes: dict) -> list[str]:
     return lines
 
 
-def _format_blueprint(project) -> list[str]:
+def _format_blueprint(project, *, include_summary: bool = True) -> list[str]:
     """Identidad y resumen del documento principal de la operación."""
     document = getattr(project, "blueprint_document", None)
     if document is None:
@@ -131,7 +131,12 @@ def _format_blueprint(project) -> list[str]:
     if description:
         lines.append(f"- Descripción: {description}")
 
-    summary = _clean(getattr(document, "content_summary", ""))
+    # El resumen sólo tiene sentido cuando el texto completo no viaja. Bajo
+    # contexto-primero el documento principal va entero y citable en el mismo
+    # pedido: el resumen pasa a ser una paráfrasis redundante escrita en la
+    # ingesta, que además puede no coincidir con el texto. Dos versiones del
+    # mismo documento y ninguna marcada como autoritativa.
+    summary = _clean(getattr(document, "content_summary", "")) if include_summary else ""
     if summary:
         if len(summary) > _MAX_SUMMARY_CHARS:
             summary = summary[:_MAX_SUMMARY_CHARS].rstrip() + "…"
@@ -140,7 +145,7 @@ def _format_blueprint(project) -> list[str]:
     return lines
 
 
-def build_operation_context_block(project) -> str:
+def build_operation_context_block(project, *, include_blueprint_summary: bool = True) -> str:
     """
     Bloque de contexto de la operación, o cadena vacía si no hay operación.
 
@@ -173,7 +178,7 @@ def build_operation_context_block(project) -> str:
             heading = "Objetivo de la operación" if key == "objetivo" else "Componentes / Actividades"
             lines.extend(["", f"## {heading}", value])
 
-    lines.extend(_format_blueprint(project))
+    lines.extend(_format_blueprint(project, include_summary=include_blueprint_summary))
 
     lines.extend(
         [

@@ -215,3 +215,68 @@ class DocumentBlockTests(SimpleTestCase):
             step_prompt=step_prompt,
             model="claude-sonnet-5",
         )[1]["content"]
+
+
+class BlueprintRoleTests(SimpleTestCase):
+    """El documento principal no es uno más con prioridad de presupuesto.
+
+    Describe la operación que se evalúa; los demás son el marco contra el que
+    se la evalúa. Aplanarlos invita a confundir "la operación no hace X" con
+    "el marco no exige X" — hallazgos distintos, presentados con la misma
+    seguridad.
+    """
+
+    def setUp(self):
+        self.documents = [
+            make_document(1, "nap", 150),
+            make_document(2, "ido", 40),     # el documento de la operación
+            make_document(3, "nbsap", 120),
+        ]
+        self.plan = cb.plan_context(
+            self.documents, reserved_tokens=10_000, blueprint_id=2
+        )
+
+    def test_plan_carries_the_role(self):
+        self.assertEqual(self.plan.blueprint.slug, "ido")
+        self.assertEqual(self.plan.diagnostics()["blueprint"], "ido")
+
+    def test_inventory_separates_subject_from_yardstick(self):
+        inventory = cb.render_inventory(self.plan)
+
+        self.assertIn("Documento de la operación", inventory)
+        self.assertIn("Marco de referencia", inventory)
+        # El principal encabeza, aunque en la lista venga segundo.
+        self.assertLess(inventory.index("[ido]"), inventory.index("[nap]"))
+
+    def test_inventory_explains_what_an_absence_means_in_each_group(self):
+        inventory = cb.render_inventory(self.plan)
+
+        self.assertIn("sobre la operación", inventory)
+        self.assertIn("sobre el marco", inventory)
+
+    def test_single_document_is_not_grouped(self):
+        """Con un solo documento la separación no informa nada y sólo agrega
+        ruido al prefijo cacheado."""
+        plan = cb.plan_context([make_document(1, "ido", 40)],
+                               reserved_tokens=10_000, blueprint_id=1)
+
+        self.assertNotIn("Marco de referencia", cb.render_inventory(plan))
+
+    def test_without_a_blueprint_the_list_stays_flat(self):
+        plan = cb.plan_context(self.documents, reserved_tokens=10_000)
+
+        self.assertIsNone(plan.blueprint)
+        self.assertNotIn("Documento de la operación", cb.render_inventory(plan))
+
+    def test_blueprint_is_still_degraded_last(self):
+        """El rol también protege el presupuesto: un informe sin el documento
+        que describe la operación no es un informe incompleto, es otro informe."""
+        big = [
+            make_document(1, "ido", 1_400),   # principal y el más grande
+            make_document(2, "nap", 1_300),
+        ]
+        plan = cb.plan_context(big, reserved_tokens=50_000, blueprint_id=1)
+        by_slug = {d.slug: d.mode for d in plan.deliveries}
+
+        self.assertEqual(by_slug["nap"], cb.PARTIAL)
+        self.assertEqual(by_slug["ido"], cb.FULL)

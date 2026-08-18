@@ -327,6 +327,14 @@ def _retrieval_runtime_config() -> dict:
     }
 
 
+def _blueprint_identity(execution: SkillExecution) -> dict | None:
+    """Identidad del documento principal, para el manifiesto."""
+    document = getattr(execution.project, "blueprint_document", None)
+    if document is None:
+        return None
+    return {"id": document.id, "slug": document.slug, "name": document.name}
+
+
 def build_run_manifest(execution: SkillExecution, steps: List[SkillStep]) -> dict:
     """
     Todo lo que hace falta para afirmar que dos corridas tuvieron el mismo input.
@@ -354,6 +362,12 @@ def build_run_manifest(execution: SkillExecution, steps: List[SkillStep]) -> dic
             "document_slugs_filter": list(metadata.get("document_slugs_filter") or []),
             "step_document_overrides": dict(metadata.get("step_document_overrides") or {}),
             "pinned_document_slugs": list(skill.pinned_document_slugs or []),
+            # Qué documento hizo de principal. El rol es estable —siempre el
+            # documento de la operación— pero la identidad no: se sube una
+            # versión nueva del IDO y cambia el sujeto de la auditoría. Dos
+            # corridas con distinto principal no evalúan lo mismo, y sin esto
+            # se verían comparables.
+            "blueprint_document": _blueprint_identity(execution),
         },
         "input_values": dict(execution.input_values or {}),
         "extra_instructions": execution.extra_instructions or "",
@@ -667,7 +681,12 @@ def _table_summary_for_history(title: str, table: dict) -> str:
 # Tool-aware completion helper
 # ---------------------------------------------------------------------------
 
-def _with_operation_context(base_system_prompt: str, execution: SkillExecution) -> str:
+def _with_operation_context(
+    base_system_prompt: str,
+    execution: SkillExecution,
+    *,
+    include_blueprint_summary: bool = True,
+) -> str:
     """
     Antepone al system prompt el contexto de la operación de la ejecución.
 
@@ -684,12 +703,19 @@ def _with_operation_context(base_system_prompt: str, execution: SkillExecution) 
     Sin operación (ejecuciones sobre repositorio o documento suelto) devuelve
     el prompt intacto.
     """
-    cached = getattr(execution, "_operation_context_block", None)
+    attr = (
+        "_operation_context_block"
+        if include_blueprint_summary
+        else "_operation_context_block_nosummary"
+    )
+    cached = getattr(execution, attr, None)
     if cached is None:
         from apps.skill.operation_context import build_operation_context_block
 
-        cached = build_operation_context_block(execution.project)
-        execution._operation_context_block = cached
+        cached = build_operation_context_block(
+            execution.project, include_blueprint_summary=include_blueprint_summary
+        )
+        setattr(execution, attr, cached)
 
     if not cached:
         return base_system_prompt
@@ -1615,7 +1641,13 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             # El contexto de la operación va en el system prompt, no en el
             # prompt del paso: así es idéntico para todos los pasos del
             # workflow y queda como prefijo estable de la corrida.
-            step_system_prompt = _with_operation_context(skill.system_prompt, execution)
+            step_system_prompt = _with_operation_context(
+                skill.system_prompt,
+                execution,
+                # Bajo contexto-primero el documento principal viaja entero y
+                # citable: su resumen sobra y puede contradecirlo.
+                include_blueprint_summary=not use_context_first,
+            )
             system_prompt = (
                 build_table_system_prompt(step_system_prompt, step_table_schema)
                 if is_table_step
