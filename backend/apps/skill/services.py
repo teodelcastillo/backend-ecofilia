@@ -93,22 +93,60 @@ RESEARCH_SCRATCHPAD_MAX_CHUNKS = int(os.environ.get("SKILL_RESEARCH_SCRATCHPAD_C
 # Maximum distinct research queries derived automatically from step instructions.
 RESEARCH_AUTO_QUERIES_MAX = int(os.environ.get("SKILL_RESEARCH_AUTO_QUERIES", "8"))
 
-# Quality bar injected into each authored (non-table) Copilot step so the
-# output reads like a professional consulting deliverable rather than a terse
-# answer. Traceability is surfaced via clickable source chips in the UI, so we
-# ask the model to name source documents in prose instead of emitting literal
-# [#N] markers (which the result view renders as plain text).
-COPILOT_DELIVERABLE_STANDARD = (
+# Estándar de entregable inyectado en cada paso de prosa de un copiloto.
+#
+# Hay dos, y la diferencia no es de estilo: es que describen situaciones
+# distintas. Con recuperación, el modelo escribe una sección con seis mil
+# tokens de fragmentos y el riesgo es que quede flaca — pedir profundidad es
+# correcto. Con el expediente completo delante, el riesgo se invierte: el
+# material sobra y la tentación es resumirlo todo. La misma instrucción que
+# antes evitaba secciones pobres ahora empuja al relleno.
+#
+# Por eso el que corresponde se elige por situación en vez de borrar uno de los
+# dos: el camino de recuperación sigue existiendo como plan B, y ahí la versión
+# vieja sigue siendo la correcta.
+
+_DELIVERABLE_BASE = (
     "## Estándar de entregable profesional\n"
-    "- Redactá esta sección como parte de un entregable de consultoría en sostenibilidad/ESG: "
-    "completa, precisa y bien estructurada.\n"
-    "- Desarrollá el análisis en profundidad; usá subtítulos, párrafos y listas o tablas markdown "
-    "cuando aporten claridad. Evitá respuestas superficiales o de una sola línea.\n"
-    "- Fundamentá cada afirmación en la evidencia documental provista; cuando uses un dato puntual, "
-    "mencioná el documento del que proviene por su nombre. No inventes datos ni rellenes con "
-    "generalidades no sustentadas.\n"
-    "- Si la evidencia es insuficiente para algún punto, declaralo explícitamente en lugar de inferir."
+    "- Redactá esta sección como parte de un entregable de consultoría en "
+    "sostenibilidad/ESG para una banca de desarrollo: precisa, bien estructurada y "
+    "escrita para alguien que va a tomar una decisión con ella.\n"
+    "- Usá subtítulos, párrafos y listas o tablas markdown cuando aporten claridad.\n"
 )
+
+# Camino de recuperación: la evidencia es escasa y hay que aprovecharla.
+COPILOT_DELIVERABLE_STANDARD = (
+    _DELIVERABLE_BASE
+    + "- Desarrollá el análisis en profundidad; evitá respuestas superficiales o de una "
+    "sola línea.\n"
+    "- Fundamentá cada afirmación en la evidencia documental provista; cuando uses un "
+    "dato puntual, mencioná el documento del que proviene por su nombre. No inventes "
+    "datos ni rellenes con generalidades no sustentadas.\n"
+    "- Si la evidencia es insuficiente para algún punto, declaralo explícitamente en "
+    "lugar de inferir."
+)
+
+# Contexto-primero: el material sobra, y lo que escasea es el criterio para
+# elegir qué entra. Las reglas sobre qué se puede afirmar y qué se puede citar
+# ya están en el inventario, con más precisión que acá — repetirlas sólo las
+# diluye.
+COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST = (
+    _DELIVERABLE_BASE
+    + "- Tenés el expediente completo delante. El trabajo no es resumirlo: es elegir lo "
+    "que decide esta sección y dejar afuera lo que no. Extensión proporcional a lo que "
+    "el punto exige, no a lo que hay disponible.\n"
+    "- Escribí sobre lo que encontraste, no sobre lo que buscaste. Nada de relatar el "
+    "recorrido por los documentos ni de enumerar lo que revisaste."
+)
+
+
+def deliverable_standard(*, context_first: bool) -> str:
+    """El estándar que corresponde a la situación del paso."""
+    return (
+        COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST
+        if context_first
+        else COPILOT_DELIVERABLE_STANDARD
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -383,20 +421,46 @@ def _render_quick_prompt(template: str, context_block: str, extra_instructions: 
     )
 
 
-def _comparative_instruction_block(strict_missing_evidence: bool) -> str:
-    lines = [
-        "Comparative output requirements:",
-        "1) Present findings by document first for each criterion.",
-        "2) For every criterion, include every active document even if there is no direct evidence.",
-    ]
-    if strict_missing_evidence:
+def _comparative_instruction_block(
+    strict_missing_evidence: bool, *, has_inventory: bool = False
+) -> str:
+    """Requisitos de salida comparativa, según lo que el paso realmente tiene.
+
+    Este bloque nació para forzar al RAG a cubrir todos los documentos: sin él,
+    la recuperación traía tres de seis y la sección hablaba de tres. Cuando el
+    alcance llega completo por construcción, esa parte sobra — y la fórmula
+    "Sin evidencia en fuentes provistas" pasa a estorbar, porque aplasta en una
+    sola frase los tres estados que el inventario acaba de distinguir: una
+    ausencia real no es lo mismo que un documento mencionado que no tenemos.
+
+    Se pregunta por el inventario y no por el plan a propósito: cuando se arma
+    este bloque el plan todavía no existe —el presupuesto documental depende
+    del prompt que estamos construyendo—, y de todos modos el inventario es
+    más preciso que un booleano: dice documento por documento cuál llegó
+    completo y cuál en fragmentos.
+    """
+    lines = ["Comparative output requirements:",
+             "1) Present findings by document first for each criterion."]
+    if not has_inventory:
         lines.append(
-            "3) If a document does not contain evidence for a criterion, explicitly write: "
-            "'Sin evidencia en fuentes provistas'."
+            "2) For every criterion, include every active document even if there is "
+            "no direct evidence."
         )
+        if strict_missing_evidence:
+            lines.append(
+                "3) If a document does not contain evidence for a criterion, explicitly "
+                "write: 'Sin evidencia en fuentes provistas'."
+            )
+        else:
+            lines.append(
+                "3) If evidence is missing, state that limitation clearly and avoid "
+                "unsupported inference."
+            )
     else:
         lines.append(
-            "3) If evidence is missing, state that limitation clearly and avoid unsupported inference."
+            "2) Cubrí cada documento del inventario en cada criterio. "
+            "Cuando un documento no diga nada sobre un criterio, usá el estado que "
+            "corresponda de los tres del inventario — no una fórmula única."
         )
     return "\n".join(lines).strip()
 
@@ -1486,8 +1550,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "",
                 f"Instructions: {step.instructions}",
             ]
-            # Note the document scope so the model is aware it's narrowed.
-            if step.document_slugs:
+            # Bajo contexto-primero el inventario ya lista, uno por uno, los
+            # documentos que el paso tiene. Este aviso decía lo mismo peor: "un
+            # subconjunto" sin decir de qué.
+            if step.document_slugs and not use_context_first:
                 lines.append(
                     "\n## Document scope: este paso analiza solo un subconjunto "
                     "de los documentos del contexto."
@@ -1526,12 +1592,18 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 lines.append("\n(No document content found for this section — note this in your output.)")
             if skill.comparative_mode_enabled and not is_table_step:
                 lines.append(
-                    f"\n## Comparative constraints:\n{_comparative_instruction_block(skill.strict_missing_evidence)}"
+                    "\n## Comparative constraints:\n"
+                    + _comparative_instruction_block(
+                        skill.strict_missing_evidence,
+                        has_inventory=use_context_first,
+                    )
                 )
             # Professional deliverable standard — only for authored prose steps.
             # Table steps must return strict JSON, so we never relax their format.
             if not is_table_step:
-                lines.append(f"\n{COPILOT_DELIVERABLE_STANDARD}")
+                lines.append(
+                    f"\n{deliverable_standard(context_first=use_context_first)}"
+                )
 
             if use_context_first:
                 lines.append(
