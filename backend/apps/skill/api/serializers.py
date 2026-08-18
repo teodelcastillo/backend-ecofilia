@@ -6,6 +6,7 @@ from rest_framework import serializers
 from apps.document.services import accessible_documents_for
 from apps.skill.models import (
     ExecutionOutputMode,
+    OutputValidation,
     ExecutionStatus,
     RetrievalStrategy,
     Skill,
@@ -139,6 +140,7 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "document_slugs",
             "output_mode",
             "table_schema",
+            "output_validation",
             "approval_required",
         )
 
@@ -211,6 +213,17 @@ class SkillStepWriteSerializer(serializers.Serializer):
         choices=ExecutionOutputMode.choices,
         required=False,
         default=ExecutionOutputMode.TEXT,
+    )
+    output_validation = serializers.ChoiceField(
+        choices=OutputValidation.choices,
+        required=False,
+        default=OutputValidation.STRICT,
+        help_text=(
+            "Qué hacer cuando la salida no cumple el esquema declarado. Un paso "
+            "nuevo nace estricto: el contrato se cumple o el paso falla. Los pasos "
+            "que ya existían quedaron en 'lenient' para no cambiarles el "
+            "comportamiento."
+        ),
     )
     table_schema = serializers.DictField(required=False)
     approval_required = serializers.BooleanField(required=False, default=False)

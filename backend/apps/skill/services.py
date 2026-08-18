@@ -30,6 +30,7 @@ from apps.skill import context_budget
 from apps.skill.citations import citation_stats, resolve_citations
 from apps.skill.models import (
     ExecutionOutputMode,
+    OutputValidation,
     ExecutionStatus,
     RetrievalStrategy,
     SkillExecution,
@@ -268,6 +269,10 @@ def _definition_fingerprint(skill, steps: List[SkillStep]) -> str:
                 "position": step.position,
                 "tier": step.tier,
                 "evidence_mode": step.evidence_mode,
+                # Dos corridas con distinta política de validación no son
+                # comparables: una toleró celdas fuera del vocabulario y la otra
+                # habría fallado. Sin esto, la comparación las vería iguales.
+                "output_validation": step.output_validation,
                 "title": step.title,
                 "instructions": step.instructions,
                 "step_type": step.step_type,
@@ -584,9 +589,27 @@ def build_table_system_prompt(base_system_prompt: str, table_schema: dict) -> st
     )
 
 
-def coerce_table_output(*, output_text: str, table_schema: dict) -> dict:
+class TableContractError(ValueError):
+    """La salida no cumple el esquema declarado por el paso.
+
+    Se distingue de ``ValueError`` a secas porque el motor la trata distinto:
+    en modo estricto es motivo de reintento y, si el reintento tampoco cumple,
+    de falla del paso. Un paso que declara una determinación auditable y no
+    puede producirla tiene que decirlo, no escribir prosa.
+    """
+
+
+def coerce_table_output(
+    *, output_text: str, table_schema: dict, strict: bool = False
+) -> dict:
     """
     Parse and normalize a model's tabular JSON response against the schema.
+
+    ``strict`` hace cumplir el contrato: una celda obligatoria vacía, un valor
+    fuera del vocabulario declarado o una fila que no es un objeto levantan
+    ``TableContractError`` en vez de convertirse en celda vacía. En modo
+    tolerante nada falla, pero los problemas quedan registrados en ``issues``
+    para que la corrida se pueda auditar después.
 
     Returns:
         {
@@ -594,6 +617,7 @@ def coerce_table_output(*, output_text: str, table_schema: dict) -> dict:
             "columns": [str],          # ordered keys
             "column_schema": [dict],   # full column metadata
             "rows": [dict],            # normalized rows keyed by column key
+            "issues": [dict],          # celdas que no cumplieron el contrato
         }
     """
     schema_columns = table_schema.get("columns") or []
@@ -616,18 +640,38 @@ def coerce_table_output(*, output_text: str, table_schema: dict) -> dict:
     enum_map = {c["key"]: set(c.get("allowed_values") or []) for c in schema_columns}
 
     normalized_rows: list[dict] = []
-    for row in rows:
+    issues: list[dict] = []
+    for index, row in enumerate(rows):
         if not isinstance(row, dict):
+            if strict:
+                raise TableContractError(
+                    f"La fila {index} no es un objeto JSON."
+                )
+            issues.append({"row": index, "column": None, "problem": "row_not_object"})
             continue
         normalized_row = {}
         for col in normalized_keys:
-            value = row.get(col, None)
-            value = normalize_table_cell_value(
-                value=value,
+            value, problem = validate_table_cell_value(
+                value=row.get(col, None),
                 col_type=type_map.get(col, "text"),
                 required=required_map.get(col, False),
                 allowed_values=enum_map.get(col, set()),
             )
+            if problem:
+                if strict:
+                    raise TableContractError(
+                        _cell_problem_message(
+                            index, col, problem, row.get(col), enum_map.get(col, set())
+                        )
+                    )
+                issues.append(
+                    {
+                        "row": index,
+                        "column": col,
+                        "problem": problem,
+                        "received": row.get(col),
+                    }
+                )
             normalized_row[col] = value
         normalized_rows.append(normalized_row)
 
@@ -636,38 +680,90 @@ def coerce_table_output(*, output_text: str, table_schema: dict) -> dict:
         "columns": normalized_keys,
         "column_schema": schema_columns,
         "rows": normalized_rows,
+        "issues": issues,
     }
 
 
-def normalize_table_cell_value(*, value, col_type: str, required: bool, allowed_values: set):
-    """Best-effort normalization of a model-generated cell value to the column type."""
+def _cell_problem_message(row: int, column: str, problem: str, received, allowed) -> str:
+    """El mensaje que ve quien tiene que arreglar el paso — o el modelo, en el
+    reintento. Dice qué llegó y qué se esperaba, no sólo que algo falló."""
+    if problem == CELL_MISSING_REQUIRED:
+        return f"Fila {row}: la columna obligatoria '{column}' vino vacía."
+    if problem == CELL_INVALID_ENUM:
+        opciones = ", ".join(sorted(allowed))
+        return (
+            f"Fila {row}: '{received}' no es un valor válido para '{column}'. "
+            f"Valores permitidos: {opciones}."
+        )
+    tipo = {CELL_INVALID_NUMBER: "un número", CELL_INVALID_BOOLEAN: "un booleano"}
+    return (
+        f"Fila {row}: '{received}' no es {tipo.get(problem, 'un valor válido')} "
+        f"para la columna '{column}'."
+    )
+
+
+# Por qué una celda quedó vacía. Sin esto, "el modelo no contestó" y "el modelo
+# contestó algo fuera del vocabulario declarado" son el mismo string vacío — y
+# al comparar dos corridas, una violación del contrato se ve igual que un dato
+# que no estaba. Es la misma distinción que los tres estados del inventario,
+# aplicada a la celda.
+CELL_MISSING_REQUIRED = "missing_required"
+CELL_INVALID_ENUM = "invalid_enum"
+CELL_INVALID_NUMBER = "invalid_number"
+CELL_INVALID_BOOLEAN = "invalid_boolean"
+
+
+def validate_table_cell_value(
+    *, value, col_type: str, required: bool, allowed_values: set
+) -> tuple:
+    """Normaliza una celda y devuelve ``(valor, problema)``.
+
+    ``problema`` es ``None`` cuando la celda cumple el contrato. Cuando no,
+    dice qué falló: es lo que permite que el modo estricto falle con un motivo
+    y que el tolerante deje registro en vez de tragarse el error.
+    """
     if value in (None, ""):
-        return ""
+        return "", (CELL_MISSING_REQUIRED if required else None)
+
     if col_type == "boolean":
         if isinstance(value, bool):
-            return value
+            return value, None
         text = str(value).strip().lower()
         if text in {"true", "1", "yes", "si", "sí"}:
-            return True
+            return True, None
         if text in {"false", "0", "no"}:
-            return False
-        return ""
+            return False, None
+        return "", CELL_INVALID_BOOLEAN
+
     if col_type == "number":
         try:
             number = float(value)
-            if number.is_integer():
-                return int(number)
-            return number
         except (TypeError, ValueError):
-            return ""
+            return "", CELL_INVALID_NUMBER
+        return (int(number) if number.is_integer() else number), None
+
     if col_type == "enum":
         text = str(value).strip()
         if text in allowed_values:
-            return text
+            return text, None
+        # Coincidencia por mayúsculas: "ALINEADO" cuando el vocabulario dice
+        # "Alineado" no es una violación del contrato, es formato.
         lowered = {str(v).lower(): v for v in allowed_values}
         mapped = lowered.get(text.lower())
-        return mapped if mapped is not None else ""
-    return str(value).strip()
+        if mapped is not None:
+            return mapped, None
+        return "", CELL_INVALID_ENUM
+
+    return str(value).strip(), None
+
+
+def normalize_table_cell_value(*, value, col_type: str, required: bool, allowed_values: set):
+    """Sólo el valor normalizado. Se conserva porque hay llamadores que no
+    necesitan el diagnóstico."""
+    normalized, _ = validate_table_cell_value(
+        value=value, col_type=col_type, required=required, allowed_values=allowed_values
+    )
+    return normalized
 
 
 def _table_summary_for_history(title: str, table: dict) -> str:
@@ -1036,18 +1132,29 @@ def _run_quick(execution: SkillExecution, documents: QuerySet[Document]) -> None
 # Copilot skill runner
 # ---------------------------------------------------------------------------
 
+def is_strict_step(step: SkillStep) -> bool:
+    """Si este paso hace cumplir el contrato que declara."""
+    return (step.output_validation or OutputValidation.LENIENT) == OutputValidation.STRICT
+
+
 def _resolve_step_output_config(step: SkillStep) -> tuple[str, dict]:
     """
     Resolve the effective output mode and table schema for a single step.
 
-    Steps default to TEXT. If the step is configured with TABLE but no
-    table_schema, the step is downgraded to text instead of failing — this
-    keeps the runner forgiving for legacy data while warnings are surfaced
-    in metadata.
+    Un paso que declara tabla y no trae esquema es una definición rota. En modo
+    tolerante se degrada a texto —así los pasos viejos siguen corriendo— pero en
+    modo estricto falla: degradar en silencio convierte una determinación
+    auditable en prosa y la corrida termina sin que nadie se entere.
     """
     output_mode = step.output_mode or ExecutionOutputMode.TEXT
     table_schema = step.table_schema or {}
     if output_mode == ExecutionOutputMode.TABLE and not schema_has_columns(table_schema):
+        if is_strict_step(step):
+            raise TableContractError(
+                f"El paso '{step.title}' declara salida tabular pero no define "
+                "columnas. Cargá el esquema o cambiá la política del paso a "
+                "'lenient'."
+            )
         return ExecutionOutputMode.TEXT, {}
     return output_mode, table_schema
 
@@ -1428,6 +1535,76 @@ def _run_skill_ref_step(
     return step_entry, usage, chunks
 
 
+def _coerce_with_retry(
+    *,
+    content: str,
+    table_schema: dict,
+    strict: bool,
+    messages: list[dict],
+    skill,
+    tier: str,
+    tool_ctx,
+    step,
+    execution,
+) -> tuple[dict, str, dict]:
+    """Valida la tabla y, si no cumple, le da al modelo una segunda oportunidad.
+
+    Un reintento, y sólo en modo estricto. La razón es de reproducibilidad: sin
+    él, un paso de diecisiete que devuelve una coma de más tira la corrida
+    entera o —peor, como era antes— la convierte en prosa y sigue. Con él, el
+    modelo recibe qué falló y qué se esperaba, que es información que no tenía.
+
+    El reintento no reformula la tarea ni afloja el contrato: repite el mismo
+    pedido agregando el error concreto. Si tampoco cumple, el paso falla.
+
+    Devuelve ``(tabla, contenido_usado, usage_del_reintento)``.
+    """
+    sin_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+    try:
+        return (
+            coerce_table_output(
+                output_text=content, table_schema=table_schema, strict=strict
+            ),
+            content,
+            sin_usage,
+        )
+    except (TableContractError, ValueError) as exc:
+        if not strict:
+            raise
+        # El mensaje se guarda acá: Python borra la variable del `except` al
+        # salir del bloque, y abajo hace falta para decirle al modelo qué falló.
+        motivo = str(exc)
+        logger.warning(
+            "Paso %s de la ejecución %s no cumplió el contrato de tabla (%s). Reintento.",
+            step.id,
+            execution.id,
+            motivo,
+        )
+
+    correccion = (
+        f"{content}\n\n"
+        "La respuesta anterior no cumple el esquema declarado para este paso:\n"
+        f"{motivo}\n\n"
+        "Devolvé únicamente el JSON corregido, respetando exactamente las columnas "
+        "y los valores permitidos. No expliques el error ni agregues texto fuera "
+        "del JSON."
+    )
+    reintento = list(messages) + [{"role": "user", "content": correccion}]
+    nuevo_contenido, usage, _ = _call_model(
+        reintento, skill=skill, tier=tier, tool_ctx=tool_ctx
+    )
+    # Si el segundo intento tampoco cumple, la excepción sube y el paso falla:
+    # dos intentos contra un contrato explícito es suficiente evidencia de que
+    # el problema no es el modelo teniendo un mal día.
+    return (
+        coerce_table_output(
+            output_text=nuevo_contenido, table_schema=table_schema, strict=True
+        ),
+        nuevo_contenido,
+        usage,
+    )
+
+
 def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> None:
     from apps.skill.tools import SkillToolContext
 
@@ -1727,10 +1904,27 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "citations": step_citations,
             }
             if is_table_step:
+                strict = is_strict_step(step)
                 try:
-                    table = coerce_table_output(
-                        output_text=content, table_schema=step_table_schema
+                    table, content, retry_usage = _coerce_with_retry(
+                        content=content,
+                        table_schema=step_table_schema,
+                        strict=strict,
+                        messages=messages,
+                        skill=skill,
+                        tier=tier_used,
+                        tool_ctx=tool_ctx,
+                        step=step,
+                        execution=execution,
                     )
+                except TableContractError:
+                    # En estricto no se degrada a texto: un paso que declara una
+                    # determinación auditable y no puede producirla tiene que
+                    # decirlo. Escribir prosa acá es lo que hacía que la corrida
+                    # terminara "bien" con una determinación que nadie validó.
+                    # Los pasos anteriores ya están persistidos, así que no se
+                    # pierde el trabajo hecho.
+                    raise
                 except ValueError as exc:
                     logger.warning(
                         "Step %s of execution %s produced invalid table JSON: %s",
@@ -1743,7 +1937,14 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     step_entry["table_error"] = str(exc)
                     previous_sections.append((step.title, content))
                 else:
+                    for key in total_usage:
+                        total_usage[key] += retry_usage.get(key, 0)
                     step_entry["table"] = table
+                    step_entry["output_validation"] = (
+                        OutputValidation.STRICT if strict else OutputValidation.LENIENT
+                    )
+                    if table.get("issues"):
+                        step_entry["table_issues"] = table["issues"]
                     step_entry["content"] = ""
                     previous_sections.append(
                         (step.title, _table_summary_for_history(step.title, table))

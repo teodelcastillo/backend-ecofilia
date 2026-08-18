@@ -315,6 +315,22 @@ class SkillStepType(models.TextChoices):
     SKILL_REF = "skill_ref", _("Run existing skill")
 
 
+class OutputValidation(models.TextChoices):
+    """Qué hace el motor cuando la salida no cumple el contrato del paso.
+
+    Es por paso y no del motor a propósito. Una determinación auditable y una
+    exploración no piden lo mismo: en la primera, una celda fuera del vocabulario
+    declarado es un error que hay que ver; en la segunda, exigir el contrato
+    convierte cada corrida en una pelea contra el validador.
+
+    Distintos workflows —y distintos pasos del mismo— van a querer cosas
+    distintas, así que la rigidez la decide quien escribe el workflow.
+    """
+
+    LENIENT = "lenient", "Tolerante: normaliza lo que puede y registra el resto"
+    STRICT = "strict", "Estricto: la salida cumple el contrato o el paso falla"
+
+
 class StepEvidenceMode(models.TextChoices):
     """
     De dónde saca su material un paso.
@@ -416,6 +432,17 @@ class SkillStep(models.Model):
         help_text=(
             "Persistent schema for tabular output of this step. Expected shape: "
             '{"name": str, "description": str, "columns": [TableColumn]}.'
+        ),
+    )
+    output_validation = models.CharField(
+        max_length=20,
+        choices=OutputValidation.choices,
+        default=OutputValidation.STRICT,
+        help_text=(
+            "Qué hacer cuando la salida no cumple el esquema declarado. "
+            "'strict' hace fallar el paso; 'lenient' normaliza lo que puede y "
+            "registra el resto. Los pasos que ya existían quedaron en 'lenient' "
+            "para no cambiarles el comportamiento; los nuevos nacen estrictos."
         ),
     )
 
