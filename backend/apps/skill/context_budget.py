@@ -320,30 +320,152 @@ def render_inventory(plan: ContextPlan) -> str:
     return "\n".join(lines)
 
 
-def render_corpus(plan: ContextPlan, *, texts: dict, partial_blocks: dict) -> str:
-    """El cuerpo documental, delimitado documento por documento.
+def _header(index: int, total: int, delivery: DocumentDelivery) -> str:
+    """Delimitador de documento.
 
-    Los delimitadores llevan el slug además del nombre porque es el
-    identificador con el que después se resuelve la fuente en la interfaz, y
-    porque un nombre de archivo es ambiguo entre versiones del mismo documento.
+    Lleva el slug además del nombre porque es el identificador con el que
+    después se resuelve la fuente en la interfaz, y porque un nombre de archivo
+    es ambiguo entre versiones del mismo documento.
+    """
+    return (
+        f"===== DOCUMENTO {index}/{total} · [{delivery.slug}] {delivery.name} · "
+        f"{_STATE_LABEL.get(delivery.mode, delivery.mode)} ====="
+    )
+
+
+def render_corpus(plan: ContextPlan, *, texts: dict) -> str:
+    """La parte del corpus que **no cambia entre pasos**: los textos completos.
+
+    Está separada de los fragmentos a propósito, y la razón es económica. La
+    caché de prompts es un match de prefijo: alcanza con que un byte cambie
+    para pagar el corpus entero de nuevo. Los fragmentos de un documento
+    degradado dependen de la consulta del paso y por lo tanto cambian en cada
+    uno; si viajaran acá adentro, diecisiete pasos pagarían diecisiete veces
+    medio millón de tokens en vez de una. Van aparte, después del punto de
+    caché, en ``render_partials``.
+
+    Un documento degradado igual aparece en su lugar de la secuencia, con una
+    remisión: la numeración y el inventario tienen que seguir coincidiendo.
     """
     total = len(plan.deliveries)
     parts: list[str] = []
     for index, delivery in enumerate(plan.deliveries, start=1):
-        header = (
-            f"===== DOCUMENTO {index}/{total} · [{delivery.slug}] {delivery.name} · "
-            f"{_STATE_LABEL.get(delivery.mode, delivery.mode)} ====="
-        )
         if delivery.mode == FULL:
             body = (texts.get(delivery.document.id) or "").strip()
         elif delivery.mode == PARTIAL:
-            body = (partial_blocks.get(delivery.document.id) or "").strip()
-            if not body:
-                body = (
-                    "(No se recuperaron fragmentos de este documento para esta "
-                    "sección. No asumas nada sobre su contenido.)"
-                )
+            body = (
+                "(De este documento no recibís el texto completo. Los fragmentos "
+                "recuperados para esta sección van más abajo, después de los "
+                "documentos completos.)"
+            )
         else:
             body = "(Sin texto extraído. Este documento no puede usarse como fuente.)"
-        parts.append(f"{header}\n{body}\n===== FIN DOCUMENTO {index}/{total} =====")
+        parts.append(
+            f"{_header(index, total, delivery)}\n{body}\n"
+            f"===== FIN DOCUMENTO {index}/{total} ====="
+        )
     return "\n\n".join(parts)
+
+
+def render_partials(plan: ContextPlan, *, partial_blocks: dict) -> str:
+    """Los fragmentos de los documentos que no entraron completos.
+
+    Vacío cuando todo entró, que es el caso que se busca.
+    """
+    if not plan.degraded:
+        return ""
+    total = len(plan.deliveries)
+    positions = {d.document.id: i for i, d in enumerate(plan.deliveries, start=1)}
+    parts = [
+        "## Fragmentos de los documentos que no entraron completos",
+        "",
+        "Lo que sigue son extractos recuperados para esta sección, no el "
+        "documento. Sobre estos documentos no afirmes ausencias.",
+    ]
+    for delivery in plan.degraded:
+        body = (partial_blocks.get(delivery.document.id) or "").strip()
+        if not body:
+            body = (
+                "(No se recuperaron fragmentos de este documento para esta "
+                "sección. No asumas nada sobre su contenido.)"
+            )
+        index = positions.get(delivery.document.id, 0)
+        parts.append(
+            f"\n{_header(index, total, delivery)}\n{body}\n"
+            f"===== FIN FRAGMENTOS {index}/{total} ====="
+        )
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Armado del pedido
+# ---------------------------------------------------------------------------
+
+# TTL del punto de caché sobre el corpus. Vacío usa el default del proveedor
+# (5 minutos, que se renuevan con cada lectura). Un workflow de diecisiete
+# pasos con pausas de aprobación puede superarlo; ahí conviene "1h", que cuesta
+# el doble escribir y se amortiza a partir del tercer paso.
+CACHE_TTL = os.environ.get("SKILL_CONTEXT_CACHE_TTL", "").strip()
+
+
+def cache_control() -> dict | None:
+    from apps.document.utils.llm import is_prompt_caching_enabled
+
+    if not is_prompt_caching_enabled():
+        return None
+    control = {"type": "ephemeral"}
+    if CACHE_TTL:
+        control["ttl"] = CACHE_TTL
+    return control
+
+
+def build_messages(
+    *,
+    system_prompt: str,
+    corpus_stable: str,
+    corpus_volatile: str,
+    step_prompt: str,
+    model: str,
+) -> list[dict]:
+    """Arma el pedido con el corpus como prefijo cacheable.
+
+    Vive en este módulo y no en el runner porque el orden de las partes *es*
+    la decisión de presupuesto: la caché de prompts es un match de prefijo, y
+    todo lo que esté antes del punto de caché se cobra una sola vez mientras no
+    cambie. De ahí las tres partes, en este orden exacto:
+
+      1. ``corpus_stable`` — los documentos completos y el inventario. Idéntico
+         en los diecisiete pasos. **El punto de caché va al final de esto.**
+      2. ``corpus_volatile`` — los fragmentos de los documentos degradados, que
+         dependen de la consulta del paso y por lo tanto cambian en cada uno.
+      3. ``step_prompt`` — la instrucción, los parámetros y las secciones
+         previas.
+
+    Meter (2) adentro de (1) invalida la caché en cada paso: medio millón de
+    tokens pagados diecisiete veces por veinte mil que cambian. Es el error que
+    esta separación corrige, y por eso hay un test que compara los diecisiete
+    prefijos byte a byte.
+
+    Si el modelo no es de Anthropic todo va inline, sin bloques ni caché:
+    correcto pero caro. Es una ruta de escape, no el camino previsto.
+    """
+    from apps.document.utils.llm import is_anthropic_model
+
+    messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    pieces = [p for p in (corpus_stable, corpus_volatile, step_prompt) if p]
+
+    if not corpus_stable or not is_anthropic_model(model):
+        messages.append({"role": "user", "content": "\n\n".join(pieces)})
+        return messages
+
+    stable_block: dict = {"type": "text", "text": corpus_stable}
+    control = cache_control()
+    if control:
+        stable_block["cache_control"] = control
+
+    content: list[dict] = [stable_block]
+    if corpus_volatile:
+        content.append({"type": "text", "text": corpus_volatile})
+    content.append({"type": "text", "text": step_prompt})
+    messages.append({"role": "user", "content": content})
+    return messages

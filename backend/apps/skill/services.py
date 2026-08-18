@@ -23,8 +23,6 @@ from apps.document.utils.client_openia import generate_chat_completion, generate
 from apps.document.utils.llm import (
     ROLE_BALANCED,
     effective_chat_model,
-    is_anthropic_model,
-    is_prompt_caching_enabled,
     tool_capable_model,
 )
 from apps.skill import context_budget
@@ -77,12 +75,6 @@ def _flag(name: str, default: str) -> bool:
 def is_context_first_enabled() -> bool:
     return _flag("SKILL_CONTEXT_FIRST", "1")
 
-
-# TTL del punto de caché sobre el corpus. Vacío usa el default del proveedor
-# (5 minutos, que se renuevan con cada lectura). Un workflow de diecisiete
-# pasos con pausas de aprobación puede superarlo; ahí conviene "1h", que
-# cuesta el doble escribir y se amortiza a partir del tercer paso.
-CONTEXT_CACHE_TTL = os.environ.get("SKILL_CONTEXT_CACHE_TTL", "").strip()
 
 # Subconjunto de los diagnósticos de recuperación que se persiste por paso.
 # `retrieve_for_chat` calcula bastante más, pero esto es lo que permite explicar
@@ -288,7 +280,7 @@ def _retrieval_runtime_config() -> dict:
         "context_safety_margin": context_budget.CONTEXT_SAFETY_MARGIN,
         "degraded_doc_tokens": context_budget.DEGRADED_DOC_TOKENS,
         "chars_per_token": context_budget.CHARS_PER_TOKEN,
-        "context_cache_ttl": CONTEXT_CACHE_TTL or "default",
+        "context_cache_ttl": context_budget.CACHE_TTL or "default",
     }
 
 
@@ -1095,47 +1087,6 @@ def _load_document_texts(documents, cache: dict[int, str]) -> dict[int, str]:
     return cache
 
 
-def _cache_control() -> dict | None:
-    if not is_prompt_caching_enabled():
-        return None
-    control = {"type": "ephemeral"}
-    if CONTEXT_CACHE_TTL:
-        control["ttl"] = CONTEXT_CACHE_TTL
-    return control
-
-
-def _messages_with_corpus(
-    *, system_prompt: str, corpus_text: str, step_prompt: str, model: str
-) -> list[dict]:
-    """Arma el pedido poniendo el corpus como prefijo cacheable.
-
-    El orden no es estético: la caché de prompts es un match de prefijo, así
-    que el corpus tiene que ir **antes** de lo que cambia en cada paso. Con
-    diecisiete pasos sobre el mismo expediente, eso es la diferencia entre
-    pagar el corpus una vez o diecisiete.
-
-    Si el modelo no es de Anthropic el corpus va inline, sin bloques ni caché:
-    correcto pero caro. Es una ruta de escape, no el camino previsto.
-    """
-    messages: list[dict] = [{"role": "system", "content": system_prompt}]
-    if not corpus_text:
-        messages.append({"role": "user", "content": step_prompt})
-    elif not is_anthropic_model(model):
-        messages.append({"role": "user", "content": f"{corpus_text}\n\n{step_prompt}"})
-    else:
-        corpus_block: dict = {"type": "text", "text": corpus_text}
-        control = _cache_control()
-        if control:
-            corpus_block["cache_control"] = control
-        messages.append(
-            {
-                "role": "user",
-                "content": [corpus_block, {"type": "text", "text": step_prompt}],
-            }
-        )
-    return messages
-
-
 def _plan_sources(plan, chunks) -> list[dict]:
     """Las fuentes de un paso bajo contexto-primero.
 
@@ -1210,7 +1161,7 @@ def build_step_corpus(
     document_texts: dict[int, str],
     strategy: str | None = None,
     retrieve_partials: bool = True,
-) -> tuple[str, list, "context_budget.ContextPlan"]:
+) -> tuple[str, str, list, "context_budget.ContextPlan"]:
     """La base documental de un paso, tal como la va a ver el modelo.
 
     Está afuera de ``_run_copilot`` para que se pueda armar sin ejecutar el
@@ -1218,7 +1169,10 @@ def build_step_corpus(
     recibe cada paso antes de gastar una corrida en averiguarlo. La pregunta
     "¿qué le estamos mandando al modelo?" no debería requerir mandárselo.
 
-    Devuelve ``(corpus, fragmentos, plan)``.
+    Devuelve ``(estable, variable, fragmentos, plan)``. La separación entre lo
+    estable y lo variable no es organizativa: es dónde va el punto de caché.
+    Todo lo que cambie de un paso a otro tiene que quedar del lado de afuera,
+    o el corpus se paga entero diecisiete veces.
     """
     planned_documents = list(step_documents.defer("extracted_text"))
     _load_document_texts(planned_documents, document_texts)
@@ -1234,15 +1188,14 @@ def build_step_corpus(
         )
     else:
         partial_blocks, chunks = {}, []
-    corpus = "\n\n".join(
+    stable = "\n\n".join(
         (
             context_budget.render_inventory(plan),
-            context_budget.render_corpus(
-                plan, texts=document_texts, partial_blocks=partial_blocks
-            ),
+            context_budget.render_corpus(plan, texts=document_texts),
         )
     )
-    return corpus, chunks, plan
+    volatile = context_budget.render_partials(plan, partial_blocks=partial_blocks)
+    return stable, volatile, chunks, plan
 
 
 def _run_skill_ref_step(
@@ -1561,7 +1514,8 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             )
 
             tier_used = resolve_tier(skill, step)
-            corpus_text = ""
+            corpus_stable = ""
+            corpus_volatile = ""
             if use_context_first:
                 # El presupuesto documental es lo que queda de la ventana una
                 # vez descontado todo lo que ya está comprometido. Se mide con
@@ -1573,7 +1527,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     + context_budget.estimate_tokens(prompt)
                     + context_budget.output_reserve()
                 )
-                corpus_text, chunks, plan = build_step_corpus(
+                corpus_stable, corpus_volatile, chunks, plan = build_step_corpus(
                     execution=execution,
                     step_documents=step_documents,
                     query_text=query_text,
@@ -1586,9 +1540,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 all_step_chunks.extend(chunks)
                 step_diagnostics = plan.diagnostics()
 
-            messages = _messages_with_corpus(
+            messages = context_budget.build_messages(
                 system_prompt=system_prompt,
-                corpus_text=corpus_text,
+                corpus_stable=corpus_stable,
+                corpus_volatile=corpus_volatile,
                 step_prompt=prompt,
                 model=_resolve_model(skill, tier_used),
             )

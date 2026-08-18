@@ -85,11 +85,18 @@ class Command(BaseCommand):
         self.stdout.write("")
 
         target = options["step"]
-        header = f"{'paso':>4}  {'reserva':>9}  {'corpus':>9}  {'total':>9}  documentos"
+        header = (
+            f"{'paso':>4}  {'reserva':>9}  {'cacheable':>9}  {'variable':>9}  "
+            f"{'total':>9}  documentos"
+        )
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
 
         overflow: list[str] = []
+        # Para el reporte de caché: lo estable se paga una vez, lo demás en
+        # cada paso. Es la diferencia entre una corrida de 4 dólares y una de 19.
+        cached_tokens: list[int] = []
+        uncached_tokens: list[int] = []
         for step in steps:
             if target and step.position != target:
                 continue
@@ -102,7 +109,7 @@ class Command(BaseCommand):
             )
             reserved = system_tokens + step_tokens + output_reserve
 
-            corpus, chunks, plan = build_step_corpus(
+            stable, volatile, chunks, plan = build_step_corpus(
                 execution=execution,
                 step_documents=step_documents,
                 query_text=f"{step.title}. {step.instructions}".strip(),
@@ -111,8 +118,13 @@ class Command(BaseCommand):
                 document_texts=document_texts,
                 retrieve_partials=not options["no_retrieval"],
             )
-            corpus_tokens = context_budget.estimate_tokens(corpus)
+            corpus = "\n\n".join(p for p in (stable, volatile) if p)
+            stable_tokens = context_budget.estimate_tokens(stable)
+            volatile_tokens = context_budget.estimate_tokens(volatile)
+            corpus_tokens = stable_tokens + volatile_tokens
             total = reserved + corpus_tokens
+            cached_tokens.append(stable_tokens)
+            uncached_tokens.append(reserved + volatile_tokens)
 
             detail = []
             for delivery in plan.deliveries:
@@ -123,8 +135,8 @@ class Command(BaseCommand):
                 }[delivery.mode]
                 detail.append(f"{delivery.slug}{mark}")
             self.stdout.write(
-                f"{step.position:>4}  {reserved:>9,}  {corpus_tokens:>9,}  "
-                f"{total:>9,}  {', '.join(detail)}"
+                f"{step.position:>4}  {reserved:>9,}  {stable_tokens:>9,}  "
+                f"{volatile_tokens:>9,}  {total:>9,}  {', '.join(detail)}"
             )
             if total > context_budget.CONTEXT_WINDOW:
                 overflow.append(f"paso {step.position}: {total:,} tokens")
@@ -144,9 +156,51 @@ class Command(BaseCommand):
             self.stdout.write(
                 self.style.SUCCESS("Ningún paso excede la ventana de contexto.")
             )
+        self._report_cache(cached_tokens, uncached_tokens)
         self.stdout.write(
             "\nNota: sin secciones previas, que en la corrida real ocupan "
             "presupuesto. Estos números son el techo, no la corrida."
+        )
+
+    def _report_cache(self, cached: list[int], uncached: list[int]) -> None:
+        """Qué se paga una vez y qué se paga en cada paso.
+
+        Es la comprobación de que el punto de caché quedó donde tiene que
+        quedar. Si la parte estable no es idéntica en todos los pasos, no hay
+        caché que valga: el prefijo se rompe en el primer byte distinto y el
+        corpus se cobra entero de nuevo. Por eso se compara y se avisa, en vez
+        de asumirlo.
+        """
+        if not cached:
+            return
+        self.stdout.write("")
+        distinct = set(cached)
+        if len(distinct) > 1:
+            self.stdout.write(
+                self.style.ERROR(
+                    "La parte cacheable NO es idéntica entre pasos "
+                    f"({len(distinct)} tamaños distintos): la caché se invalida "
+                    "y el corpus se paga una vez por paso."
+                )
+            )
+            return
+
+        steps = len(cached)
+        stable = cached[0]
+        variable = sum(uncached)
+        # Escritura de caché 1,25x, lectura 0,1x.
+        with_cache = stable * 1.25 + stable * 0.1 * (steps - 1) + variable
+        without_cache = stable * steps + variable
+        self.stdout.write(
+            self.style.SUCCESS(
+                f"Parte cacheable idéntica en los {steps} pasos: {stable:,} tokens."
+            )
+        )
+        self.stdout.write(
+            f"  entrada facturable con caché:  {with_cache:>12,.0f} tokens\n"
+            f"  entrada facturable sin caché:  {without_cache:>12,.0f} tokens\n"
+            f"  ahorro:                        "
+            f"{(1 - with_cache / without_cache) * 100:>11.0f}%"
         )
 
     def _execution(self, skill, options) -> SkillExecution:
