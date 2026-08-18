@@ -263,6 +263,8 @@ class CopilotTabularStepsTestCase(TestCase):
         self.assertIn("table_error", steps[1])
         self.assertEqual(steps[1]["content"], "Esto no es JSON valido")
 
+    @patch("apps.skill.services.generate_chat_completion")
+    @patch("apps.skill.services.fetch_relevant_chunks")
     def test_strict_table_step_does_not_silently_become_text(
         self, mock_fetch_chunks, mock_completion
     ):
