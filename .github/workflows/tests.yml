@@ -68,7 +68,15 @@ jobs:
           python-version: "3.12"
 
       - name: Instalar Poetry
-        run: pipx install poetry
+        # Con pip y no con pipx: pipx instala en ~/.local/bin, que no siempre
+        # queda expuesto a los pasos siguientes del job. `pip` lo pone en el
+        # mismo Python que dejó setup-python, que sí está en el PATH — y es lo
+        # que hace el Dockerfile de producción, así que CI y build usan la
+        # misma configuración.
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install poetry
+          poetry --version
 
       - name: Cachear dependencias
         uses: actions/cache@v4
