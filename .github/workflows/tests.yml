@@ -1,0 +1,105 @@
+# Corre la suite antes de que el código llegue a producción.
+#
+# Hasta ahora push a main desplegaba sin ejecutar un solo test: el motor de
+# workflows acumuló cincuenta y cinco tests que nadie corría salvo a mano. Este
+# workflow es independiente del de deploy a propósito — si fuera un paso previo
+# dentro de `deploy.yml`, un test rojo dejaría la imagen sin construir y la
+# recuperación sería un revert. Acá el deploy sigue su camino y el test rojo
+# aparece como check fallado en el commit, que es la señal que hay que mirar.
+#
+# Postgres con pgvector porque la mayoría de los tests tocan la base: de los
+# treinta y cuatro archivos de test, veintiséis usan `TestCase` y necesitan
+# migraciones aplicadas. La imagen sigue la versión de RDS (PostgreSQL 17).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/tests.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+
+concurrency:
+  # Un push que llega mientras corre el anterior cancela el viejo: interesa el
+  # estado de HEAD, no el de un commit ya superado.
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: ecofilia_test
+          POSTGRES_USER: ecofilia
+          POSTGRES_PASSWORD: ecofilia
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ecofilia"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DJANGO_SETTINGS_MODULE: main.settings.dev
+      SECRET_KEY: solo-para-tests-no-es-un-secreto
+      POSTGRES_NAME: ecofilia_test
+      POSTGRES_USER: ecofilia
+      POSTGRES_PASSWORD: ecofilia
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      # Las claves de proveedor no se usan: ningún test llama a un modelo. Van
+      # con valores obviamente falsos para que, si alguno intentara salir a la
+      # red, falle de forma ruidosa en vez de gastar plata.
+      OPENAI_API_KEY: sk-no-se-usa-en-tests
+      ANTHROPIC_API_KEY: sk-ant-no-se-usa-en-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar Poetry
+        run: pipx install poetry
+
+      - name: Cachear dependencias
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          # No hay poetry.lock en el repo, así que la clave sale de pyproject.
+          # Sin lock, Poetry resuelve de cero en cada corrida: más lento y no
+          # reproducible entre builds. Vale la pena commitear el lock — el
+          # Dockerfile de producción también lo copia con `poetry.lock*`, o sea
+          # que hoy la imagen se construye sin él.
+          key: poetry-${{ runner.os }}-${{ hashFiles('backend/pyproject.toml') }}
+          restore-keys: poetry-${{ runner.os }}-
+
+      - name: Instalar dependencias
+        working-directory: backend
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-root --only main
+
+      - name: Correr la suite
+        working-directory: backend
+        # Sin --shuffle todavía: la suite nunca corrió en CI, así que primero
+        # hay que conocer la línea base. Aleatorizar el orden ahora mezclaría
+        # tests genuinamente rotos con tests que dependen del orden, y no se
+        # sabría cuál es cuál.
+        run: python manage.py test --verbosity 2
+
+      - name: Verificar que las migraciones están al día
+        working-directory: backend
+        # Va después de los tests a propósito: si esto falla primero, el job
+        # corta y no se ve el resultado de la suite, que es la información que
+        # se vino a buscar. Un modelo cambiado sin su migración pasa todos los
+        # tests y rompe el deploy siguiente.
+        run: python manage.py makemigrations --check --dry-run
