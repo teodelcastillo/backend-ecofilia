@@ -12,6 +12,7 @@ from apps.skill.models import (
     SkillExecution,
     SkillStep,
     SkillType,
+    OutputValidation,
 )
 from apps.skill.services import execute_skill
 
@@ -227,9 +228,19 @@ class CopilotTabularStepsTestCase(TestCase):
 
     @patch("apps.skill.services.generate_chat_completion")
     @patch("apps.skill.services.fetch_relevant_chunks")
-    def test_copilot_table_step_invalid_json_falls_back_to_text(
+    def test_lenient_table_step_invalid_json_falls_back_to_text(
         self, mock_fetch_chunks, mock_completion
     ):
+        """Un paso tolerante conserva la degradación a texto.
+
+        Es el comportamiento que tenían todos los pasos antes de que la política
+        fuera configurable, y sigue siendo el correcto para un workflow
+        exploratorio: la corrida termina y el error queda en `table_error`.
+        """
+        paso = self.skill.steps.get(position=2)
+        paso.output_validation = OutputValidation.LENIENT
+        paso.save(update_fields=["output_validation"])
+
         chunk = SimpleNamespace(document=self.doc, chunk_index=0, content="Document chunk")
         mock_fetch_chunks.return_value = [chunk]
         mock_completion.side_effect = [
@@ -251,3 +262,40 @@ class CopilotTabularStepsTestCase(TestCase):
         self.assertEqual(steps[1]["output_mode"], "text")
         self.assertIn("table_error", steps[1])
         self.assertEqual(steps[1]["content"], "Esto no es JSON valido")
+
+    def test_strict_table_step_does_not_silently_become_text(
+        self, mock_fetch_chunks, mock_completion
+    ):
+        """Un paso estricto reintenta y, si tampoco cumple, falla.
+
+        Degradar a texto acá es lo que hacía que una determinación auditable
+        terminara siendo prosa mientras la ejecución quedaba en 'completed'.
+        El reintento le pasa al modelo el error concreto; dos intentos fallidos
+        contra un contrato explícito son suficiente evidencia.
+        """
+        paso = self.skill.steps.get(position=2)
+        paso.output_validation = OutputValidation.STRICT
+        paso.save(update_fields=["output_validation"])
+
+        chunk = SimpleNamespace(document=self.doc, chunk_index=0, content="Document chunk")
+        mock_fetch_chunks.return_value = [chunk]
+        mock_completion.side_effect = [
+            ("Resumen breve.", {"total_tokens": 5}),
+            ("Esto no es JSON valido", {"total_tokens": 4}),
+            ("Sigue sin ser JSON", {"total_tokens": 4}),
+        ]
+
+        execution = SkillExecution.objects.create(
+            skill=self.skill,
+            owner=self.user,
+            project=self.project,
+        )
+
+        execute_skill(execution)
+        execution.refresh_from_db()
+
+        self.assertEqual(execution.status, "failed")
+        # El paso anterior quedó persistido: fallar no tira el trabajo hecho.
+        steps = execution.output_structured.get("steps", [])
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0]["output_mode"], "text")
