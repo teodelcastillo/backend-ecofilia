@@ -165,6 +165,13 @@ class ContextPlan:
             "documents_unavailable": [d.slug for d in self.unavailable],
             "scope_complete": self.complete,
             "blueprint": (self.blueprint.slug if self.blueprint else None),
+            # Se registra aparte de `documents_partial` porque no es un
+            # documento degradado más: es el sujeto de la auditoría llegando
+            # incompleto. Quien lea la corrida después tiene que tropezarse
+            # con esto, no deducirlo cruzando dos listas.
+            "blueprint_degraded": bool(
+                self.blueprint is not None and self.blueprint.mode == PARTIAL
+            ),
             "chars_per_token": CHARS_PER_TOKEN,
         }
 
@@ -221,13 +228,14 @@ def plan_context(
                 )
             )
 
-    # Degradar de mayor a menor hasta que el conjunto entre. El principal va
-    # al final de la cola de candidatos, no importa cuánto pese.
-    def _degrade_order(delivery: DocumentDelivery) -> tuple[int, int]:
-        return (1 if delivery.is_blueprint else 0, -delivery.full_tokens)
-
+    # Degradar de mayor a menor hasta que el conjunto entre. El documento
+    # principal **no es candidato**: es el sujeto de la auditoría, el que dice
+    # qué se financia. Un informe escrito sobre fragmentos del resto es un
+    # informe incompleto; uno escrito sobre fragmentos del principal es un
+    # informe sobre otra cosa.
     candidates = sorted(
-        (d for d in deliveries if d.mode == FULL), key=_degrade_order
+        (d for d in deliveries if d.mode == FULL and not d.is_blueprint),
+        key=lambda d: -d.full_tokens,
     )
 
     def _total() -> int:
@@ -247,6 +255,27 @@ def plan_context(
             "Documento %s degradado a fragmentos: %d tokens sobre un presupuesto de %d.",
             delivery.slug,
             delivery.full_tokens,
+            budget,
+        )
+
+    # Último recurso, y sólo si la física no deja opción: todo lo demás ya se
+    # degradó y el conjunto sigue sin entrar. Se hace ruido a propósito — es la
+    # única situación en la que el informe se escribe sin el documento que
+    # define de qué trata la operación.
+    blueprint = next((d for d in deliveries if d.is_blueprint), None)
+    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
+        blueprint.mode = PARTIAL
+        blueprint.tokens = min(DEGRADED_DOC_TOKENS, blueprint.full_tokens)
+        blueprint.reason = (
+            "no entra ni siendo el documento principal: todo el resto ya está "
+            f"en fragmentos ({blueprint.full_tokens:,} tokens estimados)".replace(",", ".")
+        )
+        logger.error(
+            "El documento principal %s se degradó a fragmentos: %d tokens sobre un "
+            "presupuesto de %d. El informe se va a escribir sin el texto completo de "
+            "la operación que evalúa.",
+            blueprint.slug,
+            blueprint.full_tokens,
             budget,
         )
 
@@ -330,6 +359,14 @@ def render_inventory(plan: ContextPlan) -> str:
             "está en el marco, el hallazgo es **sobre el marco**. No son lo mismo y no "
             "se redactan igual."
         )
+        if blueprint.mode == PARTIAL:
+            lines.append("")
+            lines.append(
+                "**Atención: del documento de la operación recibís sólo fragmentos.** "
+                "No tenés el texto completo de lo que se financia, así que no podés "
+                "afirmar qué contempla o deja de contemplar la operación. Declaralo "
+                "como limitación del análisis en vez de concluir sobre ella."
+            )
     else:
         for index, delivery in enumerate(plan.deliveries, start=1):
             lines.append(_entry(index, delivery))

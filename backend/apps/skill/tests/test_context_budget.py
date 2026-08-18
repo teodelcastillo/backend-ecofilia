@@ -268,11 +268,12 @@ class BlueprintRoleTests(SimpleTestCase):
         self.assertIsNone(plan.blueprint)
         self.assertNotIn("Documento de la operación", cb.render_inventory(plan))
 
-    def test_blueprint_is_still_degraded_last(self):
-        """El rol también protege el presupuesto: un informe sin el documento
-        que describe la operación no es un informe incompleto, es otro informe."""
+    def test_blueprint_is_never_the_one_degraded(self):
+        """No es "se degrada último": no es candidato. Un informe sobre
+        fragmentos del resto es un informe incompleto; uno sobre fragmentos del
+        principal es un informe sobre otra cosa."""
         big = [
-            make_document(1, "ido", 1_400),   # principal y el más grande
+            make_document(1, "ido", 1_400),   # principal y además el más grande
             make_document(2, "nap", 1_300),
         ]
         plan = cb.plan_context(big, reserved_tokens=50_000, blueprint_id=1)
@@ -280,3 +281,36 @@ class BlueprintRoleTests(SimpleTestCase):
 
         self.assertEqual(by_slug["nap"], cb.PARTIAL)
         self.assertEqual(by_slug["ido"], cb.FULL)
+        self.assertFalse(plan.diagnostics()["blueprint_degraded"])
+
+    def test_blueprint_survives_while_others_absorb_the_pressure(self):
+        """Con cuatro documentos que no entran juntos, la presión la absorben
+        los del marco. Cuántos caigan depende del tamaño —el planificador para
+        apenas entra— pero el principal nunca está entre ellos."""
+        big = [make_document(i, f"doc{i}", 900) for i in range(1, 5)]
+        plan = cb.plan_context(big, reserved_tokens=50_000, blueprint_id=2)
+
+        self.assertEqual(plan.blueprint.mode, cb.FULL)
+        self.assertNotIn("doc2", [d.slug for d in plan.degraded])
+        self.assertGreater(len(plan.degraded), 0, "el fixture tiene que forzar degradación")
+        self.assertLessEqual(plan.corpus_tokens, plan.budget_tokens)
+
+    def test_blueprint_degrades_only_when_physics_forces_it(self):
+        """Si ni él solo entra, no hay regla que lo salve — pero queda
+        registrado aparte, porque no es un degradado más."""
+        huge = [make_document(1, "ido", 3_000)]  # ~1,3M tokens, sobre la ventana
+        plan = cb.plan_context(huge, reserved_tokens=50_000, blueprint_id=1)
+
+        self.assertEqual(plan.blueprint.mode, cb.PARTIAL)
+        self.assertTrue(plan.diagnostics()["blueprint_degraded"])
+        self.assertIn("ni siendo el documento principal", plan.blueprint.reason)
+
+    def test_inventory_shouts_when_the_subject_is_incomplete(self):
+        huge = [
+            make_document(1, "ido", 3_000),
+            make_document(2, "nap", 100),
+        ]
+        plan = cb.plan_context(huge, reserved_tokens=50_000, blueprint_id=1)
+
+        self.assertIn("sólo fragmentos", cb.render_inventory(plan))
+        self.assertIn("limitación del análisis", cb.render_inventory(plan))
