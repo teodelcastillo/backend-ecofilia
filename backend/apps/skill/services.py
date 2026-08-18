@@ -1110,7 +1110,7 @@ def _plan_sources(plan, chunks) -> list[dict]:
 
 def _retrieve_partial_blocks(
     *, execution, plan, query_text: str, strategy: str | None
-) -> tuple[dict[int, str], list]:
+) -> tuple[dict[int, str], list, dict[str, str]]:
     """Recuperación acotada a cada documento que no entró completo.
 
     Buscar dentro de un documento es un problema distinto —y mucho más
@@ -1120,6 +1120,7 @@ def _retrieve_partial_blocks(
     """
     blocks: dict[int, str] = {}
     collected: list = []
+    failures: dict[str, str] = {}
     for delivery in plan.degraded:
         wanted = context_budget.chunks_for_budget(delivery.tokens)
         try:
@@ -1140,15 +1141,21 @@ def _retrieve_partial_blocks(
             )
             chunks = list(retrieval.chunks)
         except Exception as exc:
+            # Si esto falla, el documento degradado llega vacío: el modelo ve
+            # su nombre en el inventario y ni una línea de su contenido. Queda
+            # anotado porque desde afuera es indistinguible de un documento que
+            # simplemente no tenía nada relevante para la sección.
             logger.warning(
                 "Falló la recuperación dentro de %s: %s", delivery.slug, exc
             )
+            failures[delivery.slug] = str(exc)[:200]
             continue
         if not chunks:
+            failures[delivery.slug] = "sin fragmentos relevantes"
             continue
         collected.extend(chunks)
         blocks[delivery.document.id] = build_context_block(chunks)
-    return blocks, collected
+    return blocks, collected, failures
 
 
 def build_step_corpus(
@@ -1183,9 +1190,10 @@ def build_step_corpus(
         texts=document_texts,
     )
     if retrieve_partials:
-        partial_blocks, chunks = _retrieve_partial_blocks(
+        partial_blocks, chunks, failures = _retrieve_partial_blocks(
             execution=execution, plan=plan, query_text=query_text, strategy=strategy
         )
+        plan.partial_failures = failures
     else:
         partial_blocks, chunks = {}, []
     stable = "\n\n".join(

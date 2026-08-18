@@ -217,7 +217,15 @@ class Command(BaseCommand):
         project = Project.objects.filter(id=options["project_id"]).first()
         if project is None:
             raise CommandError(f"No existe la operación {options['project_id']}.")
+        # Los workflows provistos por Ecofilia no tienen dueño (`owner=None`
+        # significa plantilla visible para todos), así que el dueño sale de la
+        # operación. Sin esto la recuperación dentro de los documentos
+        # degradados falla y el preview mide una parte variable que no existe.
+        owner = skill.owner or project.owner
+        if owner is None:
+            raise CommandError(
+                "Ni el workflow ni la operación tienen dueño; la recuperación "
+                "necesita un usuario para resolver permisos."
+            )
         # Sin `save()`: el comando no deja rastro en el historial de corridas.
-        return SkillExecution(
-            skill=skill, owner=skill.owner, project=project, metadata={}
-        )
+        return SkillExecution(skill=skill, owner=owner, project=project, metadata={})

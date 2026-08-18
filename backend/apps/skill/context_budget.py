@@ -121,6 +121,9 @@ class ContextPlan:
     budget_tokens: int = 0
     corpus_tokens: int = 0
     reserved_tokens: int = 0
+    # Documentos degradados de los que no se pudo traer ni un fragmento, por
+    # slug y motivo. Lo llena el runner después de intentar la recuperación.
+    partial_failures: dict = field(default_factory=dict)
 
     @property
     def degraded(self) -> list[DocumentDelivery]:
@@ -137,7 +140,13 @@ class ContextPlan:
 
     def diagnostics(self) -> dict:
         """Lo que se persiste por paso para poder explicar la corrida después."""
+        extra = (
+            {"partial_retrieval_failures": dict(self.partial_failures)}
+            if self.partial_failures
+            else {}
+        )
         return {
+            **extra,
             "delivery_mode": "context_first",
             "budget_tokens": self.budget_tokens,
             "reserved_tokens": self.reserved_tokens,
