@@ -225,6 +225,47 @@ def _build_request(
     return params
 
 
+# --- Citas nativas ----------------------------------------------------------
+
+
+def _citation_to_dict(citation) -> dict:
+    """Una cita de la API, aplanada.
+
+    Los campos de ubicación dependen del tipo: ``char_location`` sobre texto
+    plano trae índices de carácter, ``page_location`` sobre PDF trae números de
+    página. Se leen los dos y se deja en ``None`` el que no venga, en vez de
+    ramificar por tipo: así el llamador resuelve la ubicación con lo que haya
+    y no hay que tocar esto cuando aparezca un tercer tipo.
+    """
+    return {
+        "type": getattr(citation, "type", None),
+        "cited_text": getattr(citation, "cited_text", "") or "",
+        "document_index": getattr(citation, "document_index", None),
+        "document_title": getattr(citation, "document_title", None),
+        "start_char_index": getattr(citation, "start_char_index", None),
+        "end_char_index": getattr(citation, "end_char_index", None),
+        "start_page_number": getattr(citation, "start_page_number", None),
+        "end_page_number": getattr(citation, "end_page_number", None),
+    }
+
+
+def _collect_citations(content) -> list[dict]:
+    """Las citas de una respuesta, en orden de aparición.
+
+    Con citas activadas la respuesta deja de ser un bloque de texto y pasa a
+    ser varios: los que sostienen una afirmación citada llevan un array
+    ``citations`` y los demás no. Concatenar los textos reconstruye la
+    respuesta; recorrer los arrays reconstruye de dónde salió cada parte.
+    """
+    citations: list[dict] = []
+    for block in content or []:
+        if getattr(block, "type", None) != "text":
+            continue
+        for citation in getattr(block, "citations", None) or []:
+            citations.append(_citation_to_dict(citation))
+    return citations
+
+
 # --- Completions ------------------------------------------------------------
 
 
@@ -235,11 +276,17 @@ def anthropic_chat_completion(
     temperature: float = 0.1,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    citations_out: list | None = None,
 ) -> Tuple[str, dict]:
     """Anthropic Messages API call shaped like ``generate_chat_completion``.
 
     Returns ``(text, usage)`` where ``usage`` has ``input_tokens`` /
     ``output_tokens`` / ``total_tokens`` so existing callers don't change.
+
+    ``citations_out``, si se pasa, se llena con las citas nativas de la
+    respuesta. Va como parámetro de salida y no en el valor de retorno para no
+    romper las decenas de llamadores que esperan una tupla de dos: sólo el
+    motor de workflows manda bloques ``document`` y necesita las citas.
     """
     client = _anthropic_client()
     params = _build_request(
@@ -253,6 +300,9 @@ def anthropic_chat_completion(
         for b in response.content
         if getattr(b, "type", None) == "text"
     ).strip()
+
+    if citations_out is not None:
+        citations_out.extend(_collect_citations(response.content))
 
     usage = _usage_dict(getattr(response, "usage", None))
     if not text:

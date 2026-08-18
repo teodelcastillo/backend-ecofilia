@@ -109,7 +109,7 @@ class Command(BaseCommand):
             )
             reserved = system_tokens + step_tokens + output_reserve
 
-            stable, volatile, chunks, plan = build_step_corpus(
+            corpus = build_step_corpus(
                 execution=execution,
                 step_documents=step_documents,
                 query_text=f"{step.title}. {step.instructions}".strip(),
@@ -118,7 +118,12 @@ class Command(BaseCommand):
                 document_texts=document_texts,
                 retrieve_partials=not options["no_retrieval"],
             )
-            corpus = "\n\n".join(p for p in (stable, volatile) if p)
+            plan = corpus.plan
+            stable = "\n\n".join(
+                [corpus.inventory] + [d.text for d in corpus.documents]
+            )
+            volatile = corpus.volatile
+            dump_text = "\n\n".join(p for p in (stable, volatile) if p)
             stable_tokens = context_budget.estimate_tokens(stable)
             volatile_tokens = context_budget.estimate_tokens(volatile)
             corpus_tokens = stable_tokens + volatile_tokens
@@ -144,7 +149,7 @@ class Command(BaseCommand):
             if options["dump"] and target and step.position == target:
                 self.stdout.write("")
                 self.stdout.write("=" * 72)
-                self.stdout.write(corpus)
+                self.stdout.write(dump_text)
                 self.stdout.write("=" * 72)
 
         self.stdout.write("")

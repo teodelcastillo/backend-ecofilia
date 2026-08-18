@@ -89,10 +89,11 @@ class PlanContextTests(SimpleTestCase):
 
         self.assertEqual([d.slug for d in plan.unavailable], ["vacio"])
         self.assertIn("NO DISPONIBLE", cb.render_inventory(plan))
-        self.assertIn(
-            "no puede usarse como fuente",
-            cb.render_corpus(plan, texts={1: documents[0].extracted_text}),
+        # Un documento sin texto no genera bloque citable: no hay nada que citar.
+        payloads = cb.build_document_payloads(
+            plan, texts={1: documents[0].extracted_text}
         )
+        self.assertEqual([p.slug for p in payloads], ["ndc"])
 
 
 class InventoryTests(SimpleTestCase):
@@ -116,102 +117,101 @@ class InventoryTests(SimpleTestCase):
         self.assertIn("no lo tenés", cb.render_inventory(plan))
 
 
-class CacheBoundaryTests(SimpleTestCase):
-    """La frontera entre lo que se paga una vez y lo que se paga por paso."""
+def paged(pages: list[str]) -> str:
+    """Texto extraído tal como lo deja el parser: con marcadores de página."""
+    return "\n\n".join(f"<<<PAGE:{i}>>>\n\n{t}" for i, t in enumerate(pages, start=1))
+
+
+class DocumentBlockTests(SimpleTestCase):
+    """Los documentos viajan como bloques citables, no como texto pegado.
+
+    Es lo que habilita las citas nativas: la API sólo devuelve ubicación para
+    lo que llegó dentro de un bloque ``document``.
+    """
 
     def setUp(self):
         self.documents = [
-            make_document(1, "btr", 1_400),
-            make_document(2, "ndc", 550),
-            make_document(3, "nap", 250),
+            FakeDocument(1, "nap", "NAP", 3, paged(["Uno.", "Metas al 2030.", "Tres."])),
+            FakeDocument(2, "ido", "IDO", 2, paged(["Alfa.", "Beta."])),
         ]
         self.texts = {d.id: d.extracted_text for d in self.documents}
-        self.plan = cb.plan_context(self.documents, reserved_tokens=50_000, texts=self.texts)
+        self.plan = cb.plan_context(self.documents, reserved_tokens=10_000, texts=self.texts)
+        self.payloads = cb.build_document_payloads(self.plan, texts=self.texts)
 
-    def test_degraded_document_keeps_its_slot_without_its_text(self):
-        rendered = cb.render_corpus(self.plan, texts=self.texts)
-        block = rendered.split("===== DOCUMENTO 1/3")[1].split("===== FIN DOCUMENTO 1/3")[0]
+    def test_page_markers_do_not_travel(self):
+        """Si viajaran, aparecerían dentro del texto literal que devuelve la
+        API y además correrían los offsets respecto del documento real."""
+        self.assertTrue(all("<<<PAGE" not in p.text for p in self.payloads))
+        self.assertTrue(all(p.has_pages for p in self.payloads))
 
-        self.assertNotIn("x" * 1000, block)
-        self.assertLess(len(block), 500)
-        self.assertIn("DOCUMENTO 3/3", rendered)  # la numeración no se corre
+    def test_each_full_document_becomes_a_citable_block(self):
+        content = self._content()
+        blocks = [b for b in content if b["type"] == "document"]
 
-    def test_whole_document_carries_its_text(self):
-        rendered = cb.render_corpus(self.plan, texts=self.texts)
-        block = rendered.split("===== DOCUMENTO 2/3")[1].split("===== FIN DOCUMENTO 2/3")[0]
+        self.assertEqual(len(blocks), 2)
+        self.assertTrue(all(b["citations"] == {"enabled": True} for b in blocks))
+        self.assertEqual(blocks[0]["source"]["type"], "text")
+        self.assertTrue(blocks[0]["title"].startswith("[nap]"))
 
-        self.assertIn("x" * 100_000, block)
+    def test_cache_breakpoint_sits_on_the_last_document(self):
+        content = self._content()
 
-    def test_stable_part_does_not_depend_on_the_fragments(self):
-        baseline = cb.render_corpus(self.plan, texts=self.texts)
+        self.assertIn("cache_control", content[-2] if len(content) > 2 else content[1])
+        self.assertNotIn("cache_control", content[-1])  # el prompt del paso
+        self.assertNotIn("cache_control", content[0])   # el inventario
 
-        first = cb.render_partials(self.plan, partial_blocks={1: "fragmento del paso A"})
-        second = cb.render_partials(self.plan, partial_blocks={1: "otro fragmento, paso B"})
+    def test_degraded_document_gets_no_citable_block(self):
+        """De un puñado de fragmentos no salen offsets del documento, así que
+        una cita sobre ellos apuntaría a la página equivocada."""
+        documents = [
+            FakeDocument(1, "nc4", "NC4", 530, paged(["x" * 2_500_000])),
+            FakeDocument(2, "nap", "NAP", 2, paged(["Metas.", "Fin."])),
+        ]
+        texts = {d.id: d.extracted_text for d in documents}
+        plan = cb.plan_context(documents, reserved_tokens=50_000, texts=texts)
 
-        self.assertEqual(baseline, cb.render_corpus(self.plan, texts=self.texts))
-        self.assertNotEqual(first, second)
+        self.assertEqual([d.slug for d in plan.degraded], ["nc4"])
+        self.assertEqual(
+            [p.slug for p in cb.build_document_payloads(plan, texts=texts)], ["nap"]
+        )
+        self.assertIn("no** son citables", cb.render_inventory(plan))
 
     def test_stable_prefix_is_identical_across_steps(self):
-        """La invariante que hace pagable el esquema.
+        """La invariante que hace pagable el esquema, ahora sobre bloques.
 
         Si el prefijo difiere en un byte entre pasos, la caché no aplica y el
-        corpus se cobra entero una vez por paso: sobre la operación 34 son
-        ~19 USD por corrida en vez de ~4.
+        corpus se cobra entero una vez por paso.
         """
-        prefixes = [
-            cb.build_messages(
-                system_prompt="SYS",
-                corpus_stable=cb.render_corpus(
-                    cb.plan_context(self.documents, reserved_tokens=50_000, texts=self.texts),
-                    texts=self.texts,
-                ),
-                corpus_volatile=f"fragmentos distintos del paso {step}",
-                step_prompt=f"instrucción del paso {step}",
-                model="claude-sonnet-5",
-            )[1]["content"][0]
-            for step in range(17)
-        ]
+        prefixes = []
+        for step in range(17):
+            content = self._content(
+                volatile=f"fragmentos del paso {step}",
+                step_prompt=f"instrucción {step}",
+            )
+            cut = max(i for i, b in enumerate(content) if "cache_control" in b)
+            prefixes.append(repr(content[: cut + 1]))
 
-        self.assertEqual(len({repr(p) for p in prefixes}), 1)
-
-
-class BuildMessagesTests(SimpleTestCase):
-    def _content(self, **kwargs):
-        params = {
-            "system_prompt": "SYS",
-            "corpus_stable": "DOCUMENTOS COMPLETOS",
-            "corpus_volatile": "FRAGMENTOS DEL PASO",
-            "step_prompt": "INSTRUCCIÓN",
-            "model": "claude-sonnet-5",
-        }
-        params.update(kwargs)
-        return cb.build_messages(**params)
-
-    def test_cache_breakpoint_sits_between_stable_and_volatile(self):
-        content = self._content()[1]["content"]
-
-        self.assertEqual(len(content), 3)
-        self.assertEqual(content[0]["text"], "DOCUMENTOS COMPLETOS")
-        self.assertIn("cache_control", content[0])
-        self.assertEqual(content[1]["text"], "FRAGMENTOS DEL PASO")
-        self.assertNotIn("cache_control", content[1])
-        self.assertNotIn("cache_control", content[2])
-
-    def test_no_empty_block_when_everything_fits(self):
-        content = self._content(corpus_volatile="")[1]["content"]
-
-        self.assertEqual(len(content), 2)
-        self.assertTrue(all(block["text"] for block in content))
+        self.assertEqual(len(set(prefixes)), 1)
 
     def test_non_anthropic_provider_falls_back_to_inline_text(self):
-        message = self._content(model="gpt-4o-mini")[1]
-
-        self.assertIsInstance(message["content"], str)
-        self.assertLess(
-            message["content"].index("DOCUMENTOS COMPLETOS"),
-            message["content"].index("INSTRUCCIÓN"),
+        messages = cb.build_messages(
+            system_prompt="SYS",
+            inventory="INV",
+            documents=self.payloads,
+            corpus_volatile="FRAG",
+            step_prompt="INSTR",
+            model="gpt-4o-mini",
         )
 
-    def test_synthesis_step_without_corpus(self):
-        message = self._content(corpus_stable="", corpus_volatile="")[1]
-        self.assertEqual(message["content"], "INSTRUCCIÓN")
+        self.assertIsInstance(messages[1]["content"], str)
+        self.assertIn("Metas al 2030.", messages[1]["content"])
+
+    def _content(self, *, volatile: str = "", step_prompt: str = "INSTRUCCIÓN"):
+        return cb.build_messages(
+            system_prompt="SYS",
+            inventory=cb.render_inventory(self.plan),
+            documents=self.payloads,
+            corpus_volatile=volatile,
+            step_prompt=step_prompt,
+            model="claude-sonnet-5",
+        )[1]["content"]

@@ -326,6 +326,25 @@ def render_inventory(plan: ContextPlan) -> str:
             "- Todos los documentos de la lista te llegan completos: si algo no está "
             "en ellos, podés afirmarlo."
         )
+
+    if are_citations_enabled() and any(d.mode == FULL for d in plan.deliveries):
+        lines.extend(["", "Sobre las citas:", ""])
+        lines.append(
+            "- Los documentos completos llegan como documentos citables. Cuando "
+            "afirmes algo que sale de uno de ellos, **citá el pasaje del que sale**: "
+            "la cita queda registrada con su ubicación exacta y es lo que le permite "
+            "a quien revise el informe ir a verificarla."
+        )
+        lines.append(
+            "- Citá el pasaje que sostiene la afirmación, no el párrafo entero "
+            "alrededor. Una cita que abarca dos páginas no ubica nada."
+        )
+        if plan.degraded:
+            lines.append(
+                "- Los documentos que llegan en fragmentos **no** son citables: "
+                "podés usarlos y nombrarlos en el texto, pero no generan una cita "
+                "verificable. Decilo así cuando te apoyes en ellos."
+            )
     return "\n".join(lines)
 
 
@@ -340,40 +359,6 @@ def _header(index: int, total: int, delivery: DocumentDelivery) -> str:
         f"===== DOCUMENTO {index}/{total} · [{delivery.slug}] {delivery.name} · "
         f"{_STATE_LABEL.get(delivery.mode, delivery.mode)} ====="
     )
-
-
-def render_corpus(plan: ContextPlan, *, texts: dict) -> str:
-    """La parte del corpus que **no cambia entre pasos**: los textos completos.
-
-    Está separada de los fragmentos a propósito, y la razón es económica. La
-    caché de prompts es un match de prefijo: alcanza con que un byte cambie
-    para pagar el corpus entero de nuevo. Los fragmentos de un documento
-    degradado dependen de la consulta del paso y por lo tanto cambian en cada
-    uno; si viajaran acá adentro, diecisiete pasos pagarían diecisiete veces
-    medio millón de tokens en vez de una. Van aparte, después del punto de
-    caché, en ``render_partials``.
-
-    Un documento degradado igual aparece en su lugar de la secuencia, con una
-    remisión: la numeración y el inventario tienen que seguir coincidiendo.
-    """
-    total = len(plan.deliveries)
-    parts: list[str] = []
-    for index, delivery in enumerate(plan.deliveries, start=1):
-        if delivery.mode == FULL:
-            body = (texts.get(delivery.document.id) or "").strip()
-        elif delivery.mode == PARTIAL:
-            body = (
-                "(De este documento no recibís el texto completo. Los fragmentos "
-                "recuperados para esta sección van más abajo, después de los "
-                "documentos completos.)"
-            )
-        else:
-            body = "(Sin texto extraído. Este documento no puede usarse como fuente.)"
-        parts.append(
-            f"{_header(index, total, delivery)}\n{body}\n"
-            f"===== FIN DOCUMENTO {index}/{total} ====="
-        )
-    return "\n\n".join(parts)
 
 
 def render_partials(plan: ContextPlan, *, partial_blocks: dict) -> str:
@@ -407,6 +392,104 @@ def render_partials(plan: ContextPlan, *, partial_blocks: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Documentos como bloques citables
+# ---------------------------------------------------------------------------
+
+# Citas nativas: el modelo devuelve, por afirmación, el texto literal y su
+# ubicación en el documento. Es una variable porque la API las exige "todas o
+# ninguna" por pedido: si algo sale mal, se apagan enteras sin desplegar.
+def are_citations_enabled() -> bool:
+    return os.environ.get("SKILL_CITATIONS", "1").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+@dataclass
+class DocumentPayload:
+    """Un documento tal como viaja: texto limpio y su mapa de páginas.
+
+    El mapa se conserva junto al texto porque es lo único que traduce la
+    ubicación que devuelve la API —un rango de caracteres— a la referencia que
+    necesita quien lee el informe: una página.
+    """
+
+    slug: str
+    name: str
+    text: str
+    page_map: object  # apps.document.page_map.PageMap
+
+    @property
+    def has_pages(self) -> bool:
+        return bool(getattr(self.page_map, "has_pages", False))
+
+
+def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentPayload]:
+    """Los documentos completos del plan, listos para viajar como bloques.
+
+    Sólo los completos: de un documento degradado no se puede emitir una cita
+    verificable —los offsets de un puñado de fragmentos no son offsets del
+    documento— y prefiero que no tenga bloque citable a que tenga uno que
+    apunte a la página equivocada.
+    """
+    from apps.document.page_map import build_page_map
+
+    payloads: list[DocumentPayload] = []
+    for delivery in plan.deliveries:
+        if delivery.mode != FULL:
+            continue
+        raw = texts.get(delivery.document.id) or ""
+        page_map = build_page_map(raw)
+        payloads.append(
+            DocumentPayload(
+                slug=delivery.slug,
+                name=delivery.name,
+                text=page_map.text,
+                page_map=page_map,
+            )
+        )
+    return payloads
+
+
+def _document_block(payload: DocumentPayload, *, citations: bool) -> dict:
+    """Un bloque ``document`` con fuente de texto plano.
+
+    El título lleva el slug además del nombre porque es el identificador con
+    el que la interfaz resuelve el documento, y porque la API lo devuelve tal
+    cual en ``document_title``: es lo que permite atar una cita a una fila de
+    la base sin depender del orden de los bloques.
+    """
+    block: dict = {
+        "type": "document",
+        "source": {
+            "type": "text",
+            "media_type": "text/plain",
+            "data": payload.text,
+        },
+        "title": f"[{payload.slug}] {payload.name}",
+    }
+    if citations:
+        block["citations"] = {"enabled": True}
+    return block
+
+
+def render_documents_inline(payloads: list[DocumentPayload]) -> str:
+    """Los documentos como texto corrido, para proveedores sin bloques.
+
+    Es la ruta de escape: correcta, sin citas y sin caché. No es el camino
+    previsto.
+    """
+    total = len(payloads)
+    parts = []
+    for index, payload in enumerate(payloads, start=1):
+        parts.append(
+            f"===== DOCUMENTO {index}/{total} · [{payload.slug}] {payload.name} =====\n"
+            f"{payload.text}\n"
+            f"===== FIN DOCUMENTO {index}/{total} ====="
+        )
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
 # Armado del pedido
 # ---------------------------------------------------------------------------
 
@@ -431,7 +514,8 @@ def cache_control() -> dict | None:
 def build_messages(
     *,
     system_prompt: str,
-    corpus_stable: str,
+    inventory: str,
+    documents: list[DocumentPayload],
     corpus_volatile: str,
     step_prompt: str,
     model: str,
@@ -441,38 +525,69 @@ def build_messages(
     Vive en este módulo y no en el runner porque el orden de las partes *es*
     la decisión de presupuesto: la caché de prompts es un match de prefijo, y
     todo lo que esté antes del punto de caché se cobra una sola vez mientras no
-    cambie. De ahí las tres partes, en este orden exacto:
+    cambie. De ahí el orden exacto:
 
-      1. ``corpus_stable`` — los documentos completos y el inventario. Idéntico
-         en los diecisiete pasos. **El punto de caché va al final de esto.**
-      2. ``corpus_volatile`` — los fragmentos de los documentos degradados, que
+      1. ``inventory`` — qué documentos tiene el paso y qué puede afirmar
+         sobre cada uno. Idéntico en los diecisiete pasos.
+      2. ``documents`` — un bloque ``document`` por documento completo, con
+         citas activadas. También idéntico en los diecisiete pasos.
+         **El punto de caché va sobre el último de estos bloques.**
+      3. ``corpus_volatile`` — los fragmentos de los documentos degradados, que
          dependen de la consulta del paso y por lo tanto cambian en cada uno.
-      3. ``step_prompt`` — la instrucción, los parámetros y las secciones
+      4. ``step_prompt`` — la instrucción, los parámetros y las secciones
          previas.
 
-    Meter (2) adentro de (1) invalida la caché en cada paso: medio millón de
-    tokens pagados diecisiete veces por veinte mil que cambian. Es el error que
-    esta separación corrige, y por eso hay un test que compara los diecisiete
-    prefijos byte a byte.
+    Meter (3) adentro de (1)+(2) invalida la caché en cada paso: medio millón
+    de tokens pagados diecisiete veces por veinte mil que cambian. Es el error
+    que esta separación corrige, y por eso hay un test que compara los
+    diecisiete prefijos byte a byte.
 
-    Si el modelo no es de Anthropic todo va inline, sin bloques ni caché:
-    correcto pero caro. Es una ruta de escape, no el camino previsto.
+    Los documentos van como bloques ``document`` y no como texto porque es lo
+    que habilita las citas nativas: la API devuelve entonces, por afirmación,
+    el fragmento literal y su ubicación. Un bloque de texto corriente no lleva
+    esa información, y sin ella la trazabilidad depende de que el modelo se
+    acuerde de nombrar la fuente — que es exactamente lo que no se puede
+    verificar.
+
+    Si el modelo no es de Anthropic todo va inline, sin bloques, sin citas y
+    sin caché: correcto pero caro. Es una ruta de escape, no el camino previsto.
     """
     from apps.document.utils.llm import is_anthropic_model
 
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
-    pieces = [p for p in (corpus_stable, corpus_volatile, step_prompt) if p]
 
-    if not corpus_stable or not is_anthropic_model(model):
+    if not is_anthropic_model(model):
+        pieces = [
+            p
+            for p in (
+                inventory,
+                render_documents_inline(documents),
+                corpus_volatile,
+                step_prompt,
+            )
+            if p
+        ]
         messages.append({"role": "user", "content": "\n\n".join(pieces)})
         return messages
 
-    stable_block: dict = {"type": "text", "text": corpus_stable}
-    control = cache_control()
-    if control:
-        stable_block["cache_control"] = control
+    if not inventory and not documents:
+        pieces = [p for p in (corpus_volatile, step_prompt) if p]
+        messages.append({"role": "user", "content": "\n\n".join(pieces)})
+        return messages
 
-    content: list[dict] = [stable_block]
+    citations = are_citations_enabled()
+    content: list[dict] = []
+    if inventory:
+        content.append({"type": "text", "text": inventory})
+    for payload in documents:
+        content.append(_document_block(payload, citations=citations))
+
+    # El punto de caché va sobre el último bloque estable, sea el último
+    # documento o el inventario cuando no hay ninguno completo.
+    control = cache_control()
+    if control and content:
+        content[-1]["cache_control"] = control
+
     if corpus_volatile:
         content.append({"type": "text", "text": corpus_volatile})
     content.append({"type": "text", "text": step_prompt})

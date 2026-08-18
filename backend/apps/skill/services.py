@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+from dataclasses import dataclass
 from typing import List
 
 from django.db.models import Count, Max, QuerySet
@@ -26,6 +27,7 @@ from apps.document.utils.llm import (
     tool_capable_model,
 )
 from apps.skill import context_budget
+from apps.skill.citations import citation_stats, resolve_citations
 from apps.skill.models import (
     ExecutionOutputMode,
     ExecutionStatus,
@@ -281,6 +283,9 @@ def _retrieval_runtime_config() -> dict:
         "degraded_doc_tokens": context_budget.DEGRADED_DOC_TOKENS,
         "chars_per_token": context_budget.CHARS_PER_TOKEN,
         "context_cache_ttl": context_budget.CACHE_TTL or "default",
+        # Las citas nativas son todo-o-nada por pedido, así que basta con
+        # registrar si estaban activas: no hay estados intermedios que auditar.
+        "citations_enabled": context_budget.are_citations_enabled(),
     }
 
 
@@ -665,10 +670,17 @@ def _call_model(
     skill,
     tier: str,
     tool_ctx=None,
+    citations_out: list | None = None,
 ) -> tuple[str, dict, str]:
     """
     Dispatch to generate_with_tools or generate_chat_completion depending on
     whether the skill has tools_enabled and a valid tool context is provided.
+
+    ``citations_out`` recoge las citas nativas cuando el pedido lleva bloques
+    ``document``. El camino con herramientas **no** las devuelve todavía: el
+    bucle agéntico arma su propia conversación y las citas de las vueltas
+    intermedias se perderían a medias, que es peor que no tenerlas. Un workflow
+    con herramientas activadas corre sin citas y el manifiesto lo dice.
 
     Devuelve ``(texto, usage, modelo)``. El modelo se devuelve —en vez de
     recalcularlo en el llamador— porque es el único punto donde se sabe cuál
@@ -699,6 +711,7 @@ def _call_model(
         messages,
         model=model,
         temperature=skill.temperature,
+        citations_out=citations_out,
     )
     return text, usage, model
 
@@ -1158,6 +1171,23 @@ def _retrieve_partial_blocks(
     return blocks, collected, failures
 
 
+@dataclass
+class StepCorpus:
+    """Lo que un paso le muestra al modelo, en las piezas en que viaja.
+
+    Es un objeto y no una tupla porque las piezas ya son cinco y cada una tiene
+    un rol distinto en el pedido: dos van antes del punto de caché, una después,
+    y las otras dos no viajan —sirven para registrar la corrida—. Una tupla de
+    cinco se desempaca mal una vez y el error es silencioso.
+    """
+
+    inventory: str
+    documents: list  # context_budget.DocumentPayload
+    volatile: str
+    chunks: list
+    plan: "context_budget.ContextPlan"
+
+
 def build_step_corpus(
     *,
     execution,
@@ -1168,7 +1198,7 @@ def build_step_corpus(
     document_texts: dict[int, str],
     strategy: str | None = None,
     retrieve_partials: bool = True,
-) -> tuple[str, str, list, "context_budget.ContextPlan"]:
+) -> "StepCorpus":
     """La base documental de un paso, tal como la va a ver el modelo.
 
     Está afuera de ``_run_copilot`` para que se pueda armar sin ejecutar el
@@ -1176,10 +1206,10 @@ def build_step_corpus(
     recibe cada paso antes de gastar una corrida en averiguarlo. La pregunta
     "¿qué le estamos mandando al modelo?" no debería requerir mandárselo.
 
-    Devuelve ``(estable, variable, fragmentos, plan)``. La separación entre lo
-    estable y lo variable no es organizativa: es dónde va el punto de caché.
-    Todo lo que cambie de un paso a otro tiene que quedar del lado de afuera,
-    o el corpus se paga entero diecisiete veces.
+    La separación entre lo estable —inventario y documentos— y lo variable
+    —los fragmentos— no es organizativa: es dónde va el punto de caché. Todo
+    lo que cambie de un paso a otro tiene que quedar del lado de afuera, o el
+    corpus se paga entero diecisiete veces.
     """
     planned_documents = list(step_documents.defer("extracted_text"))
     _load_document_texts(planned_documents, document_texts)
@@ -1196,14 +1226,13 @@ def build_step_corpus(
         plan.partial_failures = failures
     else:
         partial_blocks, chunks = {}, []
-    stable = "\n\n".join(
-        (
-            context_budget.render_inventory(plan),
-            context_budget.render_corpus(plan, texts=document_texts),
-        )
+    return StepCorpus(
+        inventory=context_budget.render_inventory(plan),
+        documents=context_budget.build_document_payloads(plan, texts=document_texts),
+        volatile=context_budget.render_partials(plan, partial_blocks=partial_blocks),
+        chunks=chunks,
+        plan=plan,
     )
-    volatile = context_budget.render_partials(plan, partial_blocks=partial_blocks)
-    return stable, volatile, chunks, plan
 
 
 def _run_skill_ref_step(
@@ -1522,8 +1551,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             )
 
             tier_used = resolve_tier(skill, step)
-            corpus_stable = ""
-            corpus_volatile = ""
+            corpus = None
             if use_context_first:
                 # El presupuesto documental es lo que queda de la ventana una
                 # vez descontado todo lo que ya está comprometido. Se mide con
@@ -1535,7 +1563,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     + context_budget.estimate_tokens(prompt)
                     + context_budget.output_reserve()
                 )
-                corpus_stable, corpus_volatile, chunks, plan = build_step_corpus(
+                corpus = build_step_corpus(
                     execution=execution,
                     step_documents=step_documents,
                     query_text=query_text,
@@ -1544,23 +1572,39 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     document_texts=document_texts,
                     strategy=effective_retrieval_strategy,
                 )
+                chunks = corpus.chunks
+                plan = corpus.plan
                 seen_chunk_ids.update(c.id for c in chunks)
                 all_step_chunks.extend(chunks)
                 step_diagnostics = plan.diagnostics()
 
             messages = context_budget.build_messages(
                 system_prompt=system_prompt,
-                corpus_stable=corpus_stable,
-                corpus_volatile=corpus_volatile,
+                inventory=corpus.inventory if corpus else "",
+                documents=corpus.documents if corpus else [],
+                corpus_volatile=corpus.volatile if corpus else "",
                 step_prompt=prompt,
                 model=_resolve_model(skill, tier_used),
             )
 
             tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
+            # Las citas nativas vuelven por un parámetro de salida: el resto de
+            # los llamadores de `generate_chat_completion` espera una tupla de
+            # dos y no tiene por qué enterarse de esto.
+            raw_citations: list[dict] = []
             content, usage, model_used = _call_model(
-                messages, skill=skill, tier=tier_used, tool_ctx=tool_ctx
+                messages,
+                skill=skill,
+                tier=tier_used,
+                tool_ctx=tool_ctx,
+                citations_out=raw_citations,
             )
             all_step_chunks.extend(tool_ctx.additional_chunks)
+
+            step_citations: list[dict] = []
+            if corpus is not None and raw_citations:
+                step_citations = resolve_citations(raw_citations, corpus.documents)
+                step_diagnostics = {**step_diagnostics, **citation_stats(step_citations)}
 
             step_sources = chunks + tool_ctx.additional_chunks
             step_entry: dict = {
@@ -1576,6 +1620,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     if plan is not None
                     else _chunks_to_sources(step_sources)
                 ),
+                "citations": step_citations,
             }
             if is_table_step:
                 try:
@@ -1647,6 +1692,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
     source_stats = _collect_source_stats_from_sources(
         global_sources, total_docs=documents.count()
     )
+    # Las citas de toda la corrida, no sólo del último tramo: es la métrica que
+    # responde "¿cuánto de este informe se puede ir a verificar?".
+    all_citations = [c for entry in step_results for c in entry.get("citations", [])]
+    source_stats.update(citation_stats(all_citations))
     # Los modelos salen de `step_results` y no de una variable local porque en
     # una corrida reanudada los pasos previos los ejecutó otro segmento: la
     # variable local solo conoce el último tramo, el registro por paso conoce
