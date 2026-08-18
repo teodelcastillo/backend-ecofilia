@@ -6,9 +6,9 @@ entero y leer los diagnósticos después: diez minutos y el costo de diecisiete
 llamadas para responder una pregunta sobre el input. Peor, si la respuesta era
 "este paso no recibió nada", ya había un informe escrito sobre esa nada.
 
-Este comando arma exactamente el mismo corpus que armaría la corrida —usa
-``build_step_corpus``, no una reimplementación— y no llama al modelo ni escribe
-en la base.
+El cálculo vive en ``apps.skill.context_preview`` porque el builder lo necesita
+también; este comando es una de sus dos vistas. Ninguna de las dos llama al
+modelo ni escribe en la base.
 
     # Panorama: un renglón por paso
     python manage.py preview_workflow_context --skill-id 46 --project-id 34
@@ -22,13 +22,8 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 
 from apps.skill import context_budget
+from apps.skill.context_preview import build_preview, simulated_execution
 from apps.skill.models import Skill, SkillExecution
-from apps.skill.services import (
-    build_step_corpus,
-    resolve_documents,
-    _resolve_step_documents,
-    _with_operation_context,
-)
 
 
 class Command(BaseCommand):
@@ -63,162 +58,153 @@ class Command(BaseCommand):
             raise CommandError(f"No existe la skill {options['skill_id']}.")
 
         execution = self._execution(skill, options)
-        documents = resolve_documents(execution)
-        steps = list(skill.steps.all())
-        if not steps:
-            raise CommandError("El workflow no tiene pasos definidos.")
+        positions = [options["step"]] if options["step"] else None
 
-        blueprint_id = getattr(execution.project, "blueprint_document_id", None)
-        document_texts: dict[int, str] = {}
-        system_prompt = _with_operation_context(skill.system_prompt, execution)
-        system_tokens = context_budget.estimate_tokens(system_prompt)
-        output_reserve = context_budget.output_reserve()
+        try:
+            preview = build_preview(
+                skill,
+                execution.project,
+                execution=execution,
+                positions=positions,
+                measure_fragments=not options["no_retrieval"],
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
 
+        window = preview.window
         self.stdout.write("")
         self.stdout.write(f"Workflow  : [{skill.slug}] {skill.name}")
-        self.stdout.write(f"Operación : {execution.project} ({documents.count()} documentos)")
         self.stdout.write(
-            f"Ventana   : {context_budget.CONTEXT_WINDOW:,} · colchón "
-            f"{context_budget.CONTEXT_SAFETY_MARGIN:,} · salida {output_reserve:,}"
+            f"Operación : {preview.project['name']} "
+            f"({preview.project['documents']} documentos)"
         )
-        self.stdout.write(f"System    : {system_tokens:,} tokens")
+        self.stdout.write(
+            f"Ventana   : {window['context_window']:,} · colchón "
+            f"{window['safety_margin']:,} · salida {window['output_reserve']:,}"
+        )
+        self.stdout.write(f"System    : {window['system_tokens']:,} tokens")
         self.stdout.write("")
 
-        target = options["step"]
         header = (
             f"{'paso':>4}  {'reserva':>9}  {'cacheable':>9}  {'variable':>9}  "
-            f"{'total':>9}  documentos"
+            f"{'total':>9}  {'modelo':<18}  documentos"
         )
         self.stdout.write(header)
         self.stdout.write("-" * len(header))
 
-        overflow: list[str] = []
-        # Para el reporte de caché: lo estable se paga una vez, lo demás en
-        # cada paso. Es la diferencia entre una corrida de 4 dólares y una de 19.
-        cached_tokens: list[int] = []
-        uncached_tokens: list[int] = []
-        for step in steps:
-            if target and step.position != target:
-                continue
-            step_documents = _resolve_step_documents(step, documents, [])
-            # La reserva del paso sin las secciones previas: acá no hay corrida,
-            # así que no existen. Es el mejor caso; en la corrida real el
-            # historial come presupuesto y algún documento más puede degradarse.
-            step_tokens = context_budget.estimate_tokens(
-                f"{step.title}\n{step.instructions}"
+        for step in preview.steps:
+            variable = (
+                f"{step.variable_tokens:>9,}"
+                if step.variable_tokens is not None
+                else f"{'—':>9}"
             )
-            reserved = system_tokens + step_tokens + output_reserve
-
-            corpus = build_step_corpus(
-                execution=execution,
-                step_documents=step_documents,
-                query_text=f"{step.title}. {step.instructions}".strip(),
-                reserved_tokens=reserved,
-                blueprint_id=blueprint_id,
-                document_texts=document_texts,
-                retrieve_partials=not options["no_retrieval"],
-            )
-            plan = corpus.plan
-            stable = "\n\n".join(
-                [corpus.inventory] + [d.text for d in corpus.documents]
-            )
-            volatile = corpus.volatile
-            dump_text = "\n\n".join(p for p in (stable, volatile) if p)
-            stable_tokens = context_budget.estimate_tokens(stable)
-            volatile_tokens = context_budget.estimate_tokens(volatile)
-            corpus_tokens = stable_tokens + volatile_tokens
-            total = reserved + corpus_tokens
-            cached_tokens.append(stable_tokens)
-            uncached_tokens.append(reserved + volatile_tokens)
-
-            detail = []
-            for delivery in plan.deliveries:
-                mark = {
-                    context_budget.FULL: "",
-                    context_budget.PARTIAL: " (fragmentos)",
-                    context_budget.UNAVAILABLE: " (SIN TEXTO)",
-                }[delivery.mode]
-                detail.append(f"{delivery.slug}{mark}")
+            if not step.reads_documents:
+                detail = "(sólo pasos previos)"
+            else:
+                detail = ", ".join(
+                    f"{d.slug}"
+                    + {
+                        context_budget.FULL: "",
+                        context_budget.PARTIAL: " (fragmentos)",
+                        context_budget.UNAVAILABLE: " (SIN TEXTO)",
+                    }[d.mode]
+                    for d in step.documents
+                )
             self.stdout.write(
-                f"{step.position:>4}  {reserved:>9,}  {stable_tokens:>9,}  "
-                f"{volatile_tokens:>9,}  {total:>9,}  {', '.join(detail)}"
+                f"{step.position:>4}  {step.reserved_tokens:>9,}  "
+                f"{step.cacheable_tokens:>9,}  {variable}  "
+                f"{step.total_tokens:>9,}  {step.model:<18}  {detail}"
             )
-            if total > context_budget.CONTEXT_WINDOW:
-                overflow.append(f"paso {step.position}: {total:,} tokens")
-
-            if options["dump"] and target and step.position == target:
-                self.stdout.write("")
-                self.stdout.write("=" * 72)
-                self.stdout.write(dump_text)
-                self.stdout.write("=" * 72)
 
         self.stdout.write("")
-        if overflow:
-            self.stdout.write(self.style.ERROR("Pasos que exceden la ventana:"))
-            for line in overflow:
+        if preview.warnings:
+            self.stdout.write(self.style.ERROR("Avisos:"))
+            for line in preview.warnings:
                 self.stdout.write(f"  {line}")
         else:
             self.stdout.write(
                 self.style.SUCCESS("Ningún paso excede la ventana de contexto.")
             )
-        self._report_cache(cached_tokens, uncached_tokens)
+
+        self._report_cache(preview.cache)
+
+        if options["dump"] and positions:
+            self._dump(skill, execution, positions[0], options)
+
         self.stdout.write(
             "\nNota: sin secciones previas, que en la corrida real ocupan "
             "presupuesto. Estos números son el techo, no la corrida."
         )
 
-    def _report_cache(self, cached: list[int], uncached: list[int]) -> None:
-        """Qué se paga una vez y qué se paga en cada paso.
-
-        Es la comprobación de que el punto de caché quedó donde tiene que
-        quedar. Si la parte estable no es idéntica en todos los pasos, no hay
-        caché que valga: el prefijo se rompe en el primer byte distinto y el
-        corpus se cobra entero de nuevo. Por eso se compara y se avisa, en vez
-        de asumirlo.
-        """
-        if not cached:
-            return
+    def _report_cache(self, cache: dict) -> None:
         self.stdout.write("")
-        distinct = set(cached)
-        if len(distinct) > 1:
-            self.stdout.write(
-                self.style.ERROR(
-                    "La parte cacheable NO es idéntica entre pasos "
-                    f"({len(distinct)} tamaños distintos): la caché se invalida "
-                    "y el corpus se paga una vez por paso."
+        if not cache.get("measurable"):
+            reason = cache.get("reason")
+            if reason == "unstable_prefix":
+                self.stdout.write(
+                    self.style.ERROR(
+                        "La parte cacheable NO es idéntica entre pasos "
+                        f"({len(cache['distinct_sizes'])} tamaños distintos): la "
+                        "caché se invalida y el corpus se paga una vez por paso."
+                    )
                 )
-            )
+            elif reason == "single_step":
+                self.stdout.write(
+                    f"Parte cacheable: {cache['cacheable_tokens']:,} tokens. Con un "
+                    "solo paso no hay ahorro que medir — corré sin --step para el "
+                    "número real."
+                )
             return
 
-        steps = len(cached)
-        stable = cached[0]
-        if steps < 2:
-            # Con un solo paso la caché sólo se escribe: cuesta 1,25× y no hay
-            # lecturas que lo amorticen. Informar un "ahorro" negativo ahí
-            # confunde — no dice nada del esquema, dice que se pidió un paso.
-            self.stdout.write(
-                f"Parte cacheable: {stable:,} tokens. Con un solo paso no hay "
-                "ahorro que medir — corré sin --step para el número real."
-            )
-            return
-        variable = sum(uncached)
-        # Escritura de caché 1,25x, lectura 0,1x.
-        with_cache = stable * 1.25 + stable * 0.1 * (steps - 1) + variable
-        without_cache = stable * steps + variable
         self.stdout.write(
             self.style.SUCCESS(
-                f"Parte cacheable idéntica en los {steps} pasos: {stable:,} tokens."
+                f"Parte cacheable idéntica en los {cache['steps']} pasos: "
+                f"{cache['cacheable_tokens']:,} tokens."
             )
         )
         self.stdout.write(
-            f"  entrada facturable con caché:  {with_cache:>12,.0f} tokens\n"
-            f"  entrada facturable sin caché:  {without_cache:>12,.0f} tokens\n"
-            f"  ahorro:                        "
-            f"{(1 - with_cache / without_cache) * 100:>11.0f}%"
+            f"  entrada facturable con caché:  {cache['billable_with_cache']:>12,} tokens\n"
+            f"  entrada facturable sin caché:  {cache['billable_without_cache']:>12,} tokens\n"
+            f"  ahorro:                        {cache['savings_ratio'] * 100:>11.0f}%"
         )
 
+    def _dump(self, skill, execution, position: int, options) -> None:
+        """El corpus completo del paso elegido, tal como viaja."""
+        from apps.skill.services import (
+            _resolve_step_documents,
+            _with_operation_context,
+            build_step_corpus,
+            resolve_documents,
+        )
+
+        step = next((s for s in skill.steps.all() if s.position == position), None)
+        if step is None:
+            return
+        documents = resolve_documents(execution)
+        system_prompt = _with_operation_context(skill.system_prompt, execution)
+        reserved = (
+            context_budget.estimate_tokens(system_prompt)
+            + context_budget.estimate_tokens(f"{step.title}\n{step.instructions}")
+            + context_budget.output_reserve()
+        )
+        corpus = build_step_corpus(
+            execution=execution,
+            step_documents=_resolve_step_documents(step, documents, []),
+            query_text=f"{step.title}. {step.instructions}".strip(),
+            reserved_tokens=reserved,
+            blueprint_id=getattr(execution.project, "blueprint_document_id", None),
+            document_texts={},
+            retrieve_partials=not options["no_retrieval"],
+        )
+        parts = [corpus.inventory] + [d.text for d in corpus.documents]
+        if corpus.volatile:
+            parts.append(corpus.volatile)
+        self.stdout.write("")
+        self.stdout.write("=" * 72)
+        self.stdout.write("\n\n".join(p for p in parts if p))
+        self.stdout.write("=" * 72)
+
     def _execution(self, skill, options) -> SkillExecution:
-        """Una ejecución para simular, nunca persistida."""
         if options.get("execution_id"):
             execution = SkillExecution.objects.filter(id=options["execution_id"]).first()
             if execution is None:
@@ -231,15 +217,7 @@ class Command(BaseCommand):
         project = Project.objects.filter(id=options["project_id"]).first()
         if project is None:
             raise CommandError(f"No existe la operación {options['project_id']}.")
-        # Los workflows provistos por Ecofilia no tienen dueño (`owner=None`
-        # significa plantilla visible para todos), así que el dueño sale de la
-        # operación. Sin esto la recuperación dentro de los documentos
-        # degradados falla y el preview mide una parte variable que no existe.
-        owner = skill.owner or project.owner
-        if owner is None:
-            raise CommandError(
-                "Ni el workflow ni la operación tienen dueño; la recuperación "
-                "necesita un usuario para resolver permisos."
-            )
-        # Sin `save()`: el comando no deja rastro en el historial de corridas.
-        return SkillExecution(skill=skill, owner=owner, project=project, metadata={})
+        try:
+            return simulated_execution(skill, project)
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc

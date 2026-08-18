@@ -114,6 +114,7 @@ jobs:
             apps.skill.tests.test_definition_version \
             apps.skill.tests.test_parameters \
             apps.skill.tests.test_comparison \
+            apps.skill.tests.test_context_preview \
             apps.skill.tests.test_workflow_versioning_api
 
       - name: Verificar que las migraciones están al día

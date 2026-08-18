@@ -35,6 +35,7 @@ from apps.skill.models import (
 )
 from apps.skill import parameters as parameters_module
 from apps.skill.comparison import compare_executions
+from apps.skill.context_preview import build_preview
 from apps.skill.table_schema import schema_has_columns
 from apps.skill.services import approve_step, regenerate_step, rerun_execution
 from apps.skill.tasks import run_skill_task
@@ -219,6 +220,50 @@ class SkillViewSet(viewsets.ModelViewSet):
                 SkillExecutionSerializer(execution).data,
                 status=status.HTTP_202_ACCEPTED,
             )
+
+    @action(detail=True, methods=["get"], url_path="context-preview")
+    def context_preview(self, request, slug=None):
+        """
+        Qué recibiría cada paso de este workflow sobre una operación concreta.
+
+        GET /api/skills/{slug}/context-preview/?project={slug}&fragments=1
+
+        Responde sin llamar al modelo y sin escribir nada: es la pregunta que el
+        autor del workflow se hace mientras lo escribe —¿este paso va a ver el
+        documento entero o en fragmentos?— y que hasta ahora sólo se podía
+        responder corriendo el workflow o entrando a ECS.
+
+        ``fragments=1`` mide además la parte variable buscando dentro de los
+        documentos degradados. Cuesta una búsqueda por paso, así que viene
+        apagado; sin él, ``variable_tokens`` viaja como ``null`` y no como cero.
+        """
+        skill = self.get_object()
+        project_slug = request.query_params.get("project")
+        if not project_slug:
+            return Response(
+                {"detail": "Falta el parámetro 'project' con el slug de la operación."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from apps.project.models import Project
+
+        try:
+            project = Project.objects.for_user(request.user).get(slug=project_slug)
+        except Project.DoesNotExist:
+            return Response(
+                {"detail": "No se encontró la operación."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        measure = request.query_params.get("fragments", "").strip().lower() in (
+            "1", "true", "yes", "on",
+        )
+        try:
+            preview = build_preview(skill, project, measure_fragments=measure)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(preview.as_dict())
 
     @action(detail=True, methods=["get"], url_path="definition-versions")
     def definition_versions(self, request, slug=None):
