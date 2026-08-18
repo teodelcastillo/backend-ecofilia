@@ -176,6 +176,24 @@ class StrictPolicyTests(SimpleTestCase):
                 )
                 self.assertEqual(table["rows"], filas)
 
+    def test_unparseable_json_is_a_contract_violation_too(self):
+        """Un JSON que no parsea tiene que subir como violación del contrato.
+
+        Levantaba un `ValueError` plano, y el runner discriminaba por tipo de
+        excepción: la rama de degradación lo atrapaba y convertía el paso en
+        texto **aun en modo estricto** — exactamente lo que la política venía a
+        eliminar. `TableContractError` hereda de `ValueError`, así que el modo
+        tolerante lo sigue atrapando y degradando como antes.
+        """
+        for salida_rota in ("Esto no es JSON", '{"sin": "rows"}', "[1, 2, 3]"):
+            with self.subTest(salida=salida_rota):
+                with self.assertRaises(TableContractError):
+                    coerce_table_output(
+                        output_text=salida_rota,
+                        table_schema=DETERMINACION,
+                        strict=True,
+                    )
+
     def test_error_message_names_the_row(self):
         """Un esquema con veinte filas necesita decir cuál falló."""
         with self.assertRaises(TableContractError) as ctx:

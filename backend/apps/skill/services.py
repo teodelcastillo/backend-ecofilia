@@ -623,17 +623,17 @@ def coerce_table_output(
     schema_columns = table_schema.get("columns") or []
     normalized_keys = [c.get("key") for c in schema_columns if c.get("key")]
     if not normalized_keys or not schema_columns:
-        raise ValueError("Missing required columns for table output.")
+        raise TableContractError("Missing required columns for table output.")
 
     try:
         parsed = json.loads((output_text or "").strip())
     except json.JSONDecodeError as exc:
-        raise ValueError("Model returned invalid JSON for table output.") from exc
+        raise TableContractError("Model returned invalid JSON for table output.") from exc
     if not isinstance(parsed, dict):
-        raise ValueError("Table output must be a JSON object.")
+        raise TableContractError("Table output must be a JSON object.")
     rows = parsed.get("rows")
     if not isinstance(rows, list):
-        raise ValueError("Table output must contain a 'rows' array.")
+        raise TableContractError("Table output must contain a 'rows' array.")
 
     type_map = {c["key"]: c.get("type", "text") for c in schema_columns}
     required_map = {c["key"]: bool(c.get("required", False)) for c in schema_columns}
@@ -1568,7 +1568,9 @@ def _coerce_with_retry(
             content,
             sin_usage,
         )
-    except (TableContractError, ValueError) as exc:
+    except ValueError as exc:
+        # TableContractError hereda de ValueError, así que esto cubre tanto una
+        # celda fuera del contrato como un JSON que no parsea.
         if not strict:
             raise
         # El mensaje se guarda acá: Python borra la variable del `except` al
@@ -1917,15 +1919,15 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                         step=step,
                         execution=execution,
                     )
-                except TableContractError:
-                    # En estricto no se degrada a texto: un paso que declara una
-                    # determinación auditable y no puede producirla tiene que
-                    # decirlo. Escribir prosa acá es lo que hacía que la corrida
-                    # terminara "bien" con una determinación que nadie validó.
-                    # Los pasos anteriores ya están persistidos, así que no se
-                    # pierde el trabajo hecho.
-                    raise
                 except ValueError as exc:
+                    if strict:
+                        # En estricto no se degrada a texto: un paso que declara
+                        # una determinación auditable y no puede producirla tiene
+                        # que decirlo. Escribir prosa acá es lo que hacía que la
+                        # corrida terminara "bien" con una determinación que
+                        # nadie validó. Los pasos anteriores ya están
+                        # persistidos, así que no se pierde el trabajo hecho.
+                        raise
                     logger.warning(
                         "Step %s of execution %s produced invalid table JSON: %s",
                         step.id,
