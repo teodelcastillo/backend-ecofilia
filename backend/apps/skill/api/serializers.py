@@ -559,7 +559,7 @@ class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
 
 
 class RerunExecutionSerializer(serializers.Serializer):
-    """Input para POST /api/skill-executions/{id}/rerun/"""
+    """Input para POST /api/skills/executions/{id}/rerun/"""
 
     # Por defecto se hereda de la corrida original. Para una comparación de
     # reproducibilidad conviene apagarlo: nadie quiere aprobar diecisiete pasos
@@ -593,7 +593,7 @@ class SaveExecutionEditSerializer(serializers.Serializer):
 
 
 class ApproveStepSerializer(serializers.Serializer):
-    """Input for POST /api/skill-executions/{id}/approve/"""
+    """Input for POST /api/skills/executions/{id}/approve/"""
     override_content = serializers.CharField(
         required=False,
         allow_blank=True,

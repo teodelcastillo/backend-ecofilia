@@ -382,7 +382,7 @@ class SkillExecutionViewSet(
         Optionally accepts ``override_content`` to replace the step's text
         output before resuming — letting the consultant edit the draft.
 
-        POST /api/skill-executions/{id}/approve/
+        POST /api/skills/executions/{id}/approve/
         Body: { "override_content": "..." }   (optional)
         """
         execution = self.get_object()
@@ -407,7 +407,7 @@ class SkillExecutionViewSet(
         """
         Discard the last completed step and re-run it from scratch.
 
-        POST /api/skill-executions/{id}/regenerate-step/
+        POST /api/skills/executions/{id}/regenerate-step/
         """
         execution = self.get_object()
         if not user_can_mutate_execution(request.user, execution):
@@ -429,7 +429,7 @@ class SkillExecutionViewSet(
         """
         Volver a correr con el mismo input, en una ejecución nueva.
 
-        POST /api/skill-executions/{id}/rerun/
+        POST /api/skills/executions/{id}/rerun/
         Body: { "review_each_step": false }   (opcional)
 
         No toca la corrida original: la repetición es otra ejecución, y las dos
@@ -467,7 +467,7 @@ class SkillExecutionViewSet(
         """
         Continuar esta misma ejecución desde donde quedó.
 
-        POST /api/skill-executions/{id}/resume/
+        POST /api/skills/executions/{id}/resume/
 
         Sólo para `failed` o `stalled` — nunca `running`: si la ejecución
         sigue viva de verdad, reanudarla igual haría que dos procesos escriban
@@ -501,7 +501,7 @@ class SkillExecutionViewSet(
         """
         Comparar esta corrida con otra.
 
-        GET /api/skill-executions/{id}/compare/?against={other_id}
+        GET /api/skills/executions/{id}/compare/?against={other_id}
 
         Responde primero si las dos son **comparables** —mismo input en todos sus
         ejes— y sólo después en qué difiere la salida. Dos corridas que no son
