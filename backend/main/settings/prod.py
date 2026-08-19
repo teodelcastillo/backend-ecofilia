@@ -65,6 +65,18 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# El reaper de ejecuciones zombis (apps.skill.reliability). `acks_late` ya
+# hace que SQS reintente una tarea cuyo worker murió, pero recién a la hora
+# (visibility_timeout arriba) y el runner la ignora igual mientras la fila siga
+# en `running` — así que sin esto una ejecución muerta se queda "corriendo"
+# para siempre y nadie puede reanudarla sin entrar a un shell de producción.
+CELERY_BEAT_SCHEDULE = {
+    "reap-stalled-skill-executions": {
+        "task": "skill.reap_stalled_executions",
+        "schedule": 300.0,  # cada 5 minutos
+    },
+}
+
 # Serialization
 CELERY_TASK_SERIALIZER = "json"
 CELERY_ACCEPT_CONTENT = ["json"]

@@ -48,6 +48,12 @@ class ExecutionStatus(models.TextChoices):
     AWAITING_APPROVAL = "awaiting_approval", _("Awaiting Approval")
     COMPLETED = "completed", _("Completed")
     FAILED = "failed", _("Failed")
+    # El worker murió sin avisar —SIGKILL, Spot reclamado, lo que sea— y nadie
+    # lo marcó. Deliberadamente separado de FAILED: ese sigue significando "hubo
+    # un error de negocio real" (un JSON inválido en modo estricto, por
+    # ejemplo). Mezclarlos borraría justo la distinción que un panel de
+    # confiabilidad necesita mostrar.
+    STALLED = "stalled", _("Stalled")
 
 
 class ExecutionOutputMode(models.TextChoices):
@@ -635,6 +641,16 @@ class SkillExecution(models.Model):
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    last_progress_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Última vez que esta ejecución escribió un paso. Es lo único que "
+            "permite distinguir 'sigue viva, tranquilo' de 'murió hace una "
+            "hora' — antes de este campo esa pregunta no tenía respuesta en la "
+            "base, y una ejecución podía quedar en running para siempre."
+        ),
+    )
 
     class Meta:
         ordering = ("-created_at",)

@@ -20,6 +20,12 @@ if shared_task:
     def run_skill_task(execution_id: int):
         run_skill_sync(execution_id)
 
+    @shared_task(name="skill.reap_stalled_executions")
+    def reap_stalled_executions_task():
+        from apps.skill.reliability import reap_stalled_executions
+
+        return reap_stalled_executions()
+
 else:
 
     class _SyncSkillTask:

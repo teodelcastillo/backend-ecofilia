@@ -37,7 +37,7 @@ from apps.skill import parameters as parameters_module
 from apps.skill.comparison import compare_executions
 from apps.skill.context_preview import build_preview
 from apps.skill.table_schema import schema_has_columns
-from apps.skill.services import approve_step, regenerate_step, rerun_execution
+from apps.skill.services import approve_step, regenerate_step, rerun_execution, resume_execution
 from apps.skill.tasks import run_skill_task
 
 
@@ -460,6 +460,40 @@ class SkillExecutionViewSet(
         run_skill_task.delay(new_execution.id)
         return Response(
             SkillExecutionSerializer(new_execution).data, status=status.HTTP_202_ACCEPTED
+        )
+
+    @action(detail=True, methods=["post"], url_path="resume")
+    def resume(self, request, pk=None):
+        """
+        Continuar esta misma ejecución desde donde quedó.
+
+        POST /api/skill-executions/{id}/resume/
+
+        Sólo para `failed` o `stalled` — nunca `running`: si la ejecución
+        sigue viva de verdad, reanudarla igual haría que dos procesos escriban
+        el mismo `output_structured` a la vez. `stalled` es el caso que motivó
+        esto: un worker que murió sin avisar y el reaper detectó (ver
+        `apps.skill.reliability`), donde antes la única salida era un shell de
+        producción.
+        """
+        execution = self.get_object()
+        if not user_can_mutate_execution(request.user, execution):
+            raise PermissionDenied("No tienes permisos para reanudar esta ejecución.")
+
+        try:
+            execution = resume_execution(execution)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if execution.skill.skill_type == SkillType.QUICK:
+            run_skill_task(execution.id)
+            execution.refresh_from_db()
+            return Response(
+                SkillExecutionSerializer(execution).data, status=status.HTTP_200_OK
+            )
+        run_skill_task.delay(execution.id)
+        return Response(
+            SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED
         )
 
     @action(detail=True, methods=["get"], url_path="compare")

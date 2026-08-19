@@ -532,7 +532,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "steps_completed", "steps_total", "current_step_position",
             "document_snapshot", "metadata", "error_message",
             "definition_version", "definition_version_number", "definition_fingerprint",
-            "started_at", "finished_at", "created_at",
+            "started_at", "finished_at", "created_at", "last_progress_at",
         )
         read_only_fields = fields
 

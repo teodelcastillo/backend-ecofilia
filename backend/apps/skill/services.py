@@ -1968,7 +1968,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
         # Persist this step immediately (Sprint 3: incremental output for polling).
         execution.output_structured = {"steps": step_results}
         execution.steps_completed = len(step_results)
-        execution.save(update_fields=["output_structured", "steps_completed"])
+        execution.last_progress_at = timezone.now()
+        execution.save(update_fields=[
+            "output_structured", "steps_completed", "last_progress_at",
+        ])
 
         # Sprint 4 + block-by-block confirmation: pause for human review when the
         # step opts in via approval_required, OR when the run requested
@@ -2050,6 +2053,7 @@ class SkillRunner:
             ExecutionStatus.PENDING,
             ExecutionStatus.FAILED,
             ExecutionStatus.AWAITING_APPROVAL,
+            ExecutionStatus.STALLED,
         ):
             return execution
 
@@ -2066,6 +2070,10 @@ class SkillRunner:
 
         execution.status = ExecutionStatus.RUNNING
         execution.started_at = timezone.now()
+        # Sembrado acá y no sólo al persistir cada paso: entre este momento y el
+        # primer paso completado no hay ninguna otra señal de vida, y ese hueco
+        # es exactamente donde murió la corrida que motivó este campo.
+        execution.last_progress_at = execution.started_at
         execution.document_snapshot = build_document_snapshot(documents)
         execution.error_message = ""
 
@@ -2102,8 +2110,8 @@ class SkillRunner:
         execution.metadata = metadata
 
         execution.save(update_fields=[
-            "status", "started_at", "document_snapshot", "error_message",
-            "metadata", "definition_version",
+            "status", "started_at", "last_progress_at", "document_snapshot",
+            "error_message", "metadata", "definition_version",
         ])
 
         try:
@@ -2254,6 +2262,36 @@ def rerun_execution(
         metadata=metadata,
         status=ExecutionStatus.PENDING,
     )
+
+
+RESUMABLE_STATUSES = (ExecutionStatus.FAILED, ExecutionStatus.STALLED)
+
+
+def resume_execution(execution: SkillExecution) -> SkillExecution:
+    """
+    Continuar ESTA MISMA ejecución desde donde quedó, sin repetir pasos.
+
+    Distinto de ``rerun_execution``: eso crea una fila nueva sobre la
+    definición de hoy, para poder comparar dos corridas. Esto es la
+    recuperación de una que murió a mitad de camino —``failed`` de verdad o
+    ``stalled`` porque el worker se cayó sin avisar— y el motor ya sabe
+    retomarla sola: ``_run_copilot`` lee ``len(output_structured["steps"])``
+    para saber cuántos pasos saltear. No hay nada que reconstruir acá.
+
+    Sólo cambia el estado a ``pending`` —el mismo que usan ``approve_step`` y
+    ``regenerate_step`` para devolverle la ejecución al runner— y siembra
+    ``last_progress_at`` de nuevo: si no, el reaper podría volver a marcarla
+    ``stalled`` antes de que el worker alcance a escribir el próximo paso.
+    """
+    if execution.status not in RESUMABLE_STATUSES:
+        raise ValueError(
+            f"No se puede reanudar: la ejecución {execution.id} está en "
+            f"'{execution.status}', no en failed ni stalled."
+        )
+    execution.status = ExecutionStatus.PENDING
+    execution.last_progress_at = timezone.now()
+    execution.save(update_fields=["status", "last_progress_at"])
+    return execution
 
 
 # ---------------------------------------------------------------------------

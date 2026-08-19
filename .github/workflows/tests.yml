@@ -116,7 +116,10 @@ jobs:
             apps.skill.tests.test_parameters \
             apps.skill.tests.test_comparison \
             apps.skill.tests.test_context_preview \
-            apps.skill.tests.test_workflow_versioning_api
+            apps.skill.tests.test_workflow_versioning_api \
+            apps.skill.tests.test_reliability \
+            apps.skill.tests.test_resume \
+            apps.skill.tests.test_sprint4.StepApprovalGateTestCase
 
       - name: Verificar que las migraciones están al día
         working-directory: backend
