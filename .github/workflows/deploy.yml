@@ -86,9 +86,13 @@ jobs:
           set -euo pipefail
 
           # `register-task-definition` rechaza los campos de sólo lectura que
-          # trae la definición renderizada, así que se quitan.
+          # trae la definición renderizada. `tags` es un caso aparte: si viene
+          # como array vacío la API responde "Tags can not be empty", así que se
+          # quita sólo en ese caso — si algún día la definición lleva tags de
+          # verdad, se conservan.
           jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                  .compatibilities, .registeredAt, .registeredBy)' \
+                  .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+              | if (.tags // []) == [] then del(.tags) else . end' \
             "${{ steps.api-task.outputs.task-definition }}" > /tmp/migrate-td.json
 
           TD_ARN=$(aws ecs register-task-definition \
