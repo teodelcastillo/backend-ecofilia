@@ -11,10 +11,23 @@ permissions:
   id-token: write
   contents: read
 
+# Un solo deploy por vez. Sin esto, un push que llega mientras el anterior está
+# desplegando le pisa el rollout: el 18-ago-2026 dos deploys separados por menos
+# de cuatro minutos dejaron al worker, al interactivo y a beat sin el commit que
+# creían tener. `cancel-in-progress: false` a propósito — cortar un rollout por
+# la mitad es peor que hacer esperar al siguiente.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: ecofilia-api
   ECS_CLUSTER: cluster-ecofilia
+  # Red de las tareas puntuales (migraciones). Las mismas subredes privadas y el
+  # mismo grupo de seguridad que usa el servicio de API.
+  TASK_SUBNETS: subnet-0eeb7c030c003896d,subnet-084c6ea560cf05512,subnet-0bf0864eb1124711d
+  TASK_SG: sg-0e751d4a7ed56c286
 
 jobs:
   deploy:
@@ -55,6 +68,71 @@ jobs:
           task-definition-arn: arn:aws:ecs:us-east-2:028780196116:task-definition/ecofilia-api
           container-name: api
           image: ${{ steps.build.outputs.image }}
+
+      # ── Migraciones ───────────────────────────────────────────────────
+      # Bloqueante, y antes de tocar un solo servicio. Un modelo con su
+      # migración sin correr no rompe el build ni el deploy: rompe cada consulta
+      # a esa tabla, en caliente y en silencio. Pasó el 20-ago-2026 —
+      # `column skill_skillexecution.last_progress_at does not exist` en toda la
+      # pantalla de workflows— y sólo se descubrió porque alguien fue a mirar.
+      #
+      # Corre sobre la imagen recién construida, que es la única que tiene las
+      # migraciones nuevas: `run-task` no permite sobreescribir la imagen, así
+      # que hay que registrar la definición antes. El paso siguiente la registra
+      # de nuevo al desplegar; son dos revisiones idénticas y gratis, a cambio de
+      # que la migración corra exactamente sobre lo que se va a desplegar.
+      - name: Correr migraciones
+        run: |
+          set -euo pipefail
+
+          # `register-task-definition` rechaza los campos de sólo lectura que
+          # trae la definición renderizada, así que se quitan.
+          jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy)' \
+            "${{ steps.api-task.outputs.task-definition }}" > /tmp/migrate-td.json
+
+          TD_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/migrate-td.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Definición: $TD_ARN"
+
+          TASK_ARN=$(aws ecs run-task \
+            --cluster "$ECS_CLUSTER" \
+            --task-definition "$TD_ARN" \
+            --launch-type FARGATE \
+            --network-configuration "awsvpcConfiguration={subnets=[$TASK_SUBNETS],securityGroups=[$TASK_SG],assignPublicIp=DISABLED}" \
+            --overrides '{"containerOverrides":[{"name":"api","command":["python","manage.py","migrate","--noinput"]}]}' \
+            --query 'tasks[0].taskArn' --output text)
+          echo "Tarea: $TASK_ARN"
+
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+
+          # La salida de la migración va al log siempre, haya fallado o no: si
+          # falló hace falta para diagnosticar, y si funcionó deja registro de
+          # qué se aplicó en este deploy.
+          TASK_ID="${TASK_ARN##*/}"
+          GROUP=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
+            --query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-group"' --output text)
+          PREFIX=$(aws ecs describe-task-definition --task-definition "$TD_ARN" \
+            --query 'taskDefinition.containerDefinitions[0].logConfiguration.options."awslogs-stream-prefix"' --output text)
+
+          echo "── Salida de migrate ──────────────────────────────"
+          aws logs get-log-events \
+            --log-group-name "$GROUP" \
+            --log-stream-name "$PREFIX/api/$TASK_ID" \
+            --query 'events[].message' --output text 2>/dev/null || echo "(sin logs disponibles)"
+          echo "───────────────────────────────────────────────────"
+
+          EXIT=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          REASON=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].stoppedReason' --output text)
+
+          if [ "$EXIT" != "0" ]; then
+            echo "::error::Las migraciones fallaron (exit=$EXIT, motivo: $REASON). No se despliega nada."
+            exit 1
+          fi
+          echo "Migraciones aplicadas correctamente."
 
       - name: Deploy API service
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
