@@ -9,6 +9,7 @@ from django.shortcuts import get_object_or_404
 
 from collections import defaultdict
 from datetime import timedelta
+import logging
 import os
 
 from django.db import transaction
@@ -31,6 +32,7 @@ from apps.document.api.serializers import (
     SmartChunkSerializer,
     DocumentChunkSerializer,
     DocumentSerializer,
+    DocumentListSerializer,
     DocumentCreateSerializer,
     DocumentBulkCreateSerializer,
     DocumentBulkPublicSerializer,
@@ -434,14 +436,39 @@ class PublicDocumentListPagination(PageNumberPagination):
         return super().get_page_size(request)
 
 
+logger = logging.getLogger(__name__)
+
+
+# Columnas que el listado nunca muestra y que Django, por defecto, trae igual.
+#
+# `extracted_text` es el texto completo del archivo —en esta base hay documentos
+# de más de un millón de caracteres—. Sin diferirlo, listar la biblioteca de un
+# usuario carga en memoria el texto íntegro de cada documento para descartarlo
+# al serializar: cientos de megabytes por request. Es lo que mató a los workers
+# de gunicorn el 31-ago-2026 y dejó al balanceador sin destinos sanos.
+#
+# Los otros tres son texto largo que tampoco aparece en un listado.
+LIST_DEFERRED_COLUMNS = ("extracted_text", "content_summary", "last_error")
+
+# Techo de una respuesta sin paginar. No trunca nada hoy —la biblioteca entera
+# es más chica— pero evita que el endpoint vuelva a ser ilimitado a medida que
+# crece. Si alguna vez se alcanza, queda en el log: es la señal de que ese
+# llamador tiene que empezar a paginar.
+LIST_HARD_CAP = 1000
+
+
 class DocumentListAPIView(ListAPIView):
     queryset = Document.objects.all()
-    serializer_class = DocumentSerializer
+    serializer_class = DocumentListSerializer
     filterset_class = DocumentFilter
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return self._get_queryset_base().select_related("category_ref", "owner")
+        return (
+            self._get_queryset_base()
+            .select_related("category_ref", "owner")
+            .defer(*LIST_DEFERRED_COLUMNS)
+        )
 
     def _get_queryset_base(self):
         qs = Document.objects.all()
@@ -593,7 +620,20 @@ class DocumentListAPIView(ListAPIView):
             serializer = self.get_serializer(page, many=True)
             return paginator.get_paginated_response(serializer.data)
 
-        return super().list(request, *args, **kwargs)
+        # Sin `paginate=1` la respuesta es una lista plana, y hay clientes que
+        # dependen de esa forma. Se respeta, pero con techo: una lista sin
+        # límite crece con la biblioteca hasta tumbar al proceso.
+        queryset = self.filter_queryset(self.get_queryset())
+        total = queryset.count()
+        if total > LIST_HARD_CAP:
+            logger.warning(
+                "Listado sin paginar recortado a %s de %s documentos "
+                "(scope=%s, usuario=%s). Este llamador tiene que paginar.",
+                LIST_HARD_CAP, total, scope, request.user.pk,
+            )
+            queryset = queryset[:LIST_HARD_CAP]
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
 
 class DocumentAccessPermission(permissions.BasePermission):

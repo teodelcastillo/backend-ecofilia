@@ -329,6 +329,27 @@ class DocumentSerializer(serializers.ModelSerializer):
         return [{"name": n, "slug": s} for n, s in category_ancestor_path(ref)]
 
 
+class DocumentListSerializer(DocumentSerializer):
+    """El mismo documento, pero sin el resumen automático.
+
+    ``content_summary`` es el resumen que genera la ingesta sobre el archivo
+    entero: texto largo, pensado para RAG y para sugerir documentos
+    relacionados. En un listado no lo mira nadie —ninguna vista del frontend lo
+    consume— y multiplica el tamaño de cada respuesta por la cantidad de
+    documentos del usuario.
+
+    Se deja fuera acá y no en ``DocumentSerializer`` porque ese mismo
+    serializador responde altas y ediciones de un documento suelto, donde
+    devolverlo no cuesta nada y sacarlo sí sería un cambio de contrato.
+    """
+
+    class Meta(DocumentSerializer.Meta):
+        fields = [f for f in DocumentSerializer.Meta.fields if f != "content_summary"]
+        read_only_fields = [
+            f for f in DocumentSerializer.Meta.read_only_fields if f != "content_summary"
+        ]
+
+
 class DocumentDetailSerializer(serializers.ModelSerializer):
     """Serializer for retrieving a single document with all fields"""
     owner_email = serializers.EmailField(source='owner.email', read_only=True)
