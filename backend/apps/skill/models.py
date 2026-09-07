@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
@@ -351,6 +352,29 @@ class StepEvidenceMode(models.TextChoices):
     BOTH = "both", _("Documentos y pasos previos")
 
 
+class StepEvidenceSelection(models.TextChoices):
+    """
+    Cómo elige un paso los documentos que lee.
+
+    Antes había una sola forma —enumerar slugs— y por eso no servía en un
+    workflow-template: los slugs de las NDC cambian con cada operación, así que
+    la definición no podía decir nada útil y todo el peso caía en que alguien
+    tildara documentos a mano, paso por paso, en cada corrida.
+
+    La etiqueta resuelve eso porque es estable entre operaciones: "la NDC" es
+    lo mismo en Colombia que en Perú aunque el documento sea otro.
+
+    El documento principal de la operación se une siempre al conjunto, en
+    cualquiera de los modos. No es un default: es el sujeto del informe, y un
+    paso que lo pierde no está analizando esta operación.
+    """
+
+    ALL = "all", _("Todo el expediente de la operación")
+    TAGGED = "tagged", _("Documentos con las etiquetas indicadas")
+    BLUEPRINT_ONLY = "blueprint_only", _("Sólo el documento principal")
+    MANUAL = "manual", _("Sólo los documentos nombrados")
+
+
 class SkillStep(models.Model):
     skill = models.ForeignKey(Skill, related_name="steps", on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
@@ -383,15 +407,38 @@ class SkillStep(models.Model):
             "step. Its prompt/retrieval config is used against this step's documents."
         ),
     )
-    # Per-step document scope. When non-empty, this step only sees these
-    # documents (intersected with the execution context). Empty = all context
-    # documents, preserving the original behaviour.
+    evidence_selection = models.CharField(
+        max_length=20,
+        choices=StepEvidenceSelection.choices,
+        default=StepEvidenceSelection.ALL,
+        help_text=(
+            "Cómo elige este paso su base documental. El default lee todo el "
+            "expediente, que es lo que hacían todos los pasos antes de que "
+            "existieran las etiquetas."
+        ),
+    )
+    evidence_tags = ArrayField(
+        base_field=models.SlugField(max_length=80),
+        default=list,
+        blank=True,
+        help_text=(
+            "Etiquetas cuyos documentos lee este paso, cuando "
+            "evidence_selection='tagged'. Se guardan como slugs y no como "
+            "claves foráneas porque la definición del workflow se serializa "
+            "por valor: una corrida vieja tiene que poder decir qué pidió "
+            "aunque después se renombre o se borre la etiqueta."
+        ),
+    )
+    # Documentos nombrados uno por uno. En 'manual' son el conjunto entero; en
+    # 'tagged' se **suman** a lo que traigan las etiquetas, que es cómo se pide
+    # que un documento puntual entre a un paso sin tener que etiquetarlo.
     document_slugs = models.JSONField(
         default=list,
         blank=True,
         help_text=(
-            "Optional subset of document slugs this step runs against. "
-            "Empty = all documents in the execution context."
+            "Documentos nombrados explícitamente. Con evidence_selection="
+            "'manual' son el conjunto del paso; con 'tagged' se suman a los "
+            "que aportan las etiquetas."
         ),
     )
     tier = models.CharField(

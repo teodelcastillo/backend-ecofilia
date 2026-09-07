@@ -1,6 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from apps.document.models import SmartChunk, Document, DocumentShare, DocumentShareRole, Category
+from django.utils.text import slugify
+from apps.document.models import (
+    SmartChunk,
+    Document,
+    DocumentShare,
+    DocumentShareRole,
+    Category,
+    EvidenceTag,
+)
 from apps.document.category_utils import category_ancestor_path, resolve_write_category
 from apps.user.models import UserRole
 
@@ -603,3 +611,53 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
         if parent:
             validated_data['parent'] = parent
         return super().update(instance, validated_data)
+
+class EvidenceTagSerializer(serializers.ModelSerializer):
+    """Etiqueta del catálogo con el que los pasos piden su evidencia."""
+
+    document_count = serializers.IntegerField(read_only=True, required=False)
+
+    class Meta:
+        model = EvidenceTag
+        fields = (
+            "id",
+            "slug",
+            "name",
+            "description",
+            "source_topics",
+            "is_seed",
+            "position",
+            "document_count",
+        )
+        read_only_fields = ("id", "slug", "is_seed", "document_count")
+
+
+class EvidenceTagWriteSerializer(serializers.ModelSerializer):
+    """
+    Alta de etiquetas nuevas.
+
+    El slug se deriva del nombre y no se acepta del cliente: es el contrato que
+    queda escrito en la definición de los workflows, así que no puede depender
+    de lo que alguien tipee en un formulario. `is_seed` tampoco: distingue las
+    etiquetas que provee Ecofilia y sólo se pone en las migraciones de semilla.
+    """
+
+    class Meta:
+        model = EvidenceTag
+        fields = ("name", "description", "source_topics", "position")
+
+    def validate_name(self, value):
+        name = (value or "").strip()
+        if not name:
+            raise serializers.ValidationError("El nombre no puede estar vacío.")
+        slug = slugify(name)[:80]
+        if not slug:
+            raise serializers.ValidationError(
+                "El nombre tiene que producir un identificador válido."
+            )
+        qs = EvidenceTag.objects.filter(slug=slug)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(f"Ya existe una etiqueta «{slug}».")
+        return name

@@ -139,6 +139,19 @@ class ProjectDocument(models.Model):
         on_delete=models.SET_NULL,
     )
     is_primary = models.BooleanField(default=False)
+    tags = models.ManyToManyField(
+        "document.EvidenceTag",
+        related_name="project_documents",
+        blank=True,
+        help_text=(
+            "Qué papel cumple este documento en esta operación. Es lo que "
+            "consultan los pasos que piden su evidencia por etiqueta. Se "
+            "pre-carga desde los topics de la biblioteca al vincular, y desde "
+            "ahí manda lo que decida el equipo de la operación. Vacío es un "
+            "estado válido: el documento sigue entrando en los pasos que leen "
+            "todo el expediente y en los que lo nombran explícitamente."
+        ),
+    )
     note = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

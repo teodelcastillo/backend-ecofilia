@@ -91,6 +91,66 @@ class ProjectAPITestCase(APITestCase):
         slugs = {doc["slug"] for doc in response.data["documents"]}
         self.assertSetEqual(slugs, {"doc-propio", "doc-publico"})
 
+    def test_remove_document_action(self):
+        project = Project.objects.create(owner=self.owner, name="Proyecto Desvincular")
+        ProjectDocument.objects.create(
+            project=project, document=self.doc_owned, added_by=self.owner
+        )
+        ProjectDocument.objects.create(
+            project=project, document=self.doc_public, added_by=self.owner
+        )
+        url = reverse(
+            "project-remove-document",
+            kwargs={"slug": project.slug, "document_slug": "doc-publico"},
+        )
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(
+            list(project.project_documents.values_list("document__slug", flat=True)),
+            ["doc-propio"],
+        )
+
+    def test_remove_primary_document_clears_blueprint(self):
+        """Desvincular el principal deja la operación sin principal.
+
+        Si el blueprint sobreviviera al desvinculado, la operación apuntaría a
+        un documento fuera de su alcance: las corridas no lo verían —filtran
+        por ``ProjectDocument``— pero la carátula lo seguiría mostrando.
+        """
+        project = Project.objects.create(owner=self.owner, name="Proyecto Principal")
+        ProjectDocument.objects.create(
+            project=project,
+            document=self.doc_owned,
+            added_by=self.owner,
+            is_primary=True,
+        )
+        project.blueprint_document = self.doc_owned
+        project.save(update_fields=["blueprint_document"])
+
+        url = reverse(
+            "project-remove-document",
+            kwargs={"slug": project.slug, "document_slug": "doc-propio"},
+        )
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        project.refresh_from_db()
+        self.assertIsNone(project.blueprint_document_id)
+
+    def test_viewer_cannot_remove_documents(self):
+        project = Project.objects.create(owner=self.owner, name="Proyecto Solo Lectura")
+        ProjectDocument.objects.create(
+            project=project, document=self.doc_owned, added_by=self.owner
+        )
+        project.shares.create(user=self.viewer, role=ProjectShareRole.VIEWER)
+        self.client.force_authenticate(self.viewer)
+        url = reverse(
+            "project-remove-document",
+            kwargs={"slug": project.slug, "document_slug": "doc-propio"},
+        )
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(project.project_documents.count(), 1)
+
     def test_viewer_cannot_modify_documents(self):
         project = Project.objects.create(owner=self.owner, name="Proyecto Compartido")
         project.shares.create(user=self.viewer, role=ProjectShareRole.VIEWER)
@@ -154,3 +214,64 @@ class ProjectAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
 
+
+
+class ProjectDocumentTagsAPITestCase(APITestCase):
+    """Las etiquetas de un documento dentro de una operación."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            email="op@example.com", password="secret123", username="op"
+        )
+        self.viewer = User.objects.create_user(
+            email="lector@example.com", password="secret123", username="lector"
+        )
+        self.doc = Document.objects.create(
+            owner=self.owner, name="NDC", slug="ndc-doc", topics=["ndcs"]
+        )
+        self.project = Project.objects.create(owner=self.owner, name="Operación Tags")
+        ProjectDocument.objects.create(project=self.project, document=self.doc)
+        self.client.force_authenticate(self.owner)
+        self.url = reverse(
+            "project-document-tags",
+            kwargs={"slug": self.project.slug, "document_slug": "ndc-doc"},
+        )
+
+    def test_set_tags(self):
+        response = self.client.put(self.url, {"tags": ["ndc", "nap"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(sorted(response.data["tags"]), ["nap", "ndc"])
+
+    def test_tags_are_replaced_not_merged(self):
+        """Sin reemplazo no habría forma de sacar una etiqueta mal puesta."""
+        self.client.put(self.url, {"tags": ["ndc", "nap"]}, format="json")
+        response = self.client.put(self.url, {"tags": ["ndc"]}, format="json")
+        self.assertEqual(response.data["tags"], ["ndc"])
+
+    def test_unknown_tag_is_rejected(self):
+        response = self.client.put(self.url, {"tags": ["inventada"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_viewer_cannot_edit_tags(self):
+        self.project.shares.create(user=self.viewer, role=ProjectShareRole.VIEWER)
+        self.client.force_authenticate(self.viewer)
+        response = self.client.put(self.url, {"tags": ["ndc"]}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_linking_a_document_proposes_tags_from_its_topics(self):
+        """La biblioteca propone; la operación decide."""
+        otro = Document.objects.create(
+            owner=self.owner,
+            name="NAP Colombia",
+            slug="nap-colombia",
+            topics=["NAPS: Planes Nacionales de Adaptación"],
+        )
+        url = reverse("project-add-document", kwargs={"slug": self.project.slug})
+        response = self.client.post(
+            url, {"document_slugs": [otro.slug]}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        linked = next(
+            d for d in response.data["documents"] if d["slug"] == "nap-colombia"
+        )
+        self.assertEqual(linked["tags"], ["nap"])

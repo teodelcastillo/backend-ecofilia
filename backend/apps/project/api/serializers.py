@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
+from apps.project.services.evidence_tags import apply_default_tags
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -45,6 +46,9 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
     description = serializers.CharField(
         source="document.description", read_only=True
     )
+    tags = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field="slug"
+    )
 
     class Meta:
         model = ProjectDocument
@@ -55,10 +59,38 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
             "category",
             "description",
             "is_primary",
+            "tags",
             "note",
             "created_at",
         )
         read_only_fields = fields
+
+
+class ProjectDocumentTagsSerializer(serializers.Serializer):
+    """Reemplaza las etiquetas de un documento dentro de una operación.
+
+    Reemplazo y no merge: la lista que manda el cliente es el estado final. Un
+    merge no dejaría forma de sacar una etiqueta mal puesta, que es la mitad
+    del punto de tener etiquetas editables.
+    """
+
+    tags = serializers.ListField(
+        child=serializers.SlugField(max_length=80),
+        allow_empty=True,
+    )
+
+    def validate_tags(self, slugs):
+        from apps.document.models import EvidenceTag
+
+        unique = list(dict.fromkeys(slugs))
+        found = EvidenceTag.objects.filter(slug__in=unique)
+        missing = set(unique) - set(found.values_list("slug", flat=True))
+        if missing:
+            raise serializers.ValidationError(
+                f"Etiquetas inexistentes: {', '.join(sorted(missing))}."
+            )
+        self.context["resolved_tags"] = list(found)
+        return unique
 
 
 class ProjectSerializer(serializers.ModelSerializer):
@@ -272,11 +304,12 @@ class ProjectWriteSerializer(ProjectSerializer):
         for doc in documents:
             if doc.slug in existing_slugs:
                 continue
-            ProjectDocument.objects.create(
+            link = ProjectDocument.objects.create(
                 project=project,
                 document=doc,
                 added_by=project.owner,
             )
+            apply_default_tags(link)
 
     def _sync_blueprint(self, project: Project, blueprint_slug):
         if blueprint_slug is None:

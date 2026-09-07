@@ -34,7 +34,12 @@ import json
 # el esquema versionado, una comparación puede distinguir "cambió la definición"
 # de "cambió cómo la serializamos", que es la diferencia entre un cambio real y
 # un deploy nuestro.
-DEFINITION_SCHEMA = 1
+# 2: los pasos declaran su base documental por etiqueta
+# (``evidence_selection`` + ``evidence_tags``), no sólo enumerando slugs. Es un
+# cambio de forma: mueve todas las huellas de golpe, y por eso el número sube
+# — una comparación contra una corrida vieja tiene que poder distinguir esto de
+# un cambio real del autor del workflow.
+DEFINITION_SCHEMA = 2
 
 # Un `skill_ref` apunta a otra skill, y esa otra skill también puede cambiar. Se
 # le calcula huella propia hasta esta profundidad; más abajo se registra sólo el
@@ -93,6 +98,8 @@ STEP_FIELDS = (
     "title",
     "instructions",
     "step_type",
+    "evidence_selection",
+    "evidence_tags",
     "document_slugs",
     "tier",
     "evidence_mode",

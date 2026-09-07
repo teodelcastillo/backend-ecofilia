@@ -20,6 +20,7 @@ from apps.skill.models import (
     SkillStepType,
     SkillTier,
     StepEvidenceMode,
+    StepEvidenceSelection,
     SkillType,
 )
 from apps.skill.table_schema import (
@@ -136,6 +137,8 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "step_type",
             "tier",
             "evidence_mode",
+            "evidence_selection",
+            "evidence_tags",
             "linked_skill_slug",
             "linked_skill_name",
             "document_slugs",
@@ -201,6 +204,44 @@ class SkillStepWriteSerializer(serializers.Serializer):
         default=StepEvidenceMode.BOTH,
         help_text="Con qué material trabaja el paso: documentos, pasos previos, o ambos.",
     )
+    evidence_selection = serializers.ChoiceField(
+        choices=StepEvidenceSelection.choices,
+        required=False,
+        default=StepEvidenceSelection.ALL,
+        help_text=(
+            "Cómo elige el paso sus documentos: todo el expediente, por "
+            "etiqueta, sólo el principal, o los nombrados."
+        ),
+    )
+    evidence_tags = serializers.ListField(
+        child=serializers.SlugField(max_length=80),
+        required=False,
+        allow_empty=True,
+        default=list,
+    )
+
+    def validate_evidence_tags(self, slugs):
+        """Las etiquetas tienen que existir en el catálogo.
+
+        Un slug inventado no rompe nada en la corrida —el paso simplemente no
+        encuentra documentos— y ese es justamente el problema: el workflow
+        quedaría escrito pidiendo algo que nunca va a existir, y el autor se
+        enteraría recién al leer una sección vacía.
+        """
+        from apps.document.models import EvidenceTag
+
+        unique = list(dict.fromkeys(slugs or []))
+        if not unique:
+            return []
+        known = set(
+            EvidenceTag.objects.filter(slug__in=unique).values_list("slug", flat=True)
+        )
+        missing = [s for s in unique if s not in known]
+        if missing:
+            raise serializers.ValidationError(
+                f"Etiquetas inexistentes: {', '.join(missing)}."
+            )
+        return unique
     linked_skill_slug = serializers.SlugField(
         required=False, allow_null=True, allow_blank=True, default=None,
     )
@@ -233,6 +274,29 @@ class SkillStepWriteSerializer(serializers.Serializer):
         step_type = attrs.get("step_type", SkillStepType.INSTRUCTION)
         linked_slug = attrs.get("linked_skill_slug")
         instructions = (attrs.get("instructions") or "").strip()
+
+        selection = attrs.get("evidence_selection", StepEvidenceSelection.ALL)
+        if selection == StepEvidenceSelection.TAGGED and not (
+            attrs.get("evidence_tags") or attrs.get("document_slugs")
+        ):
+            raise serializers.ValidationError(
+                {
+                    "evidence_tags": (
+                        "Un paso que elige su evidencia por etiqueta necesita al "
+                        "menos una etiqueta o un documento nombrado. Sin eso "
+                        "correría siempre sin documentos."
+                    )
+                }
+            )
+        if selection == StepEvidenceSelection.MANUAL and not attrs.get("document_slugs"):
+            raise serializers.ValidationError(
+                {
+                    "document_slugs": (
+                        "Un paso que corre sobre documentos nombrados necesita "
+                        "nombrar al menos uno."
+                    )
+                }
+            )
 
         if step_type == SkillStepType.SKILL_REF:
             # A skill_ref step must reference an existing QUICK skill the user

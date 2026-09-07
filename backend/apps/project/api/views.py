@@ -36,6 +36,8 @@ from apps.project.api.serializers import (
     ProjectDeliverableSerializer,
     ProjectDeliverableUpdateSerializer,
     ProjectDocumentAttachSerializer,
+    ProjectDocumentSerializer,
+    ProjectDocumentTagsSerializer,
     ProjectSectionCreateSerializer,
     ProjectSectionSerializer,
     ProjectSectionUpdateSerializer,
@@ -45,6 +47,7 @@ from apps.project.api.serializers import (
     ProjectShareWriteSerializer,
     ProjectWriteSerializer,
 )
+from apps.project.services.evidence_tags import apply_default_tags
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -134,11 +137,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         for document in serializer.get_documents():
-            ProjectDocument.objects.get_or_create(
+            link, created = ProjectDocument.objects.get_or_create(
                 project=project,
                 document=document,
                 defaults={"added_by": request.user},
             )
+            if created:
+                # La biblioteca propone el papel del documento; el equipo de la
+                # operación lo confirma o lo cambia después. Sin esto, cada
+                # documento entraría sin etiqueta y los pasos que piden
+                # evidencia por etiqueta arrancarían vacíos.
+                apply_default_tags(link)
         return Response(
             self._serialize_project(project),
             status=status.HTTP_200_OK,
@@ -162,7 +171,42 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {"detail": "Documento no encontrado en el proyecto."},
                 status=status.HTTP_404_NOT_FOUND,
             )
+        # El documento principal deja de serlo al salir de la operación. Sin
+        # esto la operación queda apuntando a un documento que ya no está en su
+        # alcance: `resolve_documents` filtra por `ProjectDocument`, así que el
+        # IDO desaparecería de las corridas mientras la carátula y el bloque de
+        # contexto lo siguen anunciando como principal.
+        if project.blueprint_document_id == document.id:
+            project.blueprint_document = None
+            project.save(update_fields=["blueprint_document"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(
+        detail=True,
+        methods=["put"],
+        url_path=r"documents/(?P<document_slug>[^/]+)/tags",
+        url_name="document-tags",
+    )
+    def set_document_tags(self, request, slug=None, document_slug=None):
+        """
+        Qué papel cumple un documento dentro de esta operación.
+
+        Es lo que leen los pasos que piden su evidencia por etiqueta. Vive en
+        el vínculo y no en el documento: la misma NDC puede ser el instrumento
+        de referencia en una operación y un anexo de contraste en otra.
+        """
+        project = self.get_object()
+        self._ensure_editor(project)
+        link = get_object_or_404(
+            ProjectDocument, project=project, document__slug=document_slug
+        )
+        serializer = ProjectDocumentTagsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        link.tags.set(serializer.context["resolved_tags"])
+        return Response(
+            ProjectDocumentSerializer(link).data,
+            status=status.HTTP_200_OK,
+        )
 
     @action(
         detail=True,

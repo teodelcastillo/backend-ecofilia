@@ -23,6 +23,7 @@ from apps.document.models import (
     DocumentShare,
     Category,
     ChunkingStatus,
+    EvidenceTag,
 )
 from apps.document.tasks import process_document_chunks
 from apps.document.category_utils import category_descendant_ids
@@ -43,6 +44,8 @@ from apps.document.api.serializers import (
     DocumentShareWriteSerializer,
     CategorySerializer,
     CategoryWriteSerializer,
+    EvidenceTagSerializer,
+    EvidenceTagWriteSerializer,
 )
 from apps.chat.models import ChatSession, DEFAULT_CHAT_MODEL
 from apps.chat.api.serializers import ChatSessionSerializer
@@ -1013,4 +1016,53 @@ class CategoryViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if instance.owner != self.request.user and not self.request.user.is_staff:
             raise PermissionDenied("You do not have permission to delete this category.")
+        instance.delete()
+
+class EvidenceTagViewSet(viewsets.ModelViewSet):
+    """
+    Catálogo de etiquetas de evidencia.
+
+    Es global y compartido a propósito: los slugs quedan escritos en la
+    definición de los workflows, así que si cada usuario tuviera el suyo, un
+    workflow compartido pediría etiquetas que para otro no existen.
+
+    Ampliarlo lo puede cualquier usuario autenticado —agregar un tipo de
+    documento es parte de armar un workflow—, pero editar y borrar queda para
+    staff: renombrar una etiqueta afecta a todos los workflows que la piden.
+    Las de semilla no se borran ni siendo staff; son las que referencian los
+    workflows que provee Ecofilia.
+    """
+
+    queryset = EvidenceTag.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    lookup_field = "slug"
+
+    def get_queryset(self):
+        return EvidenceTag.objects.annotate(
+            document_count=Count("project_documents", distinct=True)
+        )
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return EvidenceTagWriteSerializer
+        return EvidenceTagSerializer
+
+    def perform_update(self, serializer):
+        if not self.request.user.is_staff:
+            raise PermissionDenied(
+                "Editar una etiqueta cambia lo que piden todos los workflows "
+                "que la usan. Sólo staff puede hacerlo."
+            )
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not self.request.user.is_staff:
+            raise PermissionDenied(
+                "Sólo staff puede borrar etiquetas del catálogo."
+            )
+        if instance.is_seed:
+            raise PermissionDenied(
+                "Las etiquetas provistas por Ecofilia no se borran: hay "
+                "workflows que las referencian por slug."
+            )
         instance.delete()

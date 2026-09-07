@@ -187,12 +187,19 @@ class Command(BaseCommand):
             + context_budget.estimate_tokens(f"{step.title}\n{step.instructions}")
             + context_budget.output_reserve()
         )
+        blueprint_id = getattr(execution.project, "blueprint_document_id", None)
         corpus = build_step_corpus(
             execution=execution,
-            step_documents=_resolve_step_documents(step, documents, []),
+            step_documents=_resolve_step_documents(
+                step,
+                documents,
+                [],
+                blueprint_id=blueprint_id,
+                project_id=execution.project_id,
+            ).documents,
             query_text=f"{step.title}. {step.instructions}".strip(),
             reserved_tokens=reserved,
-            blueprint_id=getattr(execution.project, "blueprint_document_id", None),
+            blueprint_id=blueprint_id,
             document_texts={},
             retrieve_partials=not options["no_retrieval"],
         )

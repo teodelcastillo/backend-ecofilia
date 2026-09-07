@@ -306,6 +306,67 @@ class DocumentShare(models.Model):
         return f"{self.document_id}-{self.user_id}-{self.role}"
 
 
+class EvidenceTag(models.Model):
+    """
+    Vocabulario con el que un paso de un workflow pide su evidencia.
+
+    No es un atributo del documento: es el papel que ese documento cumple
+    **dentro de una operación**, y por eso la asignación vive en
+    ``ProjectDocument.tags`` y no acá. La NDC de Colombia es "la NDC" en una
+    operación colombiana y puede ser un anexo de contraste en otra.
+
+    Se resolvió así en vez de leer ``Document.topics`` en tiempo de corrida por
+    tres razones. Los topics los edita cualquiera desde la biblioteca, así que
+    una corrida vieja cambiaría de significado sin que nadie la toque. Un
+    documento mal clasificado en la biblioteca no tendría dónde corregirse para
+    esta operación. Y sobre todo: el ejecutivo no podría ver, antes de lanzar,
+    qué va a leer cada paso.
+
+    ``source_topics`` es el puente con la biblioteca: al vincular un documento
+    a una operación, sus topics pre-marcan las etiquetas correspondientes. El
+    ejecutivo ve la propuesta y la corrige — la biblioteca sugiere, la
+    operación decide.
+
+    El catálogo es ampliable: ``is_seed`` sólo distingue las que provee
+    Ecofilia (que no se borran) de las que agrega un equipo.
+    """
+
+    slug = models.SlugField(unique=True, max_length=80)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    source_topics = ArrayField(
+        base_field=models.TextField(),
+        blank=True,
+        default=list,
+        help_text=(
+            "Topics de la biblioteca que pre-marcan esta etiqueta al vincular "
+            "un documento a una operación. En minúsculas."
+        ),
+    )
+    is_seed = models.BooleanField(
+        default=False,
+        help_text="Etiqueta provista por Ecofilia. No se borra desde la API.",
+    )
+    position = models.PositiveIntegerField(default=100)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("position", "name")
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.slug})"
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)[:80] or "etiqueta"
+        if self.source_topics:
+            self.source_topics = [
+                t.lower().strip() for t in self.source_topics if t and t.strip()
+            ]
+        super().save(*args, **kwargs)
+
+
 class Category(models.Model):
     owner = models.ForeignKey(
         User,

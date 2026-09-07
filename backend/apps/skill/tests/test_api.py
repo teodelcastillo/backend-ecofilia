@@ -199,3 +199,71 @@ class SkillAPITestCase(APITestCase):
         response = self.client.post(reverse("skill-list"), payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("default_output_mode", response.data)
+
+
+class WorkflowEvidenceTagsAPITestCase(APITestCase):
+    """El contrato de evidencia, tal como lo escribe el builder."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="autor@example.com", password="secret123", username="autor"
+        )
+        self.client.force_authenticate(self.user)
+
+    def _payload(self, step_overrides: dict) -> dict:
+        step = {
+            "title": "CT M3 — Consistencia con la NDC",
+            "instructions": "Analizá la consistencia.",
+            "position": 1,
+        }
+        step.update(step_overrides)
+        return {
+            "name": "Workflow con etiquetas",
+            "description": "",
+            "skill_type": "copilot",
+            "allowed_contexts": ["project"],
+            "system_prompt": "Sos un analista.",
+            "steps": [step],
+        }
+
+    def test_step_can_declare_evidence_tags(self):
+        response = self.client.post(
+            reverse("skill-list"),
+            self._payload({"evidence_selection": "tagged", "evidence_tags": ["ndc"]}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        step = response.data["steps"][0]
+        self.assertEqual(step["evidence_selection"], "tagged")
+        self.assertEqual(step["evidence_tags"], ["ndc"])
+
+    def test_unknown_tag_is_rejected(self):
+        """Un slug inventado no rompe la corrida — y por eso hay que frenarlo acá.
+
+        El paso simplemente no encontraría documentos, y el autor se enteraría
+        recién al leer una sección vacía.
+        """
+        response = self.client.post(
+            reverse("skill-list"),
+            self._payload(
+                {"evidence_selection": "tagged", "evidence_tags": ["no-existe"]}
+            ),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_tagged_without_tags_or_documents_is_rejected(self):
+        response = self.client.post(
+            reverse("skill-list"),
+            self._payload({"evidence_selection": "tagged", "evidence_tags": []}),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_default_selection_reads_everything(self):
+        """Los workflows que ya existían no cambian de comportamiento."""
+        response = self.client.post(
+            reverse("skill-list"), self._payload({}), format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["steps"][0]["evidence_selection"], "all")

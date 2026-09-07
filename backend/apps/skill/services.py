@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass
 from typing import List
 
-from django.db.models import Count, Max, QuerySet
+from django.db.models import Count, Max, Q, QuerySet
 from django.utils import timezone
 
 from apps.chat.services.rag import (
@@ -39,6 +39,7 @@ from apps.skill.models import (
     SkillTier,
     SkillType,
     StepEvidenceMode,
+    StepEvidenceSelection,
 )
 from apps.skill.table_schema import schema_has_columns
 
@@ -1213,50 +1214,136 @@ def _render_history(
     return rendered
 
 
+@dataclass
+class StepScope:
+    """La base documental de un paso y por qué quedó así.
+
+    El diagnóstico no es decorativo: cuando un paso pide una etiqueta que la
+    operación no tiene, esa ausencia hay que contársela al modelo —para que la
+    declare en vez de improvisar— y dejarla en el registro de la corrida, que
+    es donde el ejecutivo se entera de que le falta vincular un documento.
+    """
+
+    documents: QuerySet[Document]
+    diagnostics: dict
+
+
+def _clean_slugs(values) -> list[str]:
+    return [s for s in (values or []) if isinstance(s, str) and s.strip()]
+
+
 def _resolve_step_documents(
     step: SkillStep,
     documents: QuerySet[Document],
     runtime_override_slugs: list[str] | None = None,
-) -> QuerySet[Document]:
+    *,
+    blueprint_id: int | None = None,
+    project_id: int | None = None,
+) -> StepScope:
     """
     Narrow the execution's document scope to a single step's documents.
 
-    Resolution order (first non-empty wins):
-    1. **Runtime overrides** — per-step slugs the user chose when launching the
-       workflow (stored in ``execution.metadata["step_document_overrides"]``).
-    2. **Definition-time slugs** — ``step.document_slugs`` set in the skill
-       builder.
-    3. **Full context** — all documents from the execution's repository/project.
+    Orden de resolución:
 
-    An empty list at any level means "not specified" and falls through to the
-    next level.
+    1. **Lo que eligió el usuario al lanzar** (``step_document_overrides``).
+       Gana siempre: es una decisión explícita sobre esta corrida.
+    2. **Lo que declara la definición** — ``evidence_selection`` y sus
+       etiquetas o slugs.
+
+    El documento principal se une al conjunto en todos los casos. Antes no:
+    un paso acotado por slugs perdía el IDO sin que nada lo dijera, y el
+    presupuesto de contexto sólo sabe protegerlo si ya está adentro.
+
+    Un paso que pide etiquetas y no encuentra ninguna **no cae al expediente
+    completo**. Ese fallback existía para los slugs y tenía sentido ahí —una
+    lista escrita a mano puede envejecer—, pero con etiquetas invierte el
+    pedido: un paso acotado a la NDC terminaría leyendo todo. Corre con el
+    documento principal y la ausencia queda anotada.
     """
-    # Pick the first non-empty slug list.
-    effective_slugs: list[str] = []
-    if runtime_override_slugs:
-        effective_slugs = [s for s in runtime_override_slugs if isinstance(s, str) and s.strip()]
-    if not effective_slugs:
-        effective_slugs = [s for s in (step.document_slugs or []) if isinstance(s, str) and s.strip()]
-    if not effective_slugs:
-        return documents
+    diagnostics: dict = {"selection": step.evidence_selection}
 
-    scoped = documents.filter(slug__in=effective_slugs)
-    # Defensive: if the slugs reference docs not in the context (e.g. removed
-    # after the workflow was authored), fall back to the full context so the
-    # step still produces something rather than running on an empty corpus.
-    #
-    # La caída se avisa. Antes era silenciosa, y bajo contexto-primero eso pasó
-    # de ser un detalle a ser el problema: un paso que el autor acotó a un
-    # documento termina recibiendo el expediente entero sin que nada lo diga.
-    if scoped.exists():
-        return scoped
-    logger.warning(
-        "El paso %s referencia documentos que no están en el alcance (%s); "
-        "se usa el contexto completo.",
-        step.id,
-        ", ".join(effective_slugs),
-    )
-    return documents
+    def _with_blueprint(qs: QuerySet[Document]) -> QuerySet[Document]:
+        if blueprint_id is None:
+            return qs
+        return documents.filter(Q(id__in=qs.values("id")) | Q(id=blueprint_id))
+
+    runtime_slugs = _clean_slugs(runtime_override_slugs)
+    if runtime_slugs:
+        diagnostics["selection"] = "runtime_override"
+        scoped = documents.filter(slug__in=runtime_slugs)
+        if not scoped.exists():
+            logger.warning(
+                "El paso %s recibió un alcance de corrida que no está en el "
+                "contexto (%s); se usa el expediente completo.",
+                step.id,
+                ", ".join(runtime_slugs),
+            )
+            diagnostics["fallback"] = "runtime_slugs_not_in_context"
+            return StepScope(documents, diagnostics)
+        return StepScope(_with_blueprint(scoped), diagnostics)
+
+    selection = step.evidence_selection or StepEvidenceSelection.ALL
+
+    if selection == StepEvidenceSelection.BLUEPRINT_ONLY:
+        if blueprint_id is None:
+            # Sin principal designado no hay nada que aislar. Leer todo sería
+            # lo contrario de lo que pide el paso, así que se corre sin
+            # documentos y se dice.
+            diagnostics["empty_reason"] = "sin_documento_principal"
+            return StepScope(documents.none(), diagnostics)
+        return StepScope(documents.filter(id=blueprint_id), diagnostics)
+
+    if selection == StepEvidenceSelection.TAGGED:
+        tags = _clean_slugs(step.evidence_tags)
+        extra = _clean_slugs(step.document_slugs)
+        diagnostics["tags_requested"] = tags
+        if project_id is None:
+            # Las etiquetas viven en la operación. Un workflow etiquetado que
+            # corre sobre un repositorio no tiene dónde resolverlas: leer todo
+            # es lo único que puede hacer, y queda anotado para que no parezca
+            # que el acotamiento se aplicó.
+            diagnostics["fallback"] = "sin_operacion"
+            return StepScope(documents, diagnostics)
+        matched = documents.filter(
+            project_documents__project_id=project_id,
+            project_documents__tags__slug__in=tags,
+        ).distinct()
+        if extra:
+            # Los documentos sueltos entran por nombre, sin necesidad de que
+            # alguien los etiquete: es la vía para "que este paso además mire
+            # este documento en particular".
+            matched = documents.filter(
+                Q(id__in=matched.values("id")) | Q(slug__in=extra)
+            )
+            diagnostics["extra_documents"] = extra
+        matched_count = matched.count()
+        if not matched_count:
+            diagnostics["empty_reason"] = "sin_documentos_etiquetados"
+            return StepScope(_with_blueprint(documents.none()), diagnostics)
+        diagnostics["matched_count"] = matched_count
+        return StepScope(_with_blueprint(matched), diagnostics)
+
+    if selection == StepEvidenceSelection.MANUAL:
+        slugs = _clean_slugs(step.document_slugs)
+        if not slugs:
+            diagnostics["fallback"] = "manual_sin_slugs"
+            return StepScope(documents, diagnostics)
+        scoped = documents.filter(slug__in=slugs)
+        if not scoped.exists():
+            # Una lista de slugs escrita a mano puede envejecer —el documento
+            # se desvinculó, se renombró—, y ahí el expediente completo sigue
+            # siendo mejor que nada. Se avisa, como antes.
+            logger.warning(
+                "El paso %s referencia documentos que no están en el alcance "
+                "(%s); se usa el expediente completo.",
+                step.id,
+                ", ".join(slugs),
+            )
+            diagnostics["fallback"] = "manual_slugs_not_in_context"
+            return StepScope(documents, diagnostics)
+        return StepScope(_with_blueprint(scoped), diagnostics)
+
+    return StepScope(documents, diagnostics)
 
 
 # ---------------------------------------------------------------------------
@@ -1672,13 +1759,19 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
         if step_index < resume_from_position:
             continue
 
-        # Resolve the document scope for THIS step.  Priority:
-        # 1. Runtime overrides from execution.metadata (user chose at launch)
-        # 2. Definition-time step.document_slugs (set in skill builder)
-        # 3. Full execution context
+        # La base documental de ESTE paso: lo que eligió el usuario al lanzar,
+        # o lo que declara la definición (todo / por etiqueta / sólo el
+        # principal / nombrados). El principal se une siempre.
         runtime_overrides = (execution.metadata or {}).get("step_document_overrides", {})
         step_runtime_slugs = runtime_overrides.get(str(step.position), [])
-        step_documents = _resolve_step_documents(step, documents, step_runtime_slugs)
+        step_scope = _resolve_step_documents(
+            step,
+            documents,
+            step_runtime_slugs,
+            blueprint_id=blueprint_id,
+            project_id=execution.project_id,
+        )
+        step_documents = step_scope.documents
 
         # ── Skill-reference step: delegate to an existing quick skill ──
         if step.step_type == SkillStepType.SKILL_REF and step.linked_skill_id:
@@ -1759,6 +1852,20 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 lines.append(
                     "\n## Document scope: este paso analiza solo un subconjunto "
                     "de los documentos del contexto."
+                )
+            # La ausencia se nombra por lo que se pidió, no como "no se encontró
+            # contenido". Un paso acotado a la NDC que corre sin NDC tiene que
+            # decir que la operación no la tiene — no rellenar con lo que haya a
+            # mano ni con conocimiento general.
+            if wants_documents and step_scope.diagnostics.get("empty_reason") == (
+                "sin_documentos_etiquetados"
+            ):
+                pedidas = ", ".join(step_scope.diagnostics.get("tags_requested") or [])
+                lines.append(
+                    f"\n## Evidencia faltante: la operación no tiene documentos "
+                    f"vinculados de tipo: {pedidas}. Decilo explícitamente en tu "
+                    "salida y no sustituyas esa evidencia por otros documentos ni "
+                    "por conocimiento general."
                 )
             # Inject typed parameter values as a context note
             if execution.input_values:
@@ -1889,6 +1996,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 "model": model_used,
                 "tier": tier_used,
                 "evidence_mode": evidence_mode,
+                # Qué pidió el paso y qué consiguió. Es lo que permite explicar
+                # después por qué una sección salió como salió sin volver a
+                # correrla.
+                "evidence_scope": step_scope.diagnostics,
                 "retrieval": step_diagnostics,
                 "sources": (
                     _plan_sources(plan, step_sources)

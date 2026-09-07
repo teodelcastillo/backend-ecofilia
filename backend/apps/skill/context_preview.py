@@ -275,7 +275,13 @@ def build_preview(
             variable.append(reserved)
             continue
 
-        step_documents = _resolve_step_documents(step, documents, [])
+        step_documents = _resolve_step_documents(
+            step,
+            documents,
+            [],
+            blueprint_id=blueprint_id,
+            project_id=getattr(project, "id", None),
+        ).documents
         corpus = build_step_corpus(
             execution=execution,
             step_documents=step_documents,
