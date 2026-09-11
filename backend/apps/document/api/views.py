@@ -126,11 +126,18 @@ class DocumentCreateAPIView(CreateAPIView):
         project = getattr(serializer, '_project', None)
         if project:
             from apps.project.models import ProjectDocument
-            ProjectDocument.objects.get_or_create(
+            from apps.project.services.evidence_tags import apply_default_tags
+            link, created = ProjectDocument.objects.get_or_create(
                 project=project,
                 document=document,
                 defaults={"added_by": request.user},
             )
+            if created:
+                # Mismo comportamiento que vincular un documento existente
+                # (ver `ProjectViewSet.add_documents`): sin esto, un documento
+                # subido directo a la operación quedaba sin la propuesta de
+                # etiqueta que sí recibe uno vinculado desde la biblioteca.
+                apply_default_tags(link)
 
         response_serializer = DocumentSerializer(document, context=self.get_serializer_context())
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -216,11 +223,14 @@ class DocumentBulkCreateAPIView(APIView):
 
                 if project:
                     from apps.project.models import ProjectDocument
-                    ProjectDocument.objects.get_or_create(
+                    from apps.project.services.evidence_tags import apply_default_tags
+                    link, created = ProjectDocument.objects.get_or_create(
                         project=project,
                         document=document,
                         defaults={"added_by": request.user},
                     )
+                    if created:
+                        apply_default_tags(link)
             except Exception as e:
                 failed.append({
                     'filename': getattr(file, 'name', 'unknown'),

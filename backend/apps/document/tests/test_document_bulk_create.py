@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -48,6 +50,19 @@ class DocumentBulkCreateTest(APITestCase):
         for entry in response.data["successful"]:
             doc = Document.objects.get(id=entry["id"])
             self.assertTrue(self.project.documents.filter(id=doc.id).exists())
+
+    def test_bulk_create_with_project_proposes_evidence_tags(self):
+        """Mismo hueco que la subida individual: sin esto, un lote subido
+        directo a una operación quedaba sin propuesta de etiqueta."""
+        files = [self._make_file(f"tag{i}.txt") for i in range(2)]
+        data = {"files": files, "project_slug": self.project.slug}
+        with patch(
+            "apps.project.services.evidence_tags.apply_default_tags"
+        ) as mocked:
+            response = self.client.post(self.url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(mocked.call_count, 2)
 
     def test_bulk_create_invalid_project_slug(self):
         files = [self._make_file("f.txt")]

@@ -1,4 +1,5 @@
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -97,6 +98,37 @@ class DocumentCreateWithProjectSlugTest(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         doc = Document.objects.get(id=response.data["id"])
         self.assertTrue(self.project.documents.filter(id=doc.id).exists())
+
+    def test_upload_with_project_proposes_evidence_tags(self):
+        """
+        Subir un documento nuevo directo a una operación tiene que proponerle
+        etiquetas igual que vincular uno ya existente desde la biblioteca
+        (``ProjectViewSet.add_documents``) — antes este camino se quedaba
+        callado y el documento entraba sin ninguna, para siempre.
+        """
+        url = reverse("documentcreate")
+        data = {"file": self._make_file(), "project_slug": self.project.slug}
+        with patch(
+            "apps.project.services.evidence_tags.apply_default_tags"
+        ) as mocked:
+            response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        link = ProjectDocument.objects.get(
+            project=self.project, document_id=response.data["id"]
+        )
+        mocked.assert_called_once_with(link)
+
+    def test_upload_without_project_does_not_touch_tags(self):
+        url = reverse("documentcreate")
+        data = {"file": self._make_file()}
+        with patch(
+            "apps.project.services.evidence_tags.apply_default_tags"
+        ) as mocked:
+            response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        mocked.assert_not_called()
 
     def test_unauthenticated_create_denied(self):
         self.client.force_authenticate(user=None)

@@ -221,8 +221,11 @@ class DefaultTagsTestCase(TestCase):
             email="lib@example.com", password="secret123", username="lib"
         )
         self.project = Project.objects.create(owner=self.user, name="Operación")
+        # Las dos formas, como en la semilla real (migración 0016): "ndcs" es
+        # la carpeta pineada de la biblioteca CAF, "ndc" el singular que
+        # cualquiera puede tipear a mano.
         EvidenceTag.objects.update_or_create(
-            slug="ndc", defaults={"name": "NDC", "source_topics": ["ndcs"]}
+            slug="ndc", defaults={"name": "NDC", "source_topics": ["ndcs", "ndc"]}
         )
 
     def test_topic_with_long_label_matches_by_acronym(self):
@@ -259,6 +262,66 @@ class DefaultTagsTestCase(TestCase):
         link.tags.set([otra])
         apply_default_tags(link)
         self.assertEqual(list(link.tags.values_list("slug", flat=True)), ["nap"])
+
+    def test_topic_without_colon_still_matches_by_word(self):
+        """
+        El formato "ndcs: descripción" es el de las carpetas pineadas de la
+        biblioteca CAF; nada obliga a que un bibliotecario lo respete. Un topic
+        como "ndc colombia 2023" tiene que matchear igual.
+        """
+        doc = Document.objects.create(
+            owner=self.user, name="NDC suelto", slug="ndc-suelto",
+            topics=["ndc colombia 2023"],
+        )
+        link = ProjectDocument.objects.create(project=self.project, document=doc)
+        apply_default_tags(link)
+        self.assertEqual(link.tags.first().slug, "ndc")
+
+    def test_hyphenated_topic_matches(self):
+        doc = Document.objects.create(
+            owner=self.user, name="NDC con guion", slug="ndc-guion",
+            topics=["ndc-actualizada-2023"],
+        )
+        link = ProjectDocument.objects.create(project=self.project, document=doc)
+        apply_default_tags(link)
+        self.assertEqual(link.tags.first().slug, "ndc")
+
+    def test_short_fragment_does_not_false_positive(self):
+        """
+        "ac" es una etiqueta real (Comunicación de Adaptación) de sólo dos
+        letras. Un topic donde "ac" aparece pegado a otra palabra —no suelto
+        como fragmento propio— no tiene que dispararla.
+        """
+        EvidenceTag.objects.update_or_create(
+            slug="comunicacion-adaptacion",
+            defaults={"name": "AC", "source_topics": ["ac"]},
+        )
+        doc = Document.objects.create(
+            owner=self.user, name="Impacto ambiental", slug="impacto-ambiental",
+            topics=["impacto ambiental y social"],
+        )
+        link = ProjectDocument.objects.create(project=self.project, document=doc)
+        apply_default_tags(link)
+        self.assertEqual(link.tags.count(), 0)
+
+    def test_multiword_tag_source_topic_is_not_fragmented(self):
+        """
+        El lado de la etiqueta no se tokeniza: si se fragmentara igual que el
+        documento, una etiqueta con source_topics=["comunicacion nacional"]
+        matchearía cualquier topic que mencione "nacional" suelto —exactamente
+        el falso positivo que la asimetría evita.
+        """
+        EvidenceTag.objects.update_or_create(
+            slug="inventario-gei",
+            defaults={"name": "Inventario GEI", "source_topics": ["comunicacion nacional"]},
+        )
+        doc = Document.objects.create(
+            owner=self.user, name="Plan nacional de riego", slug="plan-nacional-riego",
+            topics=["plan nacional de riego"],
+        )
+        link = ProjectDocument.objects.create(project=self.project, document=doc)
+        apply_default_tags(link)
+        self.assertEqual(link.tags.count(), 0)
 
 
 class IetEvidenceMappingTestCase(TestCase):
