@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument, ProjectShareRole
+from apps.skill.models import Skill, SkillType
 
 User = get_user_model()
 
@@ -275,3 +276,54 @@ class ProjectDocumentTagsAPITestCase(APITestCase):
             d for d in response.data["documents"] if d["slug"] == "nap-colombia"
         )
         self.assertEqual(linked["tags"], ["nap"])
+
+
+class ProjectCreationSkillAssignmentTestCase(APITestCase):
+    """
+    El caso que dejaba operaciones CAF sin agente: quien las crea desde el
+    portal no tiene organización asignada (típicamente staff), así que el
+    default de `Organization.default_project_skills` no tiene de dónde
+    salir. El formulario del portal CAF lo evita pidiendo el agente
+    explícitamente al crear — esto confirma que ese pedido explícito
+    funciona para cualquier usuario, no sólo para uno con organización.
+    """
+
+    def setUp(self):
+        self.staff = User.objects.create_user(
+            email="staff@ecofilia.com", password="secret123", username="staff",
+        )  # sin organización, a propósito
+        self.client.force_authenticate(self.staff)
+        self.agent = Skill.objects.create(
+            name="Agente CAF", skill_type=SkillType.COPILOT, owner=None,
+            allowed_contexts=["project"],
+        )
+
+    def test_explicit_skill_slug_attaches_regardless_of_owner_org(self):
+        # La respuesta del POST usa ProjectWriteSerializer, que no vuelve a
+        # serializar `enabled_skill_slugs` (mismo bug preexistente que deja
+        # `blueprint_document_slug` afuera, ver test_create_project_with_-
+        # blueprint_document) — se verifica contra la base, no contra el body.
+        response = self.client.post(
+            reverse("project-list"),
+            {"name": "Operación", "enabled_skill_slugs": [self.agent.slug]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        project = Project.objects.get(slug=response.data["slug"])
+        self.assertEqual(
+            list(project.enabled_skills.values_list("slug", flat=True)),
+            [self.agent.slug],
+        )
+
+    def test_omitting_it_relies_on_the_org_default_and_stays_empty_without_one(self):
+        """
+        La otra cara: sin pedirlo explícitamente y sin organización en el
+        owner, la operación nace sin agente — es exactamente el bug que
+        motivó que el formulario lo pida siempre.
+        """
+        response = self.client.post(
+            reverse("project-list"), {"name": "Operación huérfana"}, format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        project = Project.objects.get(slug=response.data["slug"])
+        self.assertEqual(project.enabled_skills.count(), 0)
