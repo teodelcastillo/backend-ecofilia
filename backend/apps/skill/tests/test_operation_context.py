@@ -31,7 +31,7 @@ def _project(**overrides):
             "pais": "Argentina",
             "sector": "Energía",
             "monto": "400",
-            "estado": "originacion",
+            "estado": "pre_originacion",
             "objetivo": "Financiar el plan de inversiones en gas natural.",
             "componentes": "1. Upstream no convencional\n2. Infraestructura de GNL",
         },
@@ -59,8 +59,8 @@ class BuildOperationContextBlockTests(SimpleTestCase):
     def test_estado_is_rendered_as_a_label_not_a_slug(self):
         block = build_operation_context_block(_project())
 
-        self.assertIn("En originación", block)
-        self.assertNotIn("Estado de avance: originacion", block)
+        self.assertIn("Pre-originación", block)
+        self.assertNotIn("Estado de avance: pre_originacion", block)
 
     def test_unknown_context_note_keys_still_reach_the_model(self):
         """Un campo nuevo del formulario no debe quedar invisible."""

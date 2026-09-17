@@ -62,13 +62,12 @@ _SKIP_KEYS = {
 
 _MAX_SUMMARY_CHARS = 4000
 
-# `estado` se guarda como slug; sin esto el prompt decía "originacion".
+# `estado` se guarda como slug; sin esto el prompt decía "pre_originacion".
 _ESTADO_LABELS = {
-    "originacion": "En originación",
-    "evaluacion": "En evaluación",
-    "aprobado": "Aprobado",
-    "ejecucion": "En ejecución",
-    "completado": "Completado",
+    "pre_originacion": "Pre-originación",
+    "ido_cci": "IDO-CCI",
+    "dec": "DEC",
+    "aprobada": "Aprobada",
 }
 
 
