@@ -47,6 +47,7 @@ from apps.project.api.serializers import (
     ProjectShareWriteSerializer,
     ProjectWriteSerializer,
 )
+from apps.project.services.country_documents import sync_country_instrument_documents
 from apps.project.services.evidence_tags import apply_default_tags
 from apps.project.models import (
     Project,
@@ -148,6 +149,30 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 # documento entraría sin etiqueta y los pasos que piden
                 # evidencia por etiqueta arrancarían vacíos.
                 apply_default_tags(link)
+        return Response(
+            self._serialize_project(project),
+            status=status.HTTP_200_OK,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="sync-country-documents",
+        url_name="sync-country-documents",
+    )
+    def sync_country_documents(self, request, slug=None):
+        """
+        Re-sincroniza a mano el instrumento país vigente (NDC/NAP/LTS/AC) de
+        la operación.
+
+        Crear o guardar la operación ya lo corre solo (ver
+        ``ProjectWriteSerializer``); este endpoint es para cuando la
+        biblioteca recibió una versión nueva y no se quiere esperar a la
+        próxima edición de la operación para que se refleje acá.
+        """
+        project = self.get_object()
+        self._ensure_editor(project)
+        sync_country_instrument_documents(project)
         return Response(
             self._serialize_project(project),
             status=status.HTTP_200_OK,

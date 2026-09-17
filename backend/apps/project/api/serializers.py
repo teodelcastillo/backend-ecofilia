@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
+from apps.project.services.country_documents import sync_country_instrument_documents
 from apps.project.services.evidence_tags import apply_default_tags
 from apps.project.models import (
     Project,
@@ -49,6 +50,13 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
     tags = serializers.SlugRelatedField(
         many=True, read_only=True, slug_field="slug"
     )
+    # El frontend lo necesita para bloquear la corrida de agentes mientras un
+    # documento asignado todavía se está indexando (ver ProjectViewSet /
+    # CafOperacionResumen): sin este campo tendría que pedir cada Document
+    # aparte para saber su estado.
+    chunking_status = serializers.CharField(
+        source="document.chunking_status", read_only=True
+    )
 
     class Meta:
         model = ProjectDocument
@@ -61,6 +69,7 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
             "is_primary",
             "tags",
             "note",
+            "chunking_status",
             "created_at",
         )
         read_only_fields = fields
@@ -268,6 +277,7 @@ class ProjectWriteSerializer(ProjectSerializer):
             if sent_skills
             else _default_skills_for(project.owner)
         )
+        sync_country_instrument_documents(project)
         return project
 
     def update(self, instance, validated_data):
@@ -286,6 +296,7 @@ class ProjectWriteSerializer(ProjectSerializer):
             self._sync_blueprint(instance, blueprint_slug)
         if should_sync_skills:
             instance.enabled_skills.set(self.context.get("validated_enabled_skills", []))
+        sync_country_instrument_documents(instance)
         return instance
 
     def _sync_documents(self, project: Project, slugs):
