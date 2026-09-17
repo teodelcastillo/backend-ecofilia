@@ -698,6 +698,17 @@ class SkillExecution(models.Model):
             "base, y una ejecución podía quedar en running para siempre."
         ),
     )
+    promoted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Cuándo alguien ascendió esta corrida a la que vale para el "
+            "informe. La corrida vigente de una operación es la que tiene la "
+            "fecha más nueva entre `finished_at` y `promoted_at`: por defecto "
+            "gana la última que terminó, y ascender una vieja la pone "
+            "adelante hasta que corra una nueva."
+        ),
+    )
 
     class Meta:
         ordering = ("-created_at",)
@@ -772,3 +783,115 @@ class SkillExecutionVersion(models.Model):
 
     def __str__(self) -> str:
         return f"Execution {self.execution_id} v{self.version_number}"
+
+
+# ---------------------------------------------------------------------------
+# Edición por sección — la mesa de trabajo del informe
+#
+# `edited_output` guarda la corrida entera como un markdown solo: sirve para
+# retocar una salida corta, pero aplana los pasos y con ellos las citas, que
+# están ancladas por posición dentro del texto de cada paso. El informe se
+# arma paso por paso, así que la edición también: una fila por paso, con el
+# borrador separado de lo publicado.
+#
+# La separación es lo que protege al informe. El ejecutivo escribe contra
+# `draft` cuantas veces quiera sin que el IET cambie; publicar copia todos
+# los borradores a `published` de una vez y deja una versión en el historial.
+# La salida original nunca se toca: vive en `output_structured` y se vuelve
+# a ella borrando el borrador.
+# ---------------------------------------------------------------------------
+
+class ExecutionSectionEdit(models.Model):
+    """Lo que una persona escribió sobre un paso de una corrida."""
+
+    execution = models.ForeignKey(
+        SkillExecution,
+        related_name="section_edits",
+        on_delete=models.CASCADE,
+    )
+    step_id = models.PositiveIntegerField(
+        help_text=(
+            "`step_id` del paso dentro de `output_structured['steps']`. No es "
+            "FK a SkillStep a propósito: la edición pertenece a lo que esta "
+            "corrida escribió, y sigue siendo legible aunque el paso se borre "
+            "de la definición."
+        ),
+    )
+    draft = models.TextField(
+        blank=True,
+        help_text=(
+            "Markdown en curso. Vacío significa que no hay nada sin publicar "
+            "para este paso."
+        ),
+    )
+    published = models.TextField(
+        blank=True,
+        help_text=(
+            "Markdown que el informe muestra en lugar de la salida original. "
+            "Vacío significa que el informe sigue mostrando lo que escribió "
+            "el agente."
+        ),
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="execution_section_edits",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="published_execution_sections",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        ordering = ("step_id",)
+        unique_together = ("execution", "step_id")
+        indexes = [
+            models.Index(fields=("execution", "step_id")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Execution {self.execution_id} — paso {self.step_id}"
+
+    @property
+    def has_unpublished_changes(self) -> bool:
+        """Hay borrador y dice algo distinto de lo que está publicado."""
+        return bool(self.draft) and self.draft != self.published
+
+
+class ExecutionSectionEditVersion(models.Model):
+    """
+    Una publicación de una sección, inmutable.
+
+    Se escribe una fila cada vez que se publica, de modo que volver atrás sea
+    elegir una versión y no deshacer a ciegas.
+    """
+
+    edit = models.ForeignKey(
+        ExecutionSectionEdit,
+        related_name="versions",
+        on_delete=models.CASCADE,
+    )
+    version_number = models.PositiveIntegerField()
+    content = models.TextField()
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name="execution_section_edit_versions",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-version_number",)
+        unique_together = ("edit", "version_number")
+
+    def __str__(self) -> str:
+        return f"Sección {self.edit_id} v{self.version_number}"

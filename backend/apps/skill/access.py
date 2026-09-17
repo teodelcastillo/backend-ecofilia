@@ -34,3 +34,18 @@ def user_can_view_execution(user, execution: SkillExecution) -> bool:
 
 def user_can_mutate_execution(user, execution: SkillExecution) -> bool:
     return user.is_staff or execution.owner_id == user.id
+
+
+def user_can_edit_execution_report(user, execution: SkillExecution) -> bool:
+    """
+    Quién puede trabajar el informe que salió de una corrida.
+
+    Es más amplio que `user_can_mutate_execution` a propósito: relanzar o
+    borrar una corrida es de quien la lanzó, pero redactar el informe es de
+    quien tiene la operación a cargo. El ejecutivo que edita el IET
+    normalmente no es el que apretó "ejecutar agente", y pedirle ser dueño de
+    la corrida lo dejaría afuera de su propio informe.
+    """
+    if user_can_mutate_execution(user, execution):
+        return True
+    return bool(execution.project_id and execution.project.can_edit(user))

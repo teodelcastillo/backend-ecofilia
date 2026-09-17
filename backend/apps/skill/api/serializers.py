@@ -6,6 +6,8 @@ from rest_framework import serializers
 from apps.document.services import accessible_documents_for
 from apps.skill.models import (
     ExecutionOutputMode,
+    ExecutionSectionEdit,
+    ExecutionSectionEditVersion,
     OutputValidation,
     ExecutionStatus,
     RetrievalStrategy,
@@ -583,6 +585,11 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
     definition_fingerprint = serializers.CharField(
         source="definition_version.fingerprint", read_only=True, allow_null=True,
     )
+    # Estado de la mesa de trabajo, para que el listado pueda distinguir una
+    # corrida cruda de uno que ya tiene informe trabajado sin pedir las
+    # secciones aparte.
+    published_sections_count = serializers.SerializerMethodField()
+    unpublished_sections_count = serializers.SerializerMethodField()
 
     class Meta:
         model = SkillExecution
@@ -593,15 +600,31 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "extra_instructions", "input_values", "output_mode",
             "output", "output_structured",
             "edited_output", "edited_at", "edited_by_email", "versions_count",
+            "published_sections_count", "unpublished_sections_count",
             "steps_completed", "steps_total", "current_step_position",
             "document_snapshot", "metadata", "error_message",
             "definition_version", "definition_version_number", "definition_fingerprint",
-            "started_at", "finished_at", "created_at", "last_progress_at",
+            "started_at", "finished_at", "promoted_at", "created_at", "last_progress_at",
         )
         read_only_fields = fields
 
     def get_versions_count(self, obj) -> int:
         return obj.versions.count() if obj.pk else 0
+
+    def _section_edits(self, obj) -> list:
+        # Lee del prefetch cuando el queryset lo trajo; sin él, una consulta
+        # por corrida. El listado del portal prefetchea (ver el viewset).
+        if not obj.pk:
+            return []
+        return list(obj.section_edits.all())
+
+    def get_published_sections_count(self, obj) -> int:
+        return sum(1 for edit in self._section_edits(obj) if edit.published)
+
+    def get_unpublished_sections_count(self, obj) -> int:
+        return sum(
+            1 for edit in self._section_edits(obj) if edit.has_unpublished_changes
+        )
 
 
 class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
@@ -654,6 +677,56 @@ class SaveExecutionEditSerializer(serializers.Serializer):
 
     content = serializers.CharField(allow_blank=False)
     label = serializers.CharField(required=False, allow_blank=True, max_length=120, default="")
+
+
+class ExecutionSectionEditSerializer(serializers.ModelSerializer):
+    """Una sección del informe: su borrador, lo publicado y quién lo tocó."""
+
+    updated_by_email = serializers.EmailField(
+        source="updated_by.email", read_only=True, allow_null=True,
+    )
+    published_by_email = serializers.EmailField(
+        source="published_by.email", read_only=True, allow_null=True,
+    )
+    has_unpublished_changes = serializers.BooleanField(read_only=True)
+    versions_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ExecutionSectionEdit
+        fields = (
+            "step_id",
+            "draft",
+            "published",
+            "has_unpublished_changes",
+            "versions_count",
+            "updated_by_email",
+            "updated_at",
+            "published_by_email",
+            "published_at",
+        )
+        read_only_fields = fields
+
+    def get_versions_count(self, obj) -> int:
+        return obj.versions.count() if obj.pk else 0
+
+
+class ExecutionSectionEditVersionSerializer(serializers.ModelSerializer):
+    created_by_email = serializers.EmailField(
+        source="created_by.email", read_only=True, allow_null=True,
+    )
+
+    class Meta:
+        model = ExecutionSectionEditVersion
+        fields = ("version_number", "content", "created_by_email", "created_at")
+        read_only_fields = fields
+
+
+class SaveSectionDraftSerializer(serializers.Serializer):
+    """Cuerpo de PUT /skills/executions/{id}/sections/{step_id}/."""
+
+    # Vacío es válido: borrar una sección entera es una decisión legítima del
+    # ejecutivo, distinta de no haberla tocado nunca.
+    content = serializers.CharField(allow_blank=True)
 
 
 class ApproveStepSerializer(serializers.Serializer):

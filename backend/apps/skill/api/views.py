@@ -9,15 +9,19 @@ from rest_framework.response import Response
 
 from apps.skill.access import (
     executions_queryset_for_user,
+    user_can_edit_execution_report,
     user_can_mutate_execution,
     user_can_view_execution,
 )
 
 from apps.skill.api.serializers import (
     ApproveStepSerializer,
+    ExecutionSectionEditSerializer,
+    ExecutionSectionEditVersionSerializer,
     RerunExecutionSerializer,
     RunSkillSerializer,
     SaveExecutionEditSerializer,
+    SaveSectionDraftSerializer,
     SkillDefinitionVersionSerializer,
     SkillExecutionSerializer,
     SkillExecutionVersionSerializer,
@@ -35,6 +39,14 @@ from apps.skill.models import (
 )
 from apps.skill import parameters as parameters_module
 from apps.skill.comparison import compare_executions
+from apps.skill.report_edits import (
+    discard_section_draft,
+    promote_execution,
+    publish_section_edits,
+    restore_section_version,
+    save_section_draft,
+    step_ids_of,
+)
 from apps.skill.context_preview import build_preview
 from apps.skill.table_schema import schema_has_columns
 from apps.skill.services import approve_step, regenerate_step, rerun_execution, resume_execution
@@ -352,6 +364,9 @@ class SkillExecutionViewSet(
             .select_related(
                 "skill", "repository", "project", "document", "definition_version"
             )
+            # El serializer cuenta secciones publicadas y pendientes: sin esto
+            # el listado del portal hace dos consultas por corrida.
+            .prefetch_related("section_edits")
         )
         if skill_slug := self.request.query_params.get("skill"):
             qs = qs.filter(skill__slug=skill_slug)
@@ -643,6 +658,157 @@ class SkillExecutionViewSet(
             },
             status=status.HTTP_200_OK,
         )
+
+    # ------------------------------------------------------------------
+    # Mesa de trabajo: edición por sección
+    #
+    # Guardar escribe el borrador y no mueve el informe; publicar pasa todos
+    # los borradores pendientes a la vez. Ver `apps.skill.report_edits`.
+    # ------------------------------------------------------------------
+
+    def _report_editor_or_403(self, request, execution):
+        if not user_can_edit_execution_report(request.user, execution):
+            raise PermissionDenied("No tienes permisos para editar este informe.")
+
+    @action(detail=True, methods=["get"], url_path="sections")
+    def sections(self, request, pk=None):
+        """
+        GET /api/skills/executions/{id}/sections/
+
+        Las secciones con edición: borrador, publicado y quién lo tocó. Las
+        que nadie editó no aparecen — el informe las muestra tal como las
+        escribió el agente.
+        """
+        execution = self.get_object()
+        qs = execution.section_edits.select_related(
+            "updated_by", "published_by"
+        ).order_by("step_id")
+        return Response(ExecutionSectionEditSerializer(qs, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["put"],
+        url_path=r"sections/(?P<step_id>\d+)",
+    )
+    def save_section(self, request, pk=None, step_id=None):
+        """
+        PUT /api/skills/executions/{id}/sections/{step_id}/
+        Body: { "content": "markdown" }
+
+        Guarda el borrador de una sección. El informe no cambia hasta publicar.
+        """
+        execution = self.get_object()
+        self._report_editor_or_403(request, execution)
+
+        step_id = int(step_id)
+        if step_id not in step_ids_of(execution):
+            return Response(
+                {"detail": "Esta corrida no escribió ese paso."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = SaveSectionDraftSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        edit = save_section_draft(
+            execution, step_id, serializer.validated_data["content"], request.user
+        )
+        return Response(ExecutionSectionEditSerializer(edit).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"sections/(?P<step_id>\d+)/discard",
+    )
+    def discard_section(self, request, pk=None, step_id=None):
+        """
+        POST /api/skills/executions/{id}/sections/{step_id}/discard/
+
+        Tira el borrador. La sección vuelve a lo último publicado, o a la
+        salida del agente si nunca se publicó.
+        """
+        execution = self.get_object()
+        self._report_editor_or_403(request, execution)
+
+        edit = discard_section_draft(execution, int(step_id))
+        if edit is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(ExecutionSectionEditSerializer(edit).data)
+
+    @action(
+        detail=True,
+        methods=["get"],
+        url_path=r"sections/(?P<step_id>\d+)/versions",
+    )
+    def section_versions(self, request, pk=None, step_id=None):
+        """Las publicaciones de una sección, de la más nueva a la más vieja."""
+        execution = self.get_object()
+        edit = execution.section_edits.filter(step_id=int(step_id)).first()
+        if edit is None:
+            return Response([])
+        qs = edit.versions.select_related("created_by").order_by("-version_number")
+        return Response(ExecutionSectionEditVersionSerializer(qs, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"sections/(?P<step_id>\d+)/versions/(?P<version_number>\d+)/restore",
+    )
+    def restore_section_version_action(
+        self, request, pk=None, step_id=None, version_number=None
+    ):
+        """
+        Trae una publicación vieja al borrador, sin publicarla.
+
+        Publicar sigue siendo un acto explícito: restaurar deja el texto a la
+        vista para revisarlo antes de que vuelva al informe.
+        """
+        execution = self.get_object()
+        self._report_editor_or_403(request, execution)
+
+        edit = restore_section_version(
+            execution, int(step_id), int(version_number)
+        )
+        if edit is None:
+            return Response(
+                {"detail": "No existe esa versión de la sección."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(ExecutionSectionEditSerializer(edit).data)
+
+    @action(detail=True, methods=["post"], url_path="publish")
+    def publish(self, request, pk=None):
+        """
+        POST /api/skills/executions/{id}/publish/
+
+        Publica todos los borradores pendientes de esta corrida. Devuelve las
+        secciones que cambiaron; publicar sin nada pendiente devuelve vacío y
+        no escribe historial.
+        """
+        execution = self.get_object()
+        self._report_editor_or_403(request, execution)
+
+        published = publish_section_edits(execution, request.user)
+        return Response(
+            {
+                "published": ExecutionSectionEditSerializer(published, many=True).data,
+                "execution": SkillExecutionSerializer(execution).data,
+            }
+        )
+
+    @action(detail=True, methods=["post"], url_path="promote")
+    def promote(self, request, pk=None):
+        """
+        POST /api/skills/executions/{id}/promote/
+
+        Asciende esta corrida a la vigente del informe. Una corrida posterior
+        vuelve a ganarle sola: lo que manda es la fecha más nueva entre la de
+        ejecución y la de ascenso.
+        """
+        execution = self.get_object()
+        self._report_editor_or_403(request, execution)
+
+        execution = promote_execution(execution)
+        return Response(SkillExecutionSerializer(execution).data)
 
     @action(detail=True, methods=["post"], url_path="reset-edit")
     def reset_edit(self, request, pk=None):
