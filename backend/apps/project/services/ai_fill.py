@@ -184,7 +184,17 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
         raise RuntimeError("La respuesta del modelo no es JSON válido.") from exc
 
     # Guarantee all requested keys are present; fill missing ones with None.
-    return {k: result.get(k) for k in field_keys}
+    # The prompt asks for plain text, but the model sometimes prefers a JSON
+    # array for "lista numerada" fields despite response_format not requiring
+    # one — normalize here so the API always returns the string type callers
+    # expect, regardless of what shape the model chose this time.
+    return {k: _coerce_to_text(result.get(k)) for k in field_keys}
+
+
+def _coerce_to_text(value: Any) -> Any:
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return value
 
 
 # ---------------------------------------------------------------------------
