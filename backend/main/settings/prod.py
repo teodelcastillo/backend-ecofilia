@@ -75,6 +75,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "skill.reap_stalled_executions",
         "schedule": 300.0,  # cada 5 minutos
     },
+    # Documentos que quedaron en `pending` porque su mensaje nunca llegó a la
+    # cola (ver apps.document.reliability). `acks_late` no los cubre: sólo
+    # reentrega mensajes que un worker llegó a tomar.
+    "requeue-stuck-documents": {
+        "task": "document.requeue_stuck",
+        "schedule": 300.0,  # cada 5 minutos
+    },
 }
 
 # Serialization

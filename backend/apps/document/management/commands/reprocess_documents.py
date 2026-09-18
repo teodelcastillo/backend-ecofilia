@@ -18,7 +18,9 @@ Examples:
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 
+from apps.document.dispatch import dispatch_processing
 from apps.document.models import ChunkingStatus, Document
 from apps.document.tasks import process_document_chunks
 
@@ -90,8 +92,6 @@ class Command(BaseCommand):
         if hours:
             from datetime import timedelta
 
-            from django.utils import timezone
-
             cutoff = timezone.now() - timedelta(hours=hours)
             qs = qs.exclude(chunking_status=ChunkingStatus.PROCESSING, created_at__gt=cutoff)
 
@@ -120,12 +120,14 @@ class Command(BaseCommand):
                 chunking_status=ChunkingStatus.PENDING,
                 chunking_done=False,
                 last_error="",
+                status_changed_at=timezone.now(),
+                requeue_count=0,
             )
             if options["sync"]:
                 result = process_document_chunks(doc.pk)
                 self.stdout.write(f"  {doc.id:>5}  -> {result}")
             else:
-                process_document_chunks.delay(doc.pk)
+                dispatch_processing(doc.pk)
                 self.stdout.write(f"  {doc.id:>5}  -> queued")
 
         verb = "processed" if options["sync"] else "queued"

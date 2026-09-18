@@ -7,6 +7,7 @@ import openai
 from celery import shared_task
 from celery.exceptions import MaxRetriesExceededError
 from django.db import transaction
+from django.utils import timezone
 from apps.document.models import Document, SmartChunk, ChunkingStatus
 from apps.document.utils.chunker import chunk_text_and_embed
 from apps.document.utils.client_openia import (
@@ -152,7 +153,10 @@ def process_document_chunks(self, doc_id: int) -> str:
             claimed = (
                 Document.objects.filter(pk=doc_id)
                 .exclude(chunking_status__in=[ChunkingStatus.PROCESSING, ChunkingStatus.DONE])
-                .update(chunking_status=ChunkingStatus.PROCESSING)
+                .update(
+                    chunking_status=ChunkingStatus.PROCESSING,
+                    status_changed_at=timezone.now(),
+                )
             )
             if not claimed:
                 logger.info(
@@ -218,6 +222,7 @@ def process_document_chunks(self, doc_id: int) -> str:
             Document.objects.filter(pk=doc_id).update(
                 last_error=message,
                 chunking_status=ChunkingStatus.ERROR,
+                status_changed_at=timezone.now(),
             )
             return "empty"
 
@@ -274,6 +279,7 @@ def process_document_chunks(self, doc_id: int) -> str:
                     content_summary=content_summary,
                     chunking_done=True,
                     chunking_status=final_status,
+                    status_changed_at=timezone.now(),
                     last_error=coverage_message,
                 ))
 
@@ -315,7 +321,8 @@ def process_document_chunks(self, doc_id: int) -> str:
             try:
                 Document.objects.filter(pk=doc_id).update(
                     last_error=str(e),
-                    chunking_status=ChunkingStatus.ERROR
+                    chunking_status=ChunkingStatus.ERROR,
+                    status_changed_at=timezone.now(),
                 )
             except Exception:
                 pass
@@ -326,7 +333,8 @@ def process_document_chunks(self, doc_id: int) -> str:
         try:
             Document.objects.filter(pk=doc_id).update(
                 last_error=str(e),
-                chunking_status=ChunkingStatus.ERROR
+                chunking_status=ChunkingStatus.ERROR,
+                status_changed_at=timezone.now(),
             )
         except Exception:
             pass
@@ -397,3 +405,14 @@ def backfill_chunk_context_for_document(self, doc_id: int, batch_size: int = 50)
         doc_id, processed, total,
     )
     return f"ok:{processed}/{total}"
+
+
+@shared_task(name="document.requeue_stuck")
+def requeue_stuck_documents_task():
+    """Red de seguridad para documentos que quedaron en `pending` sin arrancar.
+
+    El porqué está en ``apps.document.reliability``. Corre desde Celery beat.
+    """
+    from apps.document.reliability import requeue_stuck_documents
+
+    return requeue_stuck_documents()

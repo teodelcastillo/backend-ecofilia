@@ -25,6 +25,7 @@ from apps.document.models import (
     ChunkingStatus,
     EvidenceTag,
 )
+from apps.document.dispatch import dispatch_processing
 from apps.document.tasks import process_document_chunks
 from apps.document.category_utils import category_descendant_ids
 from apps.user.models import UserRole
@@ -804,10 +805,14 @@ class DocumentViewSet(
             chunking_status=ChunkingStatus.PENDING,
             chunking_done=False,
             last_error="",
+            status_changed_at=timezone.now(),
             retry_count=F("retry_count") + 1,
+            # El contador del reaper arranca de cero: este es un intento nuevo,
+            # pedido por una persona, no la continuación de los reenvíos viejos.
+            requeue_count=0,
         )
 
-        transaction.on_commit(lambda: process_document_chunks.delay(document.pk))
+        transaction.on_commit(lambda: dispatch_processing(document.pk))
 
         document.refresh_from_db()
         serializer = DocumentSerializer(

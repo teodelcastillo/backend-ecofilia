@@ -224,6 +224,39 @@ una relación inventada.
 > códigos urbanos no está resuelto.** Conviene además verificar si esa
 > corrupción afecta al texto corrido del documento y no solo a sus tablas.
 
+### Documentos trabados en `pending`
+
+`pending` significa "encolado". Hasta ahora nada verificaba que ese mensaje
+existiera: el despacho era un disparo al aire (`process_document_chunks.delay`).
+Si el encolado fallaba —SQS caído, credenciales, cola purgada, worker abajo— el
+documento se quedaba en `pending` **para siempre**, sin reintento y sin
+`last_error`. `acks_late` no cubre este caso: sólo reentrega mensajes que un
+worker llegó a tomar.
+
+Ahora hay dos capas:
+
+1. **El encolado que falla deja rastro** (`apps/document/dispatch.py`): si
+   `.delay()` levanta, el documento pasa a `error` con el motivo en
+   `last_error`, en vez de quedar en un `pending` indistinguible de "en cola".
+2. **Reaper periódico** (`apps/document/reliability.py`, tarea
+   `document.requeue_stuck` en Celery beat, cada 5 minutos): busca documentos en
+   `pending` sin señales de vida y los vuelve a despachar. Reencolar es seguro
+   porque `process_document_chunks` reclama la fila con un UPDATE atómico. Tras
+   `DOC_MAX_AUTO_REQUEUES` pasadas sin arrancar, el documento pasa a `error`:
+   un documento que no arranca tras tres despachos no tiene un problema de cola.
+
+> Depende de que **`ecofilia-beat` esté corriendo**. Si beat está caído, el
+> reaper no corre y volvemos al comportamiento viejo.
+
+`Document.status_changed_at` es el sello que hace posible distinguir un
+documento recién encolado de uno abandonado — `created_at` no sirve, porque un
+reprocesamiento vuelve a `pending` un documento viejo. En las filas anteriores a
+este campo el reaper cae a `created_at`, así que los que ya estaban trabados se
+rescatan en la primera pasada.
+
+**Variables de entorno:** `DOC_STUCK_PENDING_MINUTES` (default `15`),
+`DOC_MAX_AUTO_REQUEUES` (default `3`).
+
 **Reprocesar documentos** (resetea el estado, así también destraba los colgados
 en `processing`):
 ```bash

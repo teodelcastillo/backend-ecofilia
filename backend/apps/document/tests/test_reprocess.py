@@ -23,7 +23,7 @@ class ReprocessDocumentTests(APITestCase):
             email="other@example.com", password="pass1234"
         )
         # El signal post_save encola la ingesta al crear; acá no interesa.
-        with patch("apps.document.signals.process_document_chunks"):
+        with patch("apps.document.signals.dispatch_processing"):
             self.document = Document.objects.create(
                 owner=self.owner,
                 name="Código urbano",
@@ -37,11 +37,15 @@ class ReprocessDocumentTests(APITestCase):
 
     def test_owner_can_reprocess(self):
         self.client.force_authenticate(self.owner)
-        with patch("apps.document.api.views.process_document_chunks") as task:
-            response = self.client.post(self._url())
+        # El despacho va dentro de un `on_commit`, que en un TestCase queda
+        # encolado y nunca corre: sin capturarlo el assert de abajo mira una
+        # llamada que no pudo ocurrir.
+        with patch("apps.document.api.views.dispatch_processing") as dispatch:
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(self._url())
 
         self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
-        task.delay.assert_called_once_with(self.document.pk)
+        dispatch.assert_called_once_with(self.document.pk)
 
         self.document.refresh_from_db()
         self.assertEqual(self.document.chunking_status, ChunkingStatus.PENDING)
@@ -55,7 +59,7 @@ class ReprocessDocumentTests(APITestCase):
             chunking_status=ChunkingStatus.DONE, chunking_done=True
         )
         self.client.force_authenticate(self.owner)
-        with patch("apps.document.api.views.process_document_chunks"):
+        with patch("apps.document.api.views.dispatch_processing"):
             self.client.post(self._url())
 
         self.document.refresh_from_db()
@@ -63,14 +67,14 @@ class ReprocessDocumentTests(APITestCase):
 
     def test_stranger_cannot_reprocess(self):
         self.client.force_authenticate(self.other)
-        with patch("apps.document.api.views.process_document_chunks") as task:
+        with patch("apps.document.api.views.dispatch_processing") as dispatch:
             response = self.client.post(self._url())
 
         self.assertIn(
             response.status_code,
             (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND),
         )
-        task.delay.assert_not_called()
+        dispatch.assert_not_called()
 
     def test_anonymous_is_rejected(self):
         response = self.client.post(self._url())
@@ -85,8 +89,8 @@ class ReprocessDocumentTests(APITestCase):
             chunking_status=ChunkingStatus.PROCESSING
         )
         self.client.force_authenticate(self.owner)
-        with patch("apps.document.api.views.process_document_chunks") as task:
+        with patch("apps.document.api.views.dispatch_processing") as dispatch:
             response = self.client.post(self._url())
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        task.delay.assert_not_called()
+        dispatch.assert_not_called()

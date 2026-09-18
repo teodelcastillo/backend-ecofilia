@@ -63,6 +63,23 @@ class Document(models.Model):
     chunking_done = models.BooleanField(default=False)
     last_error = models.TextField(blank=True)
     retry_count = models.IntegerField(default=0)
+    status_changed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Momento del último cambio de `chunking_status`. Sin esto no se puede "
+            "distinguir un documento recién encolado de uno trabado hace horas: "
+            "`created_at` no sirve porque un reprocesamiento vuelve a PENDING un "
+            "documento viejo."
+        ),
+    )
+    requeue_count = models.IntegerField(
+        default=0,
+        help_text=(
+            "Veces que el reaper automático volvió a despachar este documento. "
+            "Distinto de `retry_count` (reintentos pedidos por una persona)."
+        ),
+    )
     page_count = models.IntegerField(
         null=True,
         blank=True,
