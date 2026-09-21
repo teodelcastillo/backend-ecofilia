@@ -332,8 +332,49 @@ def anthropic_chat_completion(
 
     usage = _usage_dict(getattr(response, "usage", None))
     if not text:
-        raise ValueError("Anthropic API returned an empty response")
+        raise _empty_response_error(response, usage, model=model)
     return text, usage
+
+
+def _empty_response_error(response, usage: dict, *, model: str) -> ValueError:
+    """Por qué una respuesta llegó sin texto, dicho para quien la ve.
+
+    Antes el error decía sólo «empty response», y con eso no había forma de
+    distinguir un modelo que agotó su salida razonando de un contexto que llenó
+    la ventana o de una negativa: los tres piden arreglos distintos y los tres
+    se veían igual. El motivo de corte, los tokens y los tipos de bloque
+    quedan en el log para diagnosticar; el mensaje, en castellano, es el que
+    ve el ejecutivo en la corrida fallida.
+    """
+    stop_reason = getattr(response, "stop_reason", None)
+    block_types = [getattr(b, "type", "?") for b in (getattr(response, "content", None) or [])]
+    logger.warning(
+        "Respuesta sin texto de %s: stop_reason=%s input_tokens=%s output_tokens=%s "
+        "cache_read=%s bloques=%s",
+        model,
+        stop_reason,
+        usage.get("input_tokens"),
+        usage.get("output_tokens"),
+        usage.get("cache_read_input_tokens"),
+        block_types,
+    )
+
+    if stop_reason == "max_tokens":
+        detalle = (
+            f"agotó su límite de salida ({usage.get('output_tokens', 0)} tokens)"
+            + (" razonando" if "thinking" in block_types else "")
+            + " sin llegar a escribir la respuesta"
+        )
+    elif stop_reason == "model_context_window_exceeded":
+        detalle = (
+            f"recibió un contexto que llenó su ventana ({usage.get('input_tokens', 0)} "
+            "tokens de entrada) y no le quedó lugar para responder"
+        )
+    elif stop_reason == "refusal":
+        detalle = "se negó a responder este paso"
+    else:
+        detalle = f"respondió sin texto (motivo: {stop_reason or 'desconocido'})"
+    return ValueError(f"El modelo {detalle}.")
 
 
 def anthropic_chat_completion_stream(
