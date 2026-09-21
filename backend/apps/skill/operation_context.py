@@ -58,6 +58,11 @@ _SKIP_KEYS = {
     "ejecutivo_pais",
     "ejecutivo_responsable",
     "ejecutivo_datbc",
+    # La determinación de alineación con París es la conclusión del ejecutivo
+    # sobre los mismos criterios (CT A1–A3, M1–M5) que el IET analiza. Si el
+    # agente la leyera antes de analizar, repetiría la conclusión en vez de
+    # llegar a la suya.
+    "alineacion_paris",
 }
 
 _MAX_SUMMARY_CHARS = 4000

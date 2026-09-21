@@ -80,6 +80,21 @@ class BuildOperationContextBlockTests(SimpleTestCase):
 
         self.assertNotIn("focus/x", block)
 
+    def test_the_executives_alignment_determination_is_left_out(self):
+        """El agente analiza los CT por su cuenta: no ve la conclusión del ejecutivo."""
+        project = _project(
+            context_notes={
+                "pais": "Bolivia",
+                "alineacion_paris": {"ct_a2": "No suficientes", "objetivo_1": "Con brechas por CT A2"},
+            }
+        )
+
+        block = build_operation_context_block(project)
+
+        self.assertIn("Bolivia", block)
+        self.assertNotIn("No suficientes", block)
+        self.assertNotIn("alineacion", block.lower())
+
     def test_long_summaries_are_truncated(self):
         project = _project(blueprint_document=_document(content_summary="x" * 9000))
 
