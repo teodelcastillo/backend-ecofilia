@@ -788,6 +788,9 @@ class SkillExecutionViewSet(
         self._report_editor_or_403(request, execution)
 
         published = publish_section_edits(execution, request.user)
+        # `get_queryset` trae `section_edits` prefetcheadas de antes de publicar:
+        # sin refrescar, los conteos de la respuesta dirían que no se publicó nada.
+        execution.refresh_from_db()
         return Response(
             {
                 "published": ExecutionSectionEditSerializer(published, many=True).data,

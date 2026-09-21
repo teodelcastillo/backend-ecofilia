@@ -182,13 +182,17 @@ class ReportEditsTestCase(APITestCase):
     # ── Ascender una corrida ─────────────────────────────────────────────
 
     def test_promoting_an_old_run_puts_it_ahead_of_a_newer_one(self):
+        # Las dos en el pasado: una corrida no puede haber terminado después
+        # del momento en que alguien asciende la otra.
+        self.execution.finished_at = timezone.now() - timedelta(hours=2)
+        self.execution.save(update_fields=["finished_at"])
         newer = SkillExecution.objects.create(
             skill=self.skill,
             owner=self.owner,
             project=self.project,
             status=ExecutionStatus.COMPLETED,
             output_structured=STEPS,
-            finished_at=timezone.now() + timedelta(hours=1),
+            finished_at=timezone.now() - timedelta(hours=1),
         )
         base = reverse("skill-execution-detail", kwargs={"pk": self.execution.pk})
         response = self.client.post(f"{base.rstrip('/')}/promote/", {}, format="json")
