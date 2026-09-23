@@ -283,6 +283,12 @@ def process_document_chunks(self, doc_id: int) -> str:
                     last_error=coverage_message,
                 ))
 
+        # La operación que tiene este documento como principal puede estar
+        # esperando su objetivo y componentes: ahora ya hay de dónde sacarlos.
+        from apps.project.tasks import dispatch_fill_for_blueprint
+
+        transaction.on_commit(lambda: dispatch_fill_for_blueprint(doc_id))
+
         if final_status == ChunkingStatus.PARTIAL:
             logger.warning(
                 "Document %s indexed as PARTIAL (%d chunks): %s",

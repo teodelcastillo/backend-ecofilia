@@ -127,7 +127,8 @@ jobs:
             apps.project.tests.test_document_evidence_tags_api \
             apps.project.tests.test_migration_move_evidence_tags \
             apps.document.tests.test_document_create \
-            apps.document.tests.test_document_bulk_create
+            apps.document.tests.test_document_bulk_create \
+            apps.project.tests.test_ai_fill
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

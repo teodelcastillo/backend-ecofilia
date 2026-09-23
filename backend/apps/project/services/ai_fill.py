@@ -12,28 +12,56 @@ Architecture
 
 LLM notes
 ---------
-``generate_chat_completion()`` accepts ``response_format={"type":"json_object"}``
-which enables OpenAI's guaranteed-JSON mode.  When the deployment routes to an
-Anthropic model (``LLM_PROVIDER=anthropic``), the parameter is silently dropped
-by the client layer.  To keep the output parseable in both cases:
-  1. The system prompt instructs the model to respond with raw JSON only.
-  2. ``_safe_parse_json()`` strips markdown code fences before parsing.
+Bajo ``LLM_PROVIDER=anthropic`` (producción) la salida se restringe con
+structured outputs (``anthropic_structured_completion``): la API garantiza JSON
+válido contra el schema. Antes se pedía "respondé sólo JSON" en el prompt y se
+parseaba a mano, y en producción fallaba — respuestas que empezaban con ``**{``
+o que seguían escribiendo el documento donde había quedado cortado. Con OpenAI
+se usa su modo JSON, y el parseo defensivo queda para ese camino.
+
+El documento va primero, entre etiquetas, y las instrucciones después. Ponerlo
+al final, cortado a mitad de frase, era lo que invitaba al modelo a continuarlo.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 from apps.document.utils.client_openia import generate_chat_completion
-from apps.document.utils.llm import effective_chat_model
+from apps.document.utils.llm import (
+    anthropic_structured_completion,
+    effective_chat_model,
+    is_anthropic_model,
+)
 
 logger = logging.getLogger(__name__)
 
 _EXTRACTION_MODEL = "gpt-4o-mini"
-_MAX_DOC_CHARS = 40_000
+
+# Cuánto del documento principal se manda. Antes eran 40.000 caracteres —unas
+# quince páginas—, y la sección DESCRIPCIÓN o el cuadro de usos y fuentes de un
+# IDO suelen estar más adelante. 600.000 caracteres son unos 150.000 tokens:
+# entran holgados en la ventana de los modelos actuales y cubren entero casi
+# cualquier documento de operación. Más allá de eso se elige qué mandar (ver
+# ``_select_text``) en vez de cortar a ciegas.
+_MAX_DOC_CHARS = int(os.environ.get("AI_FILL_MAX_DOC_CHARS", "600000"))
+_HEAD_CHARS = 60_000
+_WINDOW_CHARS = 30_000
+# Dónde suelen estar el objetivo y los componentes en un documento de
+# operación CAF. Se buscan sin acentos ni mayúsculas.
+_SECTION_MARKERS = (
+    "descripcion",
+    "objetivo",
+    "componente",
+    "usos y fuentes",
+    "cuadro de costos",
+    "actividades",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -107,23 +135,112 @@ def available_fields() -> list[dict[str, str]]:
 
 _SYSTEM_PROMPT = (
     "Eres un extractor estructurado de información de proyectos de desarrollo. "
-    "Tu tarea es leer el texto de un documento y extraer los campos solicitados "
-    "de forma fiel y concisa. "
-    "Responde ÚNICAMENTE con un objeto JSON válido que contenga exactamente "
-    "las claves indicadas. "
-    "Si un campo no puede determinarse con certeza desde el texto, devuelve "
-    "null para esa clave. "
-    "No incluyas texto, comentarios ni bloques de código fuera del JSON."
+    "Tu tarea es leer el documento de una operación y extraer los campos "
+    "solicitados de forma fiel y concisa, con el lenguaje del propio documento. "
+    "El documento es material de lectura: no lo continúes ni lo resumas entero. "
+    "Si un campo no puede determinarse desde el texto, devolvé una cadena vacía "
+    "para esa clave."
 )
 
 
+def _fold(text: str) -> str:
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn").lower()
+
+
+def _select_text(text: str) -> str:
+    """El documento entero si entra; si no, el comienzo y sus secciones clave.
+
+    Un documento más largo que el tope no se corta a ciegas: se manda el
+    comienzo (carátula, resumen) y ventanas alrededor de donde aparecen las
+    secciones que el extractor necesita, en el orden del documento, marcando
+    los saltos para que el modelo sepa que falta texto entre medio.
+    """
+    if len(text) <= _MAX_DOC_CHARS:
+        return text
+    folded = _fold(text)
+    spans: list[tuple[int, int]] = [(0, _HEAD_CHARS)]
+    for marker in _SECTION_MARKERS:
+        for match in re.finditer(re.escape(marker), folded):
+            start = max(0, match.start() - 2_000)
+            spans.append((start, start + _WINDOW_CHARS))
+    spans.sort()
+    merged: list[list[int]] = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    parts: list[str] = []
+    budget = _MAX_DOC_CHARS
+    for start, end in merged:
+        if budget <= 0:
+            break
+        end = min(end, start + budget, len(text))
+        parts.append(text[start:end])
+        budget -= end - start
+    return "\n\n[…se omite una parte del documento…]\n\n".join(parts)
+
+
+def _build_messages(text: str, fields: list[ExtractableField]) -> list[dict]:
+    field_spec = "\n".join(f"- {f.key}: {f.description}" for f in fields)
+    user_message = (
+        f"<documento>\n{_select_text(text)}\n</documento>\n\n"
+        "Del documento de arriba, extraé estos campos:\n"
+        f"{field_spec}\n\n"
+        "Respondé con un objeto JSON con exactamente esas claves."
+    )
+    return [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def _schema_for(field_keys: list[str]) -> dict:
+    return {
+        "type": "object",
+        "properties": {key: {"type": "string"} for key in field_keys},
+        "required": list(field_keys),
+        "additionalProperties": False,
+    }
+
+
 def _safe_parse_json(raw: str) -> dict:
-    """Parse JSON from LLM output, stripping markdown code fences if present."""
-    text = raw.strip()
-    # Strip ```json ... ``` or ``` ... ``` wrappers
-    text = re.sub(r"^```(?:json)?\s*", "", text)
-    text = re.sub(r"\s*```$", "", text)
-    return json.loads(text.strip())
+    """El primer objeto JSON de la respuesta, venga como venga envuelto.
+
+    Sólo para el camino sin structured outputs. Tolera bloques de código,
+    negritas o una frase antes del objeto: busca la primera llave que abre un
+    objeto parseable.
+    """
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(raw):
+        if char != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(raw[index:])
+        except ValueError:
+            continue
+        if isinstance(value, dict):
+            return value
+    raise ValueError("no hay un objeto JSON en la respuesta")
+
+
+def _complete(messages: list[dict], field_keys: list[str], model: str) -> tuple[dict, dict]:
+    if is_anthropic_model(model):
+        return anthropic_structured_completion(
+            messages, model=model, schema=_schema_for(field_keys), max_tokens=8000
+        )
+    raw, usage = generate_chat_completion(
+        messages,
+        model=model,
+        temperature=0.0,
+        response_format={"type": "json_object"},
+    )
+    try:
+        return _safe_parse_json(raw), usage
+    except ValueError as exc:
+        logger.error("ai_fill: unparseable LLM response: %.300s", raw)
+        raise RuntimeError("La respuesta del modelo no es JSON válido.") from exc
 
 
 def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
@@ -134,7 +251,7 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
     project-level precondition checks live in ``ai_fill_project()``.
 
     Args:
-        text: Raw document text (will be truncated to ``_MAX_DOC_CHARS``).
+        text: Raw document text.
         field_keys: Keys from ``EXTRACTABLE_FIELDS`` to extract.
 
     Returns:
@@ -142,58 +259,48 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
 
     Raises:
         ValueError: If any key is not in the registry.
-        RuntimeError: If the LLM response cannot be parsed as JSON.
+        RuntimeError: If the model fails twice in a row.
     """
     unknown = sorted(k for k in field_keys if k not in EXTRACTABLE_FIELDS)
     if unknown:
         raise ValueError(f"Campos no reconocidos: {', '.join(unknown)}")
 
     fields = [EXTRACTABLE_FIELDS[k] for k in field_keys]
-    field_spec = "\n".join(f'  "{f.key}": {f.description}' for f in fields)
-    keys_json = json.dumps(field_keys, ensure_ascii=False)
-
-    user_message = (
-        f"Extrae los siguientes campos del documento y devuelve un JSON "
-        f"con exactamente estas claves: {keys_json}\n\n"
-        f"Descripción de cada campo:\n{field_spec}\n\n"
-        f"DOCUMENTO:\n{text[:_MAX_DOC_CHARS]}"
-    )
-
+    messages = _build_messages(text, fields)
     model = effective_chat_model(_EXTRACTION_MODEL)
-    raw, usage = generate_chat_completion(
-        [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_message},
-        ],
-        model=model,
-        temperature=0.0,
-        response_format={"type": "json_object"},
-    )
+
+    # Un reintento: las fallas que se vieron en producción no se repetían
+    # igual en el segundo intento, y el usuario está mirando la pantalla.
+    last_error: Exception | None = None
+    for attempt in (1, 2):
+        try:
+            result, usage = _complete(messages, field_keys, model)
+            break
+        except Exception as exc:  # noqa: BLE001 — se reporta abajo
+            last_error = exc
+            logger.warning("ai_fill: intento %s falló (%s): %s", attempt, model, exc)
+    else:
+        raise RuntimeError("No se pudo extraer la información del documento.") from last_error
 
     logger.info(
-        "ai_fill: fields=%s model=%s tokens=%s",
+        "ai_fill: fields=%s model=%s chars=%s tokens=%s",
         field_keys,
         model,
+        len(text),
         usage.get("total_tokens"),
     )
-
-    try:
-        result = _safe_parse_json(raw)
-    except (json.JSONDecodeError, ValueError) as exc:
-        logger.error("ai_fill: unparseable LLM response: %.300s", raw)
-        raise RuntimeError("La respuesta del modelo no es JSON válido.") from exc
-
-    # Guarantee all requested keys are present; fill missing ones with None.
-    # The prompt asks for plain text, but the model sometimes prefers a JSON
-    # array for "lista numerada" fields despite response_format not requiring
-    # one — normalize here so the API always returns the string type callers
-    # expect, regardless of what shape the model chose this time.
+    # Guarantee all requested keys are present; missing or blank → None. The
+    # model sometimes prefers a JSON array for "lista numerada" fields on the
+    # OpenAI path — normalize so callers always get a string.
     return {k: _coerce_to_text(result.get(k)) for k in field_keys}
 
 
 def _coerce_to_text(value: Any) -> Any:
     if isinstance(value, list):
-        return "\n".join(str(item) for item in value)
+        value = "\n".join(str(item) for item in value)
+    if isinstance(value, str):
+        value = value.strip()
+        return value or None
     return value
 
 
@@ -220,9 +327,55 @@ def ai_fill_project(project, field_keys: list[str]) -> dict[str, Any]:
     doc = project.blueprint_document
     text = (doc.extracted_text or "").strip()
     if not text:
+        if doc.chunking_status in ("pending", "processing"):
+            raise ValueError(
+                f"El documento '{doc.name}' todavía se está procesando. El "
+                "objetivo y los componentes se completan solos cuando termine."
+            )
         raise ValueError(
-            f"El documento '{doc.name}' no tiene texto extraído aún. "
-            "Esperá a que termine el procesamiento del documento e intentá de nuevo."
+            f"No se pudo leer texto del documento '{doc.name}'. Revisá su "
+            "estado en la biblioteca o reprocesalo."
         )
 
     return extract_fields(text, field_keys)
+
+
+def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
+    """Completa en la operación el objetivo y los componentes que falten.
+
+    Corre sola cuando el documento principal termina de procesarse. Antes eso
+    quedaba a cargo del formulario de alta, que llamaba a la extracción en el
+    momento de crear la operación: si el documento recién subido todavía se
+    estaba procesando, la llamada fallaba en silencio y la operación quedaba
+    sin objetivo ni componentes — que entran como contexto en cada paso del
+    análisis — hasta que alguien los generara a mano.
+
+    Sólo escribe claves vacías y relee la operación bajo bloqueo antes de
+    guardar: lo que una persona haya escrito mientras el modelo trabajaba no se
+    pisa.
+    """
+    from django.db import transaction
+
+    from apps.project.models import Project
+
+    project = Project.objects.select_related("blueprint_document").get(pk=project_id)
+    notes = project.context_notes if isinstance(project.context_notes, dict) else {}
+    missing = [k for k in EXTRACTABLE_FIELDS if not str(notes.get(k) or "").strip()]
+    if not missing or not project.blueprint_document_id:
+        return {}
+
+    results = ai_fill_project(project, missing)
+
+    with transaction.atomic():
+        locked = Project.objects.select_for_update().get(pk=project_id)
+        current = locked.context_notes if isinstance(locked.context_notes, dict) else {}
+        filled = {
+            k: v
+            for k, v in results.items()
+            if isinstance(v, str) and v.strip() and not str(current.get(k) or "").strip()
+        }
+        if filled:
+            locked.context_notes = {**current, **filled}
+            locked.save(update_fields=["context_notes", "updated_at"])
+    logger.info("ai_fill: operación %s completada con %s", project_id, sorted(filled))
+    return filled

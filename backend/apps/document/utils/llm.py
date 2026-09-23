@@ -377,6 +377,38 @@ def _empty_response_error(response, usage: dict, *, model: str) -> ValueError:
     return ValueError(f"El modelo {detalle}.")
 
 
+def anthropic_structured_completion(
+    messages: List[dict],
+    *,
+    model: str,
+    schema: dict,
+    max_tokens: int | None = None,
+    timeout: float | None = None,
+) -> Tuple[dict, dict]:
+    """Respuesta de Claude restringida a un JSON Schema (``output_config.format``).
+
+    Existe porque pedir "respondé sólo JSON" en el prompt no alcanza: el
+    extractor de objetivo y componentes falló en producción con respuestas que
+    empezaban con ``**{`` o que directamente seguían escribiendo el documento.
+    Con structured outputs la API garantiza que el texto es JSON válido contra
+    ``schema``; lo que queda por manejar es un corte por ``max_tokens`` o una
+    negativa, que se reportan como error en castellano igual que el resto.
+    """
+    import json
+
+    client = _anthropic_client()
+    params = _build_request(messages, model=model, temperature=None, max_tokens=max_tokens)
+    params["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+    caller = client.with_options(timeout=timeout) if timeout else client
+    response = caller.messages.create(**params)
+
+    usage = _usage_dict(getattr(response, "usage", None))
+    text, _ = _text_and_citations(response.content)
+    if not text or getattr(response, "stop_reason", None) in ("max_tokens", "refusal"):
+        raise _empty_response_error(response, usage, model=model)
+    return json.loads(text), usage
+
+
 def anthropic_chat_completion_stream(
     messages: List[dict],
     *,
