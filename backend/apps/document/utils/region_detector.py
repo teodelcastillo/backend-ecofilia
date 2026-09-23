@@ -28,7 +28,7 @@ import re
 from typing import Optional
 
 # How many characters from the start of the extracted text to search.
-DETECT_CHARS: int = int(os.environ.get("REGION_DETECT_CHARS", "3000"))
+DETECT_CHARS: int = int(os.environ.get("REGION_DETECT_CHARS", "10000"))
 
 
 # ---------------------------------------------------------------------------
@@ -49,7 +49,9 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
     ("guinea[- ]bis[aá]u|guinea[- ]bissau", "Guinea-Bisáu"),
     ("nueva zelanda|new zealand", "Nueva Zelanda"),
     ("reino unido|united kingdom", "Reino Unido"),
-    ("estados unidos|united states|usa", "Estados Unidos"),
+    # Sin "usa" suelto: con IGNORECASE matcheaba el verbo ("se usa para…")
+    # y mandaba a Estados Unidos documentos en castellano.
+    ("estados unidos|united states|ee\\.? ?uu\\.?", "Estados Unidos"),
     ("corea del norte|north korea", "Corea del Norte"),
     ("corea del sur|south korea", "Corea del Sur"),
     ("arabia saudita|saudi arabia", "Arabia Saudita"),
@@ -95,7 +97,7 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
     ("barbados", "Barbados"),
     ("belice|belize", "Belice"),
     ("bahamas", "Bahamas"),
-    ("granada|grenada", "Granada"),
+    ("granada|grenada", "Grenada"),
     ("guadelope|martinica", "Guadalupe"),
 
     # ── Rest of the world (common) ────────────────────────────────────────────
@@ -232,10 +234,20 @@ _RAW_PATTERNS: list[tuple[str, str]] = [
     ("zimbabue|zimbabwe", "Zimbabue"),
 ]
 
+# Regiones supranacionales: sólo cuentan si no aparece ningún país. CAF se
+# llama "Banco de Desarrollo de América Latina y el Caribe", así que casi
+# cualquier documento suyo la menciona en la primera página — y antes, por
+# estar primera en la lista, le ganaba al país del documento.
+_REGIONS = {"Sudamérica", "América Latina"}
+
 # Compile patterns once at module load time.
 _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(?:" + pat + r")\b", re.IGNORECASE | re.UNICODE), canonical)
     for pat, canonical in _RAW_PATTERNS
+]
+# Siglas que sólo valen en mayúsculas.
+_CASE_SENSITIVE_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"\bUSA\b"), "Estados Unidos"),
 ]
 
 
@@ -269,11 +281,43 @@ def detect_country_region(doc_name: str, extracted_text: str) -> Optional[str]:
     if extracted_text:
         candidates.append(extracted_text[:DETECT_CHARS])
 
+    region_fallback: Optional[str] = None
     for text in candidates:
         if not text:
             continue
-        for pattern, canonical in _PATTERNS:
-            if pattern.search(text):
-                return canonical
+        found = _best_match(text)
+        if found and found not in _REGIONS:
+            return found
+        region_fallback = region_fallback or found
 
-    return None
+    return region_fallback
+
+
+def _best_match(text: str) -> Optional[str]:
+    """El país que más aparece en ``text``; a igualdad, el que aparece antes.
+
+    Antes ganaba el primero de la lista de patrones que apareciera en
+    cualquier parte, así que una NDC de Chile que nombraba a Estados Unidos
+    en la introducción quedaba como de Estados Unidos. Los patrones se siguen
+    recorriendo en orden, pero cada coincidencia se tapa en el texto: "Guinea
+    Ecuatorial" no cuenta además como "Guinea", ni "Costa Rica" como otra cosa.
+    """
+    remaining = text
+    stats: dict[str, list[int]] = {}  # canónico → [apariciones, primera posición]
+    for pattern, canonical in [*_PATTERNS, *_CASE_SENSITIVE_PATTERNS]:
+        matches = list(pattern.finditer(remaining))
+        if not matches:
+            continue
+        entry = stats.setdefault(canonical, [0, len(text)])
+        entry[0] += len(matches)
+        entry[1] = min(entry[1], matches[0].start())
+        for match in reversed(matches):
+            remaining = (
+                remaining[: match.start()] + " " * (match.end() - match.start()) + remaining[match.end():]
+            )
+
+    countries = {k: v for k, v in stats.items() if k not in _REGIONS}
+    pool = countries or stats
+    if not pool:
+        return None
+    return min(pool, key=lambda k: (-pool[k][0], pool[k][1]))
