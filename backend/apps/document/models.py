@@ -105,6 +105,16 @@ class Document(models.Model):
         help_text="Temas o palabras clave del documento",
     )
     source = models.CharField(max_length=255, blank=True, null=True, help_text="Fuente del documento")
+    evidence_tags = models.ManyToManyField(
+        "EvidenceTag",
+        related_name="documents",
+        blank=True,
+        help_text=(
+            "Qué tipo de evidencia es este documento (NDC, NAP, salvaguardas…). "
+            "Lo asigna quien lo carga, y toda operación que lo vincule lo hereda "
+            "sin que nadie tenga que volver a marcarlo."
+        ),
+    )
 
     def save(self, *args, **kwargs):
         # Si no hay name ni slug, generar ambos desde el nombre del archivo
@@ -327,22 +337,18 @@ class EvidenceTag(models.Model):
     """
     Vocabulario con el que un paso de un workflow pide su evidencia.
 
-    No es un atributo del documento: es el papel que ese documento cumple
-    **dentro de una operación**, y por eso la asignación vive en
-    ``ProjectDocument.tags`` y no acá. La NDC de Colombia es "la NDC" en una
-    operación colombiana y puede ser un anexo de contraste en otra.
+    La etiqueta es un atributo del documento (``Document.evidence_tags``): la
+    pone quien lo carga, que es quien sabe qué es. Una NDC es una NDC en
+    cualquier operación, y pedirle a cada ejecutivo que la vuelva a marcar en
+    cada operación era la fuente de los pasos que corrían sin evidencia.
 
-    Se resolvió así en vez de leer ``Document.topics`` en tiempo de corrida por
-    tres razones. Los topics los edita cualquiera desde la biblioteca, así que
-    una corrida vieja cambiaría de significado sin que nadie la toque. Un
-    documento mal clasificado en la biblioteca no tendría dónde corregirse para
-    esta operación. Y sobre todo: el ejecutivo no podría ver, antes de lanzar,
-    qué va a leer cada paso.
+    La operación hereda esas etiquetas y sólo guarda las suyas cuando alguien
+    las cambia a propósito (``ProjectDocument.tags_overridden``): el caso raro
+    de un documento que en esta operación cumple otro papel.
 
-    ``source_topics`` es el puente con la biblioteca: al vincular un documento
-    a una operación, sus topics pre-marcan las etiquetas correspondientes. El
-    ejecutivo ve la propuesta y la corrige — la biblioteca sugiere, la
-    operación decide.
+    ``source_topics`` quedó como ayuda para clasificar lo que se cargó sin
+    etiqueta: los temas de la biblioteca proponen la etiqueta cuando el
+    documento no tiene ninguna (ver ``default_evidence_tags_for``).
 
     El catálogo es ampliable: ``is_seed`` sólo distingue las que provee
     Ecofilia (que no se borran) de las que agrega un equipo.

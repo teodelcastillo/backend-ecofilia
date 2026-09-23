@@ -3,7 +3,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.document.models import Document
+from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument, ProjectShareRole
 from apps.skill.models import Skill, SkillType
 
@@ -259,14 +259,14 @@ class ProjectDocumentTagsAPITestCase(APITestCase):
         response = self.client.put(self.url, {"tags": ["ndc"]}, format="json")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_linking_a_document_proposes_tags_from_its_topics(self):
-        """La biblioteca propone; la operación decide."""
+    def test_linking_a_document_brings_its_tags(self):
+        """La etiqueta la puso quien cargó el documento; la operación la hereda."""
         otro = Document.objects.create(
             owner=self.owner,
             name="NAP Colombia",
             slug="nap-colombia",
-            topics=["NAPS: Planes Nacionales de Adaptación"],
         )
+        otro.evidence_tags.set(EvidenceTag.objects.filter(slug="nap"))
         url = reverse("project-add-document", kwargs={"slug": self.project.slug})
         response = self.client.post(
             url, {"document_slugs": [otro.slug]}, format="json"

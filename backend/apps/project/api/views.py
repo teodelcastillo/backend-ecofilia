@@ -48,7 +48,7 @@ from apps.project.api.serializers import (
     ProjectWriteSerializer,
 )
 from apps.project.services.country_documents import sync_country_instrument_documents
-from apps.project.services.evidence_tags import apply_default_tags
+from apps.project.services.evidence_tags import inherit_tags, override_tags
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -88,7 +88,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
             .prefetch_related(
                 Prefetch(
                     "project_documents",
-                    queryset=ProjectDocument.objects.select_related("document"),
+                    queryset=ProjectDocument.objects.select_related(
+                        "document"
+                    ).prefetch_related("tags", "document__evidence_tags"),
                 ),
                 Prefetch(
                     "shares",
@@ -138,17 +140,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         for document in serializer.get_documents():
-            link, created = ProjectDocument.objects.get_or_create(
+            # Las etiquetas vienen con el documento: el vínculo las hereda.
+            ProjectDocument.objects.get_or_create(
                 project=project,
                 document=document,
                 defaults={"added_by": request.user},
             )
-            if created:
-                # La biblioteca propone el papel del documento; el equipo de la
-                # operación lo confirma o lo cambia después. Sin esto, cada
-                # documento entraría sin etiqueta y los pasos que piden
-                # evidencia por etiqueta arrancarían vacíos.
-                apply_default_tags(link)
         return Response(
             self._serialize_project(project),
             status=status.HTTP_200_OK,
@@ -216,9 +213,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """
         Qué papel cumple un documento dentro de esta operación.
 
-        Es lo que leen los pasos que piden su evidencia por etiqueta. Vive en
-        el vínculo y no en el documento: la misma NDC puede ser el instrumento
-        de referencia en una operación y un anexo de contraste en otra.
+        Por defecto son las etiquetas del documento. Esto es para el caso
+        raro en que en esta operación cumple otro papel: ``tags`` fija las de
+        la operación y ``inherit: true`` vuelve a las del documento.
         """
         project = self.get_object()
         self._ensure_editor(project)
@@ -227,7 +224,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
         serializer = ProjectDocumentTagsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        link.tags.set(serializer.context["resolved_tags"])
+        if serializer.validated_data.get("inherit"):
+            inherit_tags(link)
+        else:
+            override_tags(link, serializer.context["resolved_tags"])
         return Response(
             ProjectDocumentSerializer(link).data,
             status=status.HTTP_200_OK,

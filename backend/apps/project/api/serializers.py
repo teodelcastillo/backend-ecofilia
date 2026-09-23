@@ -7,7 +7,7 @@ from rest_framework import serializers
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.project.services.country_documents import sync_country_instrument_documents
-from apps.project.services.evidence_tags import apply_default_tags
+from apps.project.services.evidence_tags import effective_tag_slugs
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -47,8 +47,13 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
     description = serializers.CharField(
         source="document.description", read_only=True
     )
-    tags = serializers.SlugRelatedField(
-        many=True, read_only=True, slug_field="slug"
+    # Las que cuentan en la operación: las del documento, o las propias del
+    # vínculo si la operación las cambió (`tags_overridden`).
+    tags = serializers.SerializerMethodField()
+    # Las que trae el documento desde la biblioteca. Con `tags_overridden` el
+    # frontend las muestra como referencia para ofrecer volver a ellas.
+    document_tags = serializers.SlugRelatedField(
+        source="document.evidence_tags", many=True, read_only=True, slug_field="slug"
     )
     # El frontend lo necesita para bloquear la corrida de agentes mientras un
     # documento asignado todavía se está indexando (ver ProjectViewSet /
@@ -68,25 +73,41 @@ class ProjectDocumentSerializer(serializers.ModelSerializer):
             "description",
             "is_primary",
             "tags",
+            "document_tags",
+            "tags_overridden",
             "note",
             "chunking_status",
             "created_at",
         )
         read_only_fields = fields
 
+    def get_tags(self, obj):
+        return effective_tag_slugs(obj)
+
 
 class ProjectDocumentTagsSerializer(serializers.Serializer):
-    """Reemplaza las etiquetas de un documento dentro de una operación.
+    """Etiquetas de un documento dentro de una operación.
 
-    Reemplazo y no merge: la lista que manda el cliente es el estado final. Un
-    merge no dejaría forma de sacar una etiqueta mal puesta, que es la mitad
-    del punto de tener etiquetas editables.
+    ``tags`` fija las de la operación, apartándose de las del documento.
+    Reemplazo y no merge: la lista que manda el cliente es el estado final, o
+    no habría forma de sacar una etiqueta mal puesta. ``inherit: true`` vuelve
+    a las del documento.
     """
 
     tags = serializers.ListField(
         child=serializers.SlugField(max_length=80),
         allow_empty=True,
+        required=False,
     )
+    inherit = serializers.BooleanField(required=False, default=False)
+
+    def validate(self, attrs):
+        if not attrs.get("inherit") and "tags" not in attrs:
+            raise serializers.ValidationError(
+                "Mandá `tags` con la lista final, o `inherit: true` para usar "
+                "las del documento."
+            )
+        return attrs
 
     def validate_tags(self, slugs):
         from apps.document.models import EvidenceTag
@@ -290,8 +311,24 @@ class ProjectWriteSerializer(ProjectSerializer):
             setattr(instance, attr, value)
         instance.save()
         if document_slugs is not None:
-            instance.project_documents.all().delete()
+            # Diff y no borrar-y-recrear: recrear los vínculos perdía lo que
+            # la operación había decidido sobre cada documento (etiquetas
+            # propias, nota) aunque el documento siguiera en la lista.
+            instance.project_documents.exclude(
+                document__slug__in=document_slugs
+            ).delete()
             self._sync_documents(instance, document_slugs)
+            # Igual que al desvincular uno por uno (`remove_document`): el
+            # principal que salió de la operación deja de ser principal.
+            if (
+                instance.blueprint_document_id
+                and not should_sync_blueprint
+                and not instance.project_documents.filter(
+                    document_id=instance.blueprint_document_id
+                ).exists()
+            ):
+                instance.blueprint_document = None
+                instance.save(update_fields=["blueprint_document"])
         if should_sync_blueprint:
             self._sync_blueprint(instance, blueprint_slug)
         if should_sync_skills:
@@ -315,12 +352,11 @@ class ProjectWriteSerializer(ProjectSerializer):
         for doc in documents:
             if doc.slug in existing_slugs:
                 continue
-            link = ProjectDocument.objects.create(
+            ProjectDocument.objects.create(
                 project=project,
                 document=doc,
                 added_by=project.owner,
             )
-            apply_default_tags(link)
 
     def _sync_blueprint(self, project: Project, blueprint_slug):
         if blueprint_slug is None:

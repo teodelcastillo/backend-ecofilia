@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Iterable
 
 from django.db.models import Q, QuerySet
@@ -59,26 +60,24 @@ def accessible_library_documents(user) -> QuerySet[Document]:
 
 def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
     """
-    Etiquetas que se proponen al vincular ``document`` a una operación.
+    Etiquetas que sugieren los temas (``topics``) de ``document``.
 
-    Es el puente entre la biblioteca y la operación: lo que en la biblioteca
-    CAF es una carpeta (``topics``), acá llega como etiqueta ya marcada. La
-    propuesta no es una decisión — el ejecutivo la corrige desde la operación,
-    y a partir de ahí manda lo que quedó asentado ahí.
+    Ya no es la vía principal: la etiqueta la elige quien carga el documento.
+    Esto queda para lo que se cargó sin etiqueta —la biblioteca vieja, o un
+    documento al que sólo le pusieron temas—, como propuesta que se guarda en
+    el documento y que cualquiera puede corregir.
 
-    Un documento sin topics reconocibles no recibe ninguna: quedar sin etiqueta
-    es un estado válido, no un error. Esos documentos siguen entrando en los
-    pasos que leen todo el expediente y en los que los nombran explícitamente.
+    La comparación ignora mayúsculas y acentos de los dos lados. Antes los
+    comparaba tal cual, y como los ``source_topics`` sembrados están sin tilde
+    ("metodologia caf", "guias sectoriales"), un tema escrito como se escribe
+    —"metodología caf"— no proponía nunca nada.
 
-    La comparación es deliberadamente **asimétrica**. Del lado del documento
-    (``_document_topic_keys``) el topic es texto libre —``edit-topics-dialog``
-    no valida contra ningún vocabulario, cada bibliotecario tipea lo que
-    quiere— así que se fragmenta en palabras para tolerar variantes como
-    ``"ndc colombia 2023"`` o ``"ndc-actualizada"``. Del lado de la etiqueta
-    (``tag.source_topics``) el valor es curado a propósito y se usa tal cual:
-    si se fragmentara igual, una etiqueta con ``"comunicación nacional"``
-    matchearía cualquier documento que mencione "nacional" en su topic, que es
-    exactamente el falso positivo que la etiqueta viene a evitar.
+    Sigue siendo **asimétrica**. Del lado del documento el tema es texto libre,
+    así que se fragmenta en palabras para tolerar "ndc colombia 2023". Del lado
+    de la etiqueta el valor es curado: una palabra suelta tiene que coincidir
+    con un fragmento, y una frase ("comunicacion nacional") tiene que aparecer
+    entera dentro del tema. Fragmentarla también haría que cualquier tema con
+    "nacional" propusiera la etiqueta.
     """
     topics = _document_topic_keys(document.topics)
     if not topics:
@@ -86,13 +85,29 @@ def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
     return [
         tag
         for tag in EvidenceTag.objects.exclude(source_topics=[])
-        if topics.intersection(_tag_topic_keys(tag.source_topics))
+        if _tag_matches(tag.source_topics, topics)
     ]
 
 
-def _tag_topic_keys(topics) -> set[str]:
-    """Las formas comparables de un ``source_topics`` de etiqueta: exacto."""
-    return {t.lower().strip() for t in (topics or []) if isinstance(t, str) and t.strip()}
+def normalize_topic(value: str) -> str:
+    """Minúsculas, sin acentos y con espacios colapsados."""
+    decomposed = unicodedata.normalize("NFD", value)
+    stripped = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return " ".join(stripped.lower().split())
+
+
+def _tag_matches(source_topics, doc_keys: set[str]) -> bool:
+    for raw in source_topics or []:
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        wanted = normalize_topic(raw)
+        if wanted in doc_keys:
+            return True
+        if " " in wanted and any(
+            re.search(rf"(?<!\w){re.escape(wanted)}(?!\w)", key) for key in doc_keys
+        ):
+            return True
+    return False
 
 
 # Separadores entre los que se puede fragmentar un topic de biblioteca:
@@ -122,7 +137,7 @@ def _document_topic_keys(topics) -> set[str]:
     for raw in topics or []:
         if not isinstance(raw, str) or not raw.strip():
             continue
-        value = raw.lower().strip()
+        value = normalize_topic(raw)
         keys.add(value)
         head, sep, _ = value.partition(":")
         if sep and head.strip():

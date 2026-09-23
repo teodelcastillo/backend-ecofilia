@@ -144,12 +144,16 @@ class ProjectDocument(models.Model):
         related_name="project_documents",
         blank=True,
         help_text=(
-            "Qué papel cumple este documento en esta operación. Es lo que "
-            "consultan los pasos que piden su evidencia por etiqueta. Se "
-            "pre-carga desde los topics de la biblioteca al vincular, y desde "
-            "ahí manda lo que decida el equipo de la operación. Vacío es un "
-            "estado válido: el documento sigue entrando en los pasos que leen "
-            "todo el expediente y en los que lo nombran explícitamente."
+            "Etiquetas propias de esta operación. Sólo cuentan con "
+            "`tags_overridden`; si no, el vínculo usa las del documento."
+        ),
+    )
+    tags_overridden = models.BooleanField(
+        default=False,
+        help_text=(
+            "La operación decidió sus propias etiquetas para este documento. "
+            "Mientras sea falso, el documento aporta las suyas "
+            "(`Document.evidence_tags`) y un cambio en la biblioteca llega solo."
         ),
     )
     note = models.CharField(max_length=255, blank=True)

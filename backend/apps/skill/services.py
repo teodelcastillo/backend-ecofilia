@@ -1304,10 +1304,11 @@ def _resolve_step_documents(
             # que el acotamiento se aplicó.
             diagnostics["fallback"] = "sin_operacion"
             return StepScope(documents, diagnostics)
-        matched = documents.filter(
-            project_documents__project_id=project_id,
-            project_documents__tags__slug__in=tags,
-        ).distinct()
+        from apps.project.services.evidence_tags import tagged_in_project_q
+
+        # Las etiquetas del documento, salvo que la operación haya decidido
+        # otras para él (ver ``apps.project.services.evidence_tags``).
+        matched = documents.filter(tagged_in_project_q(project_id, tags))
         if extra:
             # Los documentos sueltos entran por nombre, sin necesidad de que
             # alguien los etiquete: es la vía para "que este paso además mire

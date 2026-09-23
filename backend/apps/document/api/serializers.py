@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
@@ -29,18 +31,97 @@ class TopicListField(serializers.Field):
         "invalid": "Expected a list or a semicolon/comma-separated string.",
     }
 
+    def get_value(self, dictionary):
+        # En multipart el campo puede venir repetido, un tema por valor.
+        if hasattr(dictionary, "getlist"):
+            values = dictionary.getlist(self.field_name)
+            if len(values) > 1:
+                return values
+        return super().get_value(dictionary)
+
     def to_internal_value(self, data):
         if data is None:
             return []
         if isinstance(data, str):
-            parts = [t.strip() for t in data.replace(",", ";").split(";")]
-            return [p for p in parts if p]
+            text = data.strip()
+            # `apiClient.upload` serializa los arrays como JSON.
+            if text.startswith("["):
+                try:
+                    data = json.loads(text)
+                except ValueError:
+                    self.fail("invalid")
+            else:
+                parts = [t.strip() for t in text.replace(",", ";").split(";")]
+                return [p for p in parts if p]
         if isinstance(data, (list, tuple)):
             return [str(t).strip() for t in data if str(t).strip()]
         self.fail("invalid")
 
     def to_representation(self, value):
         return value if value is not None else []
+
+
+class EvidenceTagSlugsField(serializers.Field):
+    """
+    Etiquetas de evidencia de un documento, por slug.
+
+    Llegan de tres formas según quién sube: una lista JSON (edición), un
+    campo repetido en multipart (subida masiva) o un string con la lista en
+    JSON o separada por comas (``apiClient.upload`` serializa los arrays así).
+    Todas terminan en la lista de ``EvidenceTag`` que existen; un slug
+    desconocido es un error, no se descarta en silencio: el documento
+    quedaría sin la etiqueta que su autor creyó ponerle.
+    """
+
+    default_error_messages = {
+        "invalid": "Mandá una lista de slugs de etiquetas.",
+        "unknown": "Etiquetas inexistentes: {slugs}.",
+    }
+
+    def get_value(self, dictionary):
+        if hasattr(dictionary, "getlist"):
+            values = dictionary.getlist(self.field_name)
+            if len(values) > 1:
+                return values
+        return super().get_value(dictionary)
+
+    def to_internal_value(self, data):
+        if data is None:
+            return []
+        if isinstance(data, str):
+            text = data.strip()
+            if text.startswith("["):
+                try:
+                    data = json.loads(text)
+                except ValueError:
+                    self.fail("invalid")
+            else:
+                data = [part for part in text.split(",")]
+        if isinstance(data, (list, tuple)) and len(data) == 1 and isinstance(data[0], str) and data[0].strip().startswith("["):
+            return self.to_internal_value(data[0])
+        if not isinstance(data, (list, tuple)):
+            self.fail("invalid")
+        slugs = list(dict.fromkeys(str(s).strip() for s in data if str(s).strip()))
+        found = {t.slug: t for t in EvidenceTag.objects.filter(slug__in=slugs)}
+        missing = [slug for slug in slugs if slug not in found]
+        if missing:
+            self.fail("unknown", slugs=", ".join(missing))
+        return [found[slug] for slug in slugs]
+
+    def to_representation(self, value):
+        return [tag.slug for tag in value.all()]
+
+
+def _normalize_topics(raw_topics) -> list[str]:
+    """Temas sin repetir, recortados y en minúsculas."""
+    seen = set()
+    clean = []
+    for t in raw_topics or []:
+        normalized = t.strip().lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            clean.append(normalized)
+    return clean
 
 
 def _can_manage_public_documents(user) -> bool:
@@ -113,6 +194,15 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
     project_slug = serializers.SlugField(
         write_only=True, required=False, allow_blank=True,
     )
+    # El diálogo de subida mandaba temas, año, región y fuente desde siempre,
+    # pero este serializador no los declaraba y DRF los descartaba sin decir
+    # nada: el documento llegaba a la biblioteca sin la metadata que su autor
+    # había cargado.
+    topics = TopicListField(required=False, allow_null=True)
+    year = serializers.IntegerField(required=False, allow_null=True)
+    region = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    source = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    evidence_tags = EvidenceTagSlugsField(required=False)
 
     class Meta:
         model = Document
@@ -124,6 +214,11 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
             'description',
             'is_public',
             'project_slug',
+            'topics',
+            'year',
+            'region',
+            'source',
+            'evidence_tags',
         ]
 
     def validate_file(self, value):
@@ -196,6 +291,10 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
                 ) from e
             validated_data['category_ref'] = cat
             validated_data['category'] = cat_str
+        if 'topics' in validated_data:
+            validated_data['topics'] = _normalize_topics(validated_data['topics'])
+        # `evidence_tags` lo asigna `ModelSerializer.create` después de crear
+        # la fila (es muchos-a-muchos).
         return super().create(validated_data)
 
 
@@ -225,6 +324,11 @@ class DocumentBulkCreateSerializer(serializers.Serializer):
     project_slug = serializers.SlugField(
         write_only=True, required=False, allow_blank=True,
     )
+    topics = TopicListField(required=False, allow_null=True)
+    year = serializers.IntegerField(required=False, allow_null=True)
+    region = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    source = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=255)
+    evidence_tags = EvidenceTagSlugsField(required=False)
 
     def validate_files(self, value):
         if not value or len(value) == 0:
@@ -263,6 +367,9 @@ class DocumentBulkCreateSerializer(serializers.Serializer):
 class DocumentSerializer(serializers.ModelSerializer):
     """Serializer for listing documents - read-only fields"""
     is_public = serializers.BooleanField(read_only=True)
+    evidence_tags = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field="slug"
+    )
     is_owner = serializers.SerializerMethodField()
     owner_email = serializers.EmailField(source='owner.email', read_only=True)
     category_slug = serializers.SerializerMethodField()
@@ -293,6 +400,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             'year',
             'region',
             'source',
+            'evidence_tags',
         ]
         read_only_fields = [
             'id',
@@ -361,6 +469,9 @@ class DocumentListSerializer(DocumentSerializer):
 class DocumentDetailSerializer(serializers.ModelSerializer):
     """Serializer for retrieving a single document with all fields"""
     owner_email = serializers.EmailField(source='owner.email', read_only=True)
+    evidence_tags = serializers.SlugRelatedField(
+        many=True, read_only=True, slug_field="slug"
+    )
     category_slug = serializers.SerializerMethodField()
     category_path = serializers.SerializerMethodField()
 
@@ -385,6 +496,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             'year',
             'region',
             'source',
+            'evidence_tags',
         ]
         read_only_fields = [
             'id',
@@ -417,6 +529,7 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
         required=False, allow_blank=True, allow_null=True, write_only=True,
     )
     topics = TopicListField(required=False, allow_null=True)
+    evidence_tags = EvidenceTagSlugsField(required=False)
 
     class Meta:
         model = Document
@@ -430,6 +543,7 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
             'year',
             'region',
             'source',
+            'evidence_tags',
         ]
     
     def validate_is_public(self, value):
@@ -502,18 +616,23 @@ class DocumentUpdateSerializer(serializers.ModelSerializer):
                 validated_data.pop('is_public')
 
         # Normalize topics: null → empty list, deduplicate, strip, lowercase
-        if 'topics' in validated_data:
-            raw_topics = validated_data.pop('topics') or []
-            seen = set()
-            clean = []
-            for t in raw_topics:
-                normalized = t.strip().lower()
-                if normalized and normalized not in seen:
-                    seen.add(normalized)
-                    clean.append(normalized)
-            validated_data['topics'] = clean
+        topics_changed = 'topics' in validated_data
+        if topics_changed:
+            validated_data['topics'] = _normalize_topics(validated_data.pop('topics'))
+        tags_sent = 'evidence_tags' in validated_data
 
         instance = super().update(instance, validated_data)
+
+        # Un documento al que le cargan temas pero todavía ninguna etiqueta
+        # recibe la que sugieren esos temas. Sólo si no tiene ninguna y no se
+        # mandaron en este mismo pedido: una etiqueta elegida a mano —o
+        # vaciada a propósito— no se toca.
+        if topics_changed and not tags_sent and not instance.evidence_tags.exists():
+            from apps.document.services import default_evidence_tags_for
+
+            proposed = default_evidence_tags_for(instance)
+            if proposed:
+                instance.evidence_tags.set(proposed)
         if category_changed:
             instance.category_ref = new_ref
             instance.category = new_cat

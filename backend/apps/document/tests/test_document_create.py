@@ -1,5 +1,4 @@
 from io import BytesIO
-from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -99,36 +98,81 @@ class DocumentCreateWithProjectSlugTest(APITestCase):
         doc = Document.objects.get(id=response.data["id"])
         self.assertTrue(self.project.documents.filter(id=doc.id).exists())
 
-    def test_upload_with_project_proposes_evidence_tags(self):
-        """
-        Subir un documento nuevo directo a una operación tiene que proponerle
-        etiquetas igual que vincular uno ya existente desde la biblioteca
-        (``ProjectViewSet.add_documents``) — antes este camino se quedaba
-        callado y el documento entraba sin ninguna, para siempre.
-        """
-        url = reverse("documentcreate")
-        data = {"file": self._make_file(), "project_slug": self.project.slug}
-        with patch(
-            "apps.project.services.evidence_tags.apply_default_tags"
-        ) as mocked:
-            response = self.client.post(url, data, format="multipart")
+    def _tag(self, slug, source_topics=()):
+        from apps.document.models import EvidenceTag
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        link = ProjectDocument.objects.get(
-            project=self.project, document_id=response.data["id"]
+        tag, _ = EvidenceTag.objects.update_or_create(
+            slug=slug, defaults={"name": slug.upper(), "source_topics": list(source_topics)}
         )
-        mocked.assert_called_once_with(link)
+        return tag
 
-    def test_upload_without_project_does_not_touch_tags(self):
+    def test_upload_with_evidence_tags_tags_the_document(self):
+        """`apiClient.upload` manda los arrays como string JSON."""
+        self._tag("ndc")
+        self._tag("nap")
         url = reverse("documentcreate")
-        data = {"file": self._make_file()}
-        with patch(
-            "apps.project.services.evidence_tags.apply_default_tags"
-        ) as mocked:
-            response = self.client.post(url, data, format="multipart")
+        data = {
+            "file": self._make_file(),
+            "project_slug": self.project.slug,
+            "evidence_tags": '["ndc", "nap"]',
+        }
+        response = self.client.post(url, data, format="multipart")
 
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        mocked.assert_not_called()
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        doc = Document.objects.get(id=response.data["id"])
+        self.assertEqual(sorted(doc.evidence_tags.values_list("slug", flat=True)), ["nap", "ndc"])
+        self.assertEqual(sorted(response.data["evidence_tags"]), ["nap", "ndc"])
+        # El vínculo a la operación no guarda nada propio: hereda.
+        link = ProjectDocument.objects.get(project=self.project, document=doc)
+        self.assertFalse(link.tags_overridden)
+        self.assertEqual(link.tags.count(), 0)
+
+    def test_upload_with_unknown_tag_is_rejected(self):
+        url = reverse("documentcreate")
+        data = {"file": self._make_file(), "evidence_tags": "no-existe"}
+        response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("evidence_tags", response.data)
+
+    def test_upload_keeps_the_metadata_the_dialog_sends(self):
+        """Temas, año, región y fuente se descartaban en silencio."""
+        url = reverse("documentcreate")
+        data = {
+            "file": self._make_file(),
+            "topics": '["NDCS: Contribuciones", "clima"]',
+            "year": "2021",
+            "region": "Perú",
+            "source": "CMNUCC",
+        }
+        response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        doc = Document.objects.get(id=response.data["id"])
+        self.assertEqual(doc.year, 2021)
+        self.assertEqual(doc.region, "Perú")
+        self.assertEqual(doc.source, "CMNUCC")
+        self.assertIn("clima", doc.topics)
+
+    def test_upload_with_topics_and_no_tags_gets_the_suggested_tag(self):
+        self._tag("ndc", ["ndcs"])
+        url = reverse("documentcreate")
+        data = {"file": self._make_file(), "topics": "ndcs: contribuciones"}
+        response = self.client.post(url, data, format="multipart")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        doc = Document.objects.get(id=response.data["id"])
+        self.assertEqual(list(doc.evidence_tags.values_list("slug", flat=True)), ["ndc"])
+
+    def test_explicit_tags_win_over_the_topic_suggestion(self):
+        self._tag("ndc", ["ndcs"])
+        self._tag("nap")
+        url = reverse("documentcreate")
+        data = {"file": self._make_file(), "topics": "ndcs", "evidence_tags": "nap"}
+        response = self.client.post(url, data, format="multipart")
+
+        doc = Document.objects.get(id=response.data["id"])
+        self.assertEqual(list(doc.evidence_tags.values_list("slug", flat=True)), ["nap"])
 
     def test_unauthenticated_create_denied(self):
         self.client.force_authenticate(user=None)

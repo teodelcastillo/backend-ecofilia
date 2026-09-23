@@ -14,6 +14,7 @@ from rest_framework.test import APITestCase
 
 from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument
+from apps.project.services.evidence_tags import effective_tag_slugs, override_tags
 from apps.project.services.country_documents import (
     country_instrument_documents,
     sync_country_instrument_documents,
@@ -43,15 +44,16 @@ class CountryInstrumentDocumentsTestCase(APITestCase):
         )
         self.client.force_authenticate(self.owner)
 
-    def _make_ndc(self, slug, *, owner=None, region="Colombia", is_public=True, age_days=0):
+    def _make_ndc(self, slug, *, owner=None, region="Colombia", is_public=True, age_days=0, year=None):
         doc = Document.objects.create(
             owner=owner or self.owner,
             name=f"NDC {slug}",
             slug=slug,
             region=region,
             is_public=is_public,
-            topics=["ndcs: contribuciones determinadas a nivel nacional"],
+            year=year,
         )
+        doc.evidence_tags.set([self.tag_ndc])
         _backdate(doc, timezone.now() - timedelta(days=age_days))
         return doc
 
@@ -74,7 +76,7 @@ class CountryInstrumentDocumentsTestCase(APITestCase):
 
         self.assertEqual(assigned["ndc"], new)
         new_link = ProjectDocument.objects.get(project=project, document=new)
-        self.assertIn(self.tag_ndc, new_link.tags.all())
+        self.assertEqual(effective_tag_slugs(new_link), ["ndc"])
         self.assertFalse(
             ProjectDocument.objects.filter(project=project, document=old).exists()
         )
@@ -86,15 +88,16 @@ class CountryInstrumentDocumentsTestCase(APITestCase):
         )
         sync_country_instrument_documents(project)
         old_link = ProjectDocument.objects.get(project=project, document=old)
-        self.assertIn(self.tag_ndc, old_link.tags.all())
+        self.assertEqual(effective_tag_slugs(old_link), ["ndc"])
 
         new = self._make_ndc("ndc-2021", age_days=1)
         sync_country_instrument_documents(project)
 
         old_link.refresh_from_db()
         new_link = ProjectDocument.objects.get(project=project, document=new)
-        self.assertNotIn(self.tag_ndc, old_link.tags.all())
-        self.assertIn(self.tag_ndc, new_link.tags.all())
+        self.assertEqual(effective_tag_slugs(old_link), [])
+        self.assertTrue(old_link.tags_overridden)
+        self.assertEqual(effective_tag_slugs(new_link), ["ndc"])
         # Sigue vinculada: sólo se le sacó la etiqueta, no se desvinculó.
         self.assertTrue(
             ProjectDocument.objects.filter(project=project, document=old).exists()
@@ -151,8 +154,44 @@ class CountryInstrumentDocumentsTestCase(APITestCase):
         # que su `documents` no refleja lo que el propio request acaba de
         # vincular (el frontend nunca confía en este body: siempre invalida
         # la query y refetchea aparte).
-        self.assertTrue(
-            ProjectDocument.objects.filter(
-                project=project, document=peru_doc, tags__slug="ndc"
-            ).exists()
+        link = ProjectDocument.objects.get(project=project, document=peru_doc)
+        self.assertEqual(effective_tag_slugs(link), ["ndc"])
+
+    def test_a_tag_removed_in_the_operation_is_not_put_back(self):
+        """Guardar la operación no deshace lo que decidió el ejecutivo."""
+        ndc = self._make_ndc("ndc-2021", age_days=1)
+        project = Project.objects.create(
+            owner=self.owner, name="Operación", context_notes={"pais": "Colombia"}
         )
+        sync_country_instrument_documents(project)
+        link = ProjectDocument.objects.get(project=project, document=ndc)
+        override_tags(link, [])
+
+        sync_country_instrument_documents(project)
+
+        link.refresh_from_db()
+        self.assertEqual(effective_tag_slugs(link), [])
+
+    def test_the_newest_year_wins_over_the_latest_upload(self):
+        """Una NDC de 2016 subida tarde no desplaza a la de 2021."""
+        vieja = self._make_ndc("ndc-2016", year=2016, age_days=1)
+        nueva = self._make_ndc("ndc-2021", year=2021, age_days=30)
+
+        by_tag = country_instrument_documents(self.owner, "Colombia", ["ndc"])
+
+        self.assertEqual(by_tag["ndc"], [nueva, vieja])
+
+    def test_country_is_compared_without_accents(self):
+        doc = self._make_ndc("ndc-peru", region="Peru", age_days=1)
+
+        by_tag = country_instrument_documents(self.owner, "Perú", ["ndc"])
+
+        self.assertEqual(by_tag["ndc"], [doc])
+
+    def test_untagged_documents_are_not_instruments(self):
+        doc = self._make_ndc("ndc-sin-etiqueta", age_days=1)
+        doc.evidence_tags.clear()
+
+        by_tag = country_instrument_documents(self.owner, "Colombia", ["ndc"])
+
+        self.assertEqual(by_tag["ndc"], [])

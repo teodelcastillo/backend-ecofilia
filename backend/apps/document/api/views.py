@@ -114,6 +114,21 @@ class RAGQueryView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+def _propose_tags_from_topics(document: Document, *, tags_sent: bool) -> None:
+    """Etiqueta sugerida por los temas, para lo que se subió sin ninguna.
+
+    Si quien subió eligió etiquetas —o mandó la lista vacía a propósito—, eso
+    manda. Sólo cuando no dijo nada y cargó temas reconocibles se proponen.
+    """
+    if tags_sent or not document.topics:
+        return
+    from apps.document.services import default_evidence_tags_for
+
+    proposed = default_evidence_tags_for(document)
+    if proposed:
+        document.evidence_tags.set(proposed)
+
+
 class DocumentCreateAPIView(CreateAPIView):
     queryset = Document.objects.all()
     serializer_class = DocumentCreateSerializer
@@ -123,22 +138,17 @@ class DocumentCreateAPIView(CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         document = serializer.save(owner=request.user)
+        _propose_tags_from_topics(document, tags_sent="evidence_tags" in serializer.validated_data)
 
         project = getattr(serializer, '_project', None)
         if project:
             from apps.project.models import ProjectDocument
-            from apps.project.services.evidence_tags import apply_default_tags
-            link, created = ProjectDocument.objects.get_or_create(
+            # Las etiquetas vienen con el documento: el vínculo las hereda.
+            ProjectDocument.objects.get_or_create(
                 project=project,
                 document=document,
                 defaults={"added_by": request.user},
             )
-            if created:
-                # Mismo comportamiento que vincular un documento existente
-                # (ver `ProjectViewSet.add_documents`): sin esto, un documento
-                # subido directo a la operación quedaba sin la propuesta de
-                # etiqueta que sí recibe uno vinculado desde la biblioteca.
-                apply_default_tags(link)
 
         response_serializer = DocumentSerializer(document, context=self.get_serializer_context())
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -157,9 +167,18 @@ class DocumentBulkCreateAPIView(APIView):
             )
 
         data = {'files': files}
-        for key in ('name', 'category', 'category_slug', 'description', 'is_public', 'project_slug'):
+        for key in (
+            'name', 'category', 'category_slug', 'description', 'is_public',
+            'project_slug', 'year', 'region', 'source',
+        ):
             if key in request.data:
                 data[key] = request.data[key]
+        # Campos que llegan repetidos en el multipart (un valor por tema o por
+        # etiqueta): `request.data[key]` se quedaría sólo con el último.
+        for key in ('topics', 'evidence_tags'):
+            values = request.data.getlist(key) if hasattr(request.data, 'getlist') else request.data.get(key)
+            if values:
+                data[key] = values if not isinstance(values, list) or len(values) > 1 else values[0]
 
         serializer = DocumentBulkCreateSerializer(
             data=data,
@@ -199,9 +218,13 @@ class DocumentBulkCreateAPIView(APIView):
             )
 
         document_props = {"category": cat_str, "category_ref": cat}
-        for key in ('name', 'description', 'is_public'):
+        for key in ('name', 'description', 'is_public', 'year', 'region', 'source'):
             if key in validated_data:
                 document_props[key] = validated_data[key]
+        if validated_data.get('topics'):
+            from apps.document.api.serializers import _normalize_topics
+            document_props['topics'] = _normalize_topics(validated_data['topics'])
+        evidence_tags = validated_data.get('evidence_tags')
 
         project = getattr(serializer, '_project', None)
         successful = []
@@ -215,6 +238,10 @@ class DocumentBulkCreateAPIView(APIView):
                     file=file,
                     **document_props,
                 )
+                if evidence_tags:
+                    document.evidence_tags.set(evidence_tags)
+                else:
+                    _propose_tags_from_topics(document, tags_sent=evidence_tags is not None)
                 created_documents.append(document)
                 successful.append({
                     'filename': getattr(file, 'name', 'unknown'),
@@ -224,14 +251,11 @@ class DocumentBulkCreateAPIView(APIView):
 
                 if project:
                     from apps.project.models import ProjectDocument
-                    from apps.project.services.evidence_tags import apply_default_tags
-                    link, created = ProjectDocument.objects.get_or_create(
+                    ProjectDocument.objects.get_or_create(
                         project=project,
                         document=document,
                         defaults={"added_by": request.user},
                     )
-                    if created:
-                        apply_default_tags(link)
             except Exception as e:
                 failed.append({
                     'filename': getattr(file, 'name', 'unknown'),
@@ -481,6 +505,7 @@ class DocumentListAPIView(ListAPIView):
         return (
             self._get_queryset_base()
             .select_related("category_ref", "owner")
+            .prefetch_related("evidence_tags")
             .defer(*LIST_DEFERRED_COLUMNS)
         )
 
@@ -712,7 +737,7 @@ class DocumentViewSet(
     
     def get_queryset(self):
         """Filter queryset based on user permissions"""
-        qs = Document.objects.all().select_related("category_ref", "owner")
+        qs = Document.objects.all().select_related("category_ref", "owner").prefetch_related("evidence_tags")
         user = self.request.user
         if not user.is_staff:
             # Incluir documentos propios, públicos, compartidos y de proyectos compartidos
@@ -1053,8 +1078,10 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
     lookup_field = "slug"
 
     def get_queryset(self):
+        # Cuántos documentos de la biblioteca la llevan. Antes contaba
+        # vínculos a operaciones, que era donde vivía la etiqueta.
         return EvidenceTag.objects.annotate(
-            document_count=Count("project_documents", distinct=True)
+            document_count=Count("documents", distinct=True)
         )
 
     def get_serializer_class(self):

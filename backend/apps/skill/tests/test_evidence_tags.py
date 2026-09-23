@@ -11,7 +11,8 @@ from django.test import TestCase
 
 from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument
-from apps.project.services.evidence_tags import apply_default_tags
+from apps.document.services import default_evidence_tags_for
+from apps.project.services.evidence_tags import inherit_tags, override_tags
 from apps.skill.models import (
     Skill,
     SkillStep,
@@ -60,8 +61,8 @@ class StepEvidenceScopeTestCase(TestCase):
         self.project.blueprint_document = self.ido
         self.project.save(update_fields=["blueprint_document"])
 
-        link = ProjectDocument.objects.get(project=self.project, document=self.ndc)
-        link.tags.set([self.tag_ndc])
+        # La etiqueta es del documento: la operación la hereda.
+        self.ndc.evidence_tags.set([self.tag_ndc])
 
         self.skill = Skill.objects.create(
             name="Workflow", skill_type=SkillType.COPILOT, owner=self.user
@@ -172,26 +173,54 @@ class StepEvidenceScopeTestCase(TestCase):
         self.assertEqual(self._slugs(scope), ["anexo", "ido"])
         self.assertEqual(scope.diagnostics["selection"], "runtime_override")
 
-    def test_tags_of_another_operation_do_not_leak(self):
-        """La etiqueta vive en el vínculo, no en el documento.
-
-        Si se resolviera por documento, un anexo etiquetado NDC en otra
-        operación entraría acá — que es exactamente la confusión que la
-        etiqueta-en-la-operación viene a evitar.
-        """
-        otra = Project.objects.create(owner=self.user, name="Operación Y")
-        link = ProjectDocument.objects.create(project=otra, document=self.anexo)
-        link.tags.set([self.tag_ndc])
-
-        step = SkillStep.objects.create(
+    def _ct_m3(self, position):
+        return SkillStep.objects.create(
             skill=self.skill,
             title="CT M3",
             instructions="x",
-            position=8,
+            position=position,
             evidence_selection=StepEvidenceSelection.TAGGED,
             evidence_tags=["ndc"],
         )
-        self.assertEqual(self._slugs(self._scope(step)), ["ido", "ndc-colombia"])
+
+    def test_a_document_tagged_later_counts_in_existing_operations(self):
+        """El bug que motivó mover la etiqueta al documento.
+
+        Antes la etiqueta se copiaba al vínculo una sola vez, al vincular: un
+        documento etiquetado después no contaba nunca en las operaciones que
+        ya lo tenían. Ahora se lee del documento en el momento.
+        """
+        self.anexo.evidence_tags.set([self.tag_ndc])
+        self.assertEqual(
+            self._slugs(self._scope(self._ct_m3(8))), ["anexo", "ido", "ndc-colombia"]
+        )
+
+    def test_operation_override_removes_an_inherited_tag(self):
+        link = ProjectDocument.objects.get(project=self.project, document=self.ndc)
+        override_tags(link, [])
+        scope = self._scope(self._ct_m3(8))
+        self.assertEqual(self._slugs(scope), ["ido"])
+        self.assertEqual(scope.diagnostics["empty_reason"], "sin_documentos_etiquetados")
+
+    def test_operation_override_adds_a_tag_the_document_lacks(self):
+        link = ProjectDocument.objects.get(project=self.project, document=self.anexo)
+        override_tags(link, [self.tag_ndc])
+        self.assertEqual(
+            self._slugs(self._scope(self._ct_m3(8))), ["anexo", "ido", "ndc-colombia"]
+        )
+
+    def test_going_back_to_inherit_restores_the_document_tags(self):
+        link = ProjectDocument.objects.get(project=self.project, document=self.ndc)
+        override_tags(link, [])
+        inherit_tags(link)
+        self.assertEqual(self._slugs(self._scope(self._ct_m3(8))), ["ido", "ndc-colombia"])
+
+    def test_override_in_another_operation_does_not_leak(self):
+        """Lo que decide una operación queda en esa operación."""
+        otra = Project.objects.create(owner=self.user, name="Operación Y")
+        link = ProjectDocument.objects.create(project=otra, document=self.anexo)
+        override_tags(link, [self.tag_ndc])
+        self.assertEqual(self._slugs(self._scope(self._ct_m3(8))), ["ido", "ndc-colombia"])
 
     def test_tagged_without_operation_reads_everything(self):
         """Un workflow etiquetado corriendo sobre un repositorio.
@@ -216,11 +245,12 @@ class StepEvidenceScopeTestCase(TestCase):
 
 
 class DefaultTagsTestCase(TestCase):
+    """Etiquetas que sugieren los temas de un documento cargado sin etiqueta."""
+
     def setUp(self):
         self.user = User.objects.create_user(
             email="lib@example.com", password="secret123", username="lib"
         )
-        self.project = Project.objects.create(owner=self.user, name="Operación")
         # Las dos formas, como en la semilla real (migración 0016): "ndcs" es
         # la carpeta pineada de la biblioteca CAF, "ndc" el singular que
         # cualquiera puede tipear a mano.
@@ -228,63 +258,49 @@ class DefaultTagsTestCase(TestCase):
             slug="ndc", defaults={"name": "NDC", "source_topics": ["ndcs", "ndc"]}
         )
 
+    def _proposed(self, topics, slug="doc"):
+        doc = Document.objects.create(owner=self.user, name=slug, slug=slug, topics=topics)
+        return [t.slug for t in default_evidence_tags_for(doc)]
+
     def test_topic_with_long_label_matches_by_acronym(self):
         """La biblioteca guarda «NDCS: Contribuciones…»; la etiqueta, «ndcs»."""
-        doc = Document.objects.create(
-            owner=self.user,
-            name="NDC Perú",
-            slug="ndc-peru",
-            topics=["NDCS: Contribuciones Determinadas a Nivel Nacional"],
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
         self.assertEqual(
-            list(link.tags.values_list("slug", flat=True)), ["ndc"]
+            self._proposed(["NDCS: Contribuciones Determinadas a Nivel Nacional"]), ["ndc"]
         )
 
     def test_document_without_topics_gets_none(self):
-        doc = Document.objects.create(
-            owner=self.user, name="Anexo", slug="anexo-2", topics=[]
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
-        self.assertEqual(link.tags.count(), 0)
-
-    def test_existing_tags_are_not_overwritten(self):
-        """Una decisión humana no se pisa al re-vincular."""
-        otra, _ = EvidenceTag.objects.update_or_create(
-            slug="nap", defaults={"name": "NAP", "source_topics": ["naps"]}
-        )
-        doc = Document.objects.create(
-            owner=self.user, name="NDC", slug="ndc-2", topics=["ndcs"]
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        link.tags.set([otra])
-        apply_default_tags(link)
-        self.assertEqual(list(link.tags.values_list("slug", flat=True)), ["nap"])
+        self.assertEqual(self._proposed([]), [])
 
     def test_topic_without_colon_still_matches_by_word(self):
-        """
-        El formato "ndcs: descripción" es el de las carpetas pineadas de la
-        biblioteca CAF; nada obliga a que un bibliotecario lo respete. Un topic
-        como "ndc colombia 2023" tiene que matchear igual.
-        """
-        doc = Document.objects.create(
-            owner=self.user, name="NDC suelto", slug="ndc-suelto",
-            topics=["ndc colombia 2023"],
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
-        self.assertEqual(link.tags.first().slug, "ndc")
+        self.assertEqual(self._proposed(["ndc colombia 2023"]), ["ndc"])
 
     def test_hyphenated_topic_matches(self):
-        doc = Document.objects.create(
-            owner=self.user, name="NDC con guion", slug="ndc-guion",
-            topics=["ndc-actualizada-2023"],
+        self.assertEqual(self._proposed(["ndc-actualizada-2023"]), ["ndc"])
+
+    def test_accents_do_not_matter(self):
+        """Los source_topics sembrados están sin tilde; los temas, con.
+
+        Antes se comparaban tal cual y "metodología caf" no proponía nunca la
+        etiqueta de metodología — los pasos M2, M4 y M5 del IET corrían sin
+        ella.
+        """
+        EvidenceTag.objects.update_or_create(
+            slug="metodologia-caf",
+            defaults={"name": "Metodología", "source_topics": ["metodologia caf", "guias sectoriales"]},
         )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
-        self.assertEqual(link.tags.first().slug, "ndc")
+        self.assertEqual(self._proposed(["Metodología CAF"], "m1"), ["metodologia-caf"])
+        self.assertEqual(
+            self._proposed(["guías sectoriales: transporte"], "m2"), ["metodologia-caf"]
+        )
+
+    def test_multiword_source_topic_matches_inside_a_longer_topic(self):
+        EvidenceTag.objects.update_or_create(
+            slug="inventario-gei",
+            defaults={"name": "Inventario GEI", "source_topics": ["comunicacion nacional"]},
+        )
+        self.assertEqual(
+            self._proposed(["Tercera Comunicación Nacional de Chile"]), ["inventario-gei"]
+        )
 
     def test_short_fragment_does_not_false_positive(self):
         """
@@ -296,13 +312,7 @@ class DefaultTagsTestCase(TestCase):
             slug="comunicacion-adaptacion",
             defaults={"name": "AC", "source_topics": ["ac"]},
         )
-        doc = Document.objects.create(
-            owner=self.user, name="Impacto ambiental", slug="impacto-ambiental",
-            topics=["impacto ambiental y social"],
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
-        self.assertEqual(link.tags.count(), 0)
+        self.assertEqual(self._proposed(["impacto ambiental y social"]), [])
 
     def test_multiword_tag_source_topic_is_not_fragmented(self):
         """
@@ -315,13 +325,7 @@ class DefaultTagsTestCase(TestCase):
             slug="inventario-gei",
             defaults={"name": "Inventario GEI", "source_topics": ["comunicacion nacional"]},
         )
-        doc = Document.objects.create(
-            owner=self.user, name="Plan nacional de riego", slug="plan-nacional-riego",
-            topics=["plan nacional de riego"],
-        )
-        link = ProjectDocument.objects.create(project=self.project, document=doc)
-        apply_default_tags(link)
-        self.assertEqual(link.tags.count(), 0)
+        self.assertEqual(self._proposed(["plan nacional de riego"]), [])
 
 
 class IetEvidenceMappingTestCase(TestCase):
