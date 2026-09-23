@@ -105,7 +105,7 @@ class ResumeExecutionAPITests(APITestCase):
             "skill-execution-resume", kwargs={"pk": (execution or self.execution).pk}
         )
 
-    @patch("apps.skill.api.views.run_skill_task")
+    @patch("apps.skill.dispatch.run_skill_task")
     def test_resume_dispatches_the_task_and_returns_202(self, mock_task):
         response = self.client.post(self._url(), {}, format="json")
 

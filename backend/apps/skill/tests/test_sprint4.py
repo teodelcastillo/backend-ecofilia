@@ -451,7 +451,7 @@ class HumanInTheLoopAPITestCase(TestCase):
             current_step_position=1,
         )
 
-    @patch("apps.skill.api.views.run_skill_task")
+    @patch("apps.skill.dispatch.run_skill_task")
     def test_approve_returns_202(self, mock_task):
         mock_task.delay = mock_task
         execution = self._awaiting_execution()
@@ -460,7 +460,7 @@ class HumanInTheLoopAPITestCase(TestCase):
         execution.refresh_from_db()
         self.assertEqual(execution.status, ExecutionStatus.PENDING)
 
-    @patch("apps.skill.api.views.run_skill_task")
+    @patch("apps.skill.dispatch.run_skill_task")
     def test_approve_with_override(self, mock_task):
         mock_task.delay = mock_task
         execution = self._awaiting_execution()
@@ -482,7 +482,7 @@ class HumanInTheLoopAPITestCase(TestCase):
         response = self.client.post(f"/api/skills/executions/{execution.id}/approve/", {})
         self.assertEqual(response.status_code, 400)
 
-    @patch("apps.skill.api.views.run_skill_task")
+    @patch("apps.skill.dispatch.run_skill_task")
     def test_regenerate_step_returns_202(self, mock_task):
         mock_task.delay = mock_task
         execution = self._awaiting_execution()

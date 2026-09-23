@@ -80,3 +80,60 @@ def reap_stalled_executions(*, threshold_minutes: int | None = None) -> list[int
         )
         logger.warning("Ejecuciones marcadas stalled: %s", ids)
     return ids
+
+
+# Una corrida en `pending` más de esto no está en la fila: su mensaje se perdió
+# (encolado fallido, cola purgada, worker que lo tomó y murió antes de
+# reclamarla). Con el worker interactivo libre, una corrida arranca en segundos.
+PENDING_THRESHOLD_MINUTES = int(os.environ.get("SKILL_STUCK_PENDING_MINUTES", "10"))
+MAX_AUTO_REQUEUES = int(os.environ.get("SKILL_MAX_AUTO_REQUEUES", "2"))
+
+
+def requeue_pending_executions(*, threshold_minutes: int | None = None) -> dict[str, list[int]]:
+    """Vuelve a despachar las corridas `pending` sin señales de vida.
+
+    La espera se mide desde el último despacho (``metadata["dispatched_at"]``,
+    ver ``apps.skill.dispatch``), o desde la creación en las corridas
+    anteriores a ese sello. Reencolar es seguro porque el runner reclama la
+    corrida con un UPDATE atómico. Tras ``MAX_AUTO_REQUEUES`` intentos sin que
+    arranque, pasa a `failed`: ya no es un problema de cola.
+    """
+    from datetime import datetime
+
+    from apps.skill.dispatch import dispatch_execution
+
+    minutes = threshold_minutes if threshold_minutes is not None else PENDING_THRESHOLD_MINUTES
+    cutoff = timezone.now() - timedelta(minutes=minutes)
+    requeued: list[int] = []
+    failed: list[int] = []
+
+    for execution in SkillExecution.objects.filter(status=ExecutionStatus.PENDING).only(
+        "id", "metadata", "created_at"
+    ):
+        metadata = dict(execution.metadata or {})
+        try:
+            since = datetime.fromisoformat(metadata["dispatched_at"])
+        except (KeyError, TypeError, ValueError):
+            since = execution.created_at
+        if since >= cutoff:
+            continue
+        attempts = int(metadata.get("auto_requeues") or 0)
+        if attempts >= MAX_AUTO_REQUEUES:
+            SkillExecution.objects.filter(pk=execution.pk, status=ExecutionStatus.PENDING).update(
+                status=ExecutionStatus.FAILED,
+                finished_at=timezone.now(),
+                error_message=(
+                    f"La corrida no arrancó tras {attempts + 1} despachos. Revisar "
+                    "que el worker interactivo esté corriendo y volver a lanzarla."
+                ),
+            )
+            failed.append(execution.pk)
+            continue
+        metadata["auto_requeues"] = attempts + 1
+        SkillExecution.objects.filter(pk=execution.pk).update(metadata=metadata)
+        dispatch_execution(execution.pk)
+        requeued.append(execution.pk)
+
+    if requeued or failed:
+        logger.warning("Corridas pending reencoladas: %s; fallidas: %s", requeued, failed)
+    return {"requeued": requeued, "failed": failed}

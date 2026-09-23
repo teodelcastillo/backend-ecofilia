@@ -129,7 +129,8 @@ jobs:
             apps.document.tests.test_document_create \
             apps.document.tests.test_document_bulk_create \
             apps.project.tests.test_ai_fill \
-            apps.document.tests.test_region_detector
+            apps.document.tests.test_region_detector \
+            apps.skill.tests.test_dispatch_and_preflight
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

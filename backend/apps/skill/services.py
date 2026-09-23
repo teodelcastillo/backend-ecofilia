@@ -2169,6 +2169,16 @@ class SkillRunner:
         ):
             return execution
 
+        # Reclamo atómico: el reaper puede reencolar una corrida que quedó en
+        # `pending` (ver `requeue_pending_executions`), y si el mensaje viejo
+        # también aparece, dos workers la tomarían a la vez. Sólo sigue quien
+        # logra moverla del estado en que la leyó.
+        claimed = SkillExecution.objects.filter(
+            pk=execution.pk, status=execution.status
+        ).update(status=ExecutionStatus.RUNNING, last_progress_at=timezone.now())
+        if not claimed:
+            return execution
+
         documents = resolve_documents(execution)
         if not documents.exists():
             execution.status = ExecutionStatus.FAILED

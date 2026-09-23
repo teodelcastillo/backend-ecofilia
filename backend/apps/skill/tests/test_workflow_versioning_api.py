@@ -47,7 +47,11 @@ class VersioningAPITestCase(APITestCase):
         self.client.force_authenticate(self.user)
 
         self.project = Project.objects.create(owner=self.user, name="Operación 34")
-        self.doc = Document.objects.create(owner=self.user, name="IDO", slug="ido-34")
+        # Procesado: una corrida sobre una operación con documentos todavía en
+        # proceso se rechaza antes de crearse (ver apps.skill.preflight).
+        self.doc = Document.objects.create(
+            owner=self.user, name="IDO", slug="ido-34", chunking_status="done"
+        )
         ProjectDocument.objects.create(
             project=self.project, document=self.doc, added_by=self.user
         )

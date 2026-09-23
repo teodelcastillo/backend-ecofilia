@@ -22,9 +22,16 @@ if shared_task:
 
     @shared_task(name="skill.reap_stalled_executions")
     def reap_stalled_executions_task():
-        from apps.skill.reliability import reap_stalled_executions
+        from apps.skill.reliability import (
+            reap_stalled_executions,
+            requeue_pending_executions,
+        )
 
-        return reap_stalled_executions()
+        # Mismo latido de beat para los dos extremos: la corrida que murió
+        # corriendo y la que nunca llegó a arrancar.
+        stalled = reap_stalled_executions()
+        pending = requeue_pending_executions()
+        return {"stalled": stalled, **pending}
 
 else:
 

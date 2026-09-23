@@ -50,8 +50,20 @@ from apps.skill.report_edits import (
 from apps.skill.context_preview import build_preview
 from apps.skill.table_schema import schema_has_columns
 from apps.skill.services import approve_step, regenerate_step, rerun_execution, resume_execution
+from apps.skill.dispatch import dispatch_execution
 from apps.skill.tasks import run_skill_task
 
+
+
+def _accepted_or_unavailable(execution: SkillExecution) -> Response:
+    """202 con la corrida encolada, o 503 si el encolado falló (queda FAILED)."""
+    if dispatch_execution(execution.id):
+        return Response(SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED)
+    execution.refresh_from_db()
+    return Response(
+        SkillExecutionSerializer(execution).data,
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 class SkillViewSet(viewsets.ModelViewSet):
     """
@@ -185,6 +197,17 @@ class SkillViewSet(viewsets.ModelViewSet):
         # resolve_documents() can pick it up at execution time.
         requested_doc_slugs = [s for s in (data.get("document_slugs") or []) if s]
 
+        preflight = None
+        if data.get("project") is not None:
+            from apps.skill.preflight import check_operation_run
+
+            preflight = check_operation_run(skill, data["project"], requested_doc_slugs)
+            if preflight.blocking:
+                return Response(
+                    {"detail": " ".join(preflight.blocking), "preflight": preflight.blocking},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         execution = SkillExecution.objects.create(
             skill=skill,
             owner=request.user,
@@ -204,6 +227,13 @@ class SkillViewSet(viewsets.ModelViewSet):
                 "document_slugs_filter": requested_doc_slugs,
                 "step_document_overrides": data.get("step_document_overrides") or {},
                 "review_each_step": bool(data.get("review_each_step")),
+                # Lo que el chequeo previo advirtió y se lanzó igual: explica
+                # después por qué un paso salió sin evidencia o sin contexto.
+                **(
+                    {"preflight_warnings": preflight.warnings}
+                    if preflight and preflight.warnings
+                    else {}
+                ),
                 # Claves que no corresponden a ningún parámetro declarado. No
                 # bloquean —romperían a cualquier llamador que hoy manda campos
                 # de más— pero quedan registradas: casi siempre son un typo, y
@@ -227,11 +257,7 @@ class SkillViewSet(viewsets.ModelViewSet):
             )
         else:
             # Dispatch async for multi-step copilot
-            run_skill_task.delay(execution.id)
-            return Response(
-                SkillExecutionSerializer(execution).data,
-                status=status.HTTP_202_ACCEPTED,
-            )
+            return _accepted_or_unavailable(execution)
 
     @action(detail=True, methods=["get"], url_path="context-preview")
     def context_preview(self, request, slug=None):
@@ -414,8 +440,7 @@ class SkillExecutionViewSet(
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        run_skill_task.delay(execution.id)
-        return Response(SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED)
+        return _accepted_or_unavailable(execution)
 
     @action(detail=True, methods=["post"], url_path="regenerate-step")
     def regenerate_step_action(self, request, pk=None):
@@ -432,8 +457,7 @@ class SkillExecutionViewSet(
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
-        run_skill_task.delay(execution.id)
-        return Response(SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED)
+        return _accepted_or_unavailable(execution)
 
     # ------------------------------------------------------------------
     # Repetir y comparar
@@ -472,10 +496,7 @@ class SkillExecutionViewSet(
             return Response(
                 SkillExecutionSerializer(new_execution).data, status=status.HTTP_200_OK
             )
-        run_skill_task.delay(new_execution.id)
-        return Response(
-            SkillExecutionSerializer(new_execution).data, status=status.HTTP_202_ACCEPTED
-        )
+        return _accepted_or_unavailable(new_execution)
 
     @action(detail=True, methods=["post"], url_path="resume")
     def resume(self, request, pk=None):
@@ -506,10 +527,7 @@ class SkillExecutionViewSet(
             return Response(
                 SkillExecutionSerializer(execution).data, status=status.HTTP_200_OK
             )
-        run_skill_task.delay(execution.id)
-        return Response(
-            SkillExecutionSerializer(execution).data, status=status.HTTP_202_ACCEPTED
-        )
+        return _accepted_or_unavailable(execution)
 
     @action(detail=True, methods=["get"], url_path="compare")
     def compare(self, request, pk=None):
