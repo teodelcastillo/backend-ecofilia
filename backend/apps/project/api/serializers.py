@@ -8,6 +8,7 @@ from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.project.services.country_documents import sync_country_instrument_documents
 from apps.project.services.evidence_tags import effective_tag_slugs
+from apps.project.services.alignment_history import record_if_changed
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -299,9 +300,13 @@ class ProjectWriteSerializer(ProjectSerializer):
             else _default_skills_for(project.owner)
         )
         sync_country_instrument_documents(project)
+        request = self.context.get("request")
+        record_if_changed(project, {}, getattr(request, "user", None))
         return project
 
     def update(self, instance, validated_data):
+        # Para el historial de alineación: qué había antes de este guardado.
+        previous_notes = dict(instance.context_notes or {}) if isinstance(instance.context_notes, dict) else {}
         document_slugs = validated_data.pop("document_slugs", None)
         should_sync_skills = "enabled_skill_slugs" in validated_data
         validated_data.pop("enabled_skill_slugs", None)
@@ -334,6 +339,8 @@ class ProjectWriteSerializer(ProjectSerializer):
         if should_sync_skills:
             instance.enabled_skills.set(self.context.get("validated_enabled_skills", []))
         sync_country_instrument_documents(instance)
+        request = self.context.get("request")
+        record_if_changed(instance, previous_notes, getattr(request, "user", None))
         return instance
 
     def _sync_documents(self, project: Project, slugs):
@@ -728,3 +735,12 @@ class AiFillRequestSerializer(serializers.Serializer):
         ),
     )
 
+
+
+class ProjectAlignmentSnapshotSerializer(serializers.Serializer):
+    project_slug = serializers.CharField(source="project.slug")
+    estado = serializers.CharField()
+    alineacion = serializers.JSONField()
+    monto = serializers.CharField()
+    captured_at = serializers.DateTimeField()
+    source = serializers.CharField()

@@ -884,6 +884,29 @@ class ProjectViewSet(viewsets.ModelViewSet):
     # AI fill
     # ------------------------------------------------------------------
 
+    @action(detail=False, methods=["get"], url_path="alignment-history")
+    def alignment_history(self, request):
+        """
+        Fotos de la determinación de alineación de las operaciones visibles.
+
+        GET /projects/alignment-history/
+
+        Una por cada vez que cambió la determinación o la etapa de una
+        operación (ver ``ProjectAlignmentSnapshot``), ordenadas por fecha. Es
+        la base de la evolución mensual y de la comparación IDO → DEC del
+        tablero.
+        """
+        from apps.project.api.serializers import ProjectAlignmentSnapshotSerializer
+        from apps.project.models import ProjectAlignmentSnapshot
+
+        visibles = Project.objects.for_user(request.user).values("id")
+        snapshots = (
+            ProjectAlignmentSnapshot.objects.filter(project_id__in=visibles)
+            .select_related("project")
+            .order_by("captured_at", "id")
+        )
+        return Response(ProjectAlignmentSnapshotSerializer(snapshots, many=True).data)
+
     @action(detail=False, methods=["get"], url_path="ai-fill-fields")
     def ai_fill_fields(self, request):
         """

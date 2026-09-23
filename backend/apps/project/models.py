@@ -167,6 +167,45 @@ class ProjectDocument(models.Model):
         return f"{self.project_id}-{self.document_id}"
 
 
+class ProjectAlignmentSnapshot(models.Model):
+    """
+    Una foto de la determinación de alineación con París de una operación.
+
+    La determinación vive en ``context_notes["alineacion_paris"]`` y cada
+    edición la sobrescribe: sin estas fotos no hay forma de saber cómo estaba
+    una operación en IDO y cómo quedó en DEC, ni cómo avanzó la cartera mes a
+    mes. Se guarda una cada vez que cambia la determinación o la etapa, con la
+    etapa en la que estaba la operación en ese momento.
+    """
+
+    class Source(models.TextChoices):
+        EDIT = "edit", _("Edición")
+        BACKFILL = "backfill", _("Estado al activar el historial")
+
+    project = models.ForeignKey(
+        Project, related_name="alignment_snapshots", on_delete=models.CASCADE
+    )
+    estado = models.CharField(max_length=40, blank=True)
+    alineacion = models.JSONField(default=dict, blank=True)
+    monto = models.CharField(max_length=80, blank=True)
+    captured_at = models.DateTimeField(db_index=True)
+    captured_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    source = models.CharField(max_length=20, choices=Source.choices, default=Source.EDIT)
+
+    class Meta:
+        ordering = ("captured_at", "id")
+        indexes = [models.Index(fields=["project", "captured_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.project_id} @ {self.captured_at:%Y-%m-%d} ({self.estado or 'sin etapa'})"
+
+
 class ProjectShareRole(models.TextChoices):
     VIEWER = "viewer", _("Viewer")
     EDITOR = "editor", _("Editor")
