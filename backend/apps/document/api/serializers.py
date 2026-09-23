@@ -309,6 +309,19 @@ class DocumentBulkPublicSerializer(serializers.Serializer):
     is_public = serializers.BooleanField()
 
 
+class DocumentBulkEvidenceTagsSerializer(serializers.Serializer):
+    """Superadmins: agregar y/o quitar etiquetas de evidencia a muchos documentos."""
+
+    slugs = serializers.ListField(child=serializers.SlugField(), min_length=1, max_length=500)
+    add = EvidenceTagSlugsField(required=False)
+    remove = EvidenceTagSlugsField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get("add") and not attrs.get("remove"):
+            raise serializers.ValidationError("Indicá etiquetas para agregar o para quitar.")
+        return attrs
+
+
 class DocumentBulkCreateSerializer(serializers.Serializer):
     files = serializers.ListField(
         child=serializers.FileField(required=True, allow_null=False, allow_empty_file=False),

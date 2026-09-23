@@ -38,6 +38,7 @@ from apps.document.api.serializers import (
     DocumentCreateSerializer,
     DocumentBulkCreateSerializer,
     DocumentBulkPublicSerializer,
+    DocumentBulkEvidenceTagsSerializer,
     DocumentDetailSerializer,
     DocumentUpdateSerializer,
     DocumentShareRoleUpdateSerializer,
@@ -315,6 +316,56 @@ class DocumentBulkPublicAPIView(APIView):
                 "matched": matched,
                 "requested": len(slugs),
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class DocumentBulkEvidenceTagsAPIView(APIView):
+    """
+    Superadmins: agrega o quita etiquetas de evidencia a muchos documentos.
+
+    ``add`` y ``remove`` y no un reemplazo: al seleccionar documentos que ya
+    tienen etiquetas distintas, "marcalos como NDC" no debería borrarles las
+    otras. Aplica a cualquier dueño; los slugs de documento desconocidos se
+    ignoran y se informan en ``matched``.
+
+    Queda para superadmins porque cambia qué lee cada paso de los agentes en
+    todas las operaciones que usan esos documentos.
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        if not request.user.is_superuser:
+            raise PermissionDenied("Sólo superadmins pueden etiquetar documentos en lote.")
+
+        serializer = DocumentBulkEvidenceTagsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        slugs = list(dict.fromkeys(data["slugs"]))
+        add = data.get("add") or []
+        remove = data.get("remove") or []
+
+        documents = list(Document.objects.filter(slug__in=slugs))
+        Through = Document.evidence_tags.through
+        with transaction.atomic():
+            if remove:
+                Through.objects.filter(
+                    document_id__in=[d.id for d in documents],
+                    evidencetag_id__in=[t.id for t in remove],
+                ).delete()
+            if add:
+                Through.objects.bulk_create(
+                    [
+                        Through(document_id=d.id, evidencetag_id=t.id)
+                        for d in documents
+                        for t in add
+                    ],
+                    ignore_conflicts=True,
+                )
+
+        return Response(
+            {"updated": len(documents), "matched": len(documents), "requested": len(slugs)},
             status=status.HTTP_200_OK,
         )
 
@@ -653,6 +704,14 @@ class DocumentListAPIView(ListAPIView):
                     queryset = queryset.filter(topics__len=0)
                 else:
                     queryset = queryset.filter(topics__contains=[topic])
+            # Por tipo de evidencia. `__none__` son los que todavía no tienen
+            # ninguno: es lo que hay que revisar para que las operaciones
+            # encuentren su evidencia.
+            evidence_tag = request.query_params.get("evidence_tag")
+            if evidence_tag == "__none__":
+                queryset = queryset.filter(evidence_tags__isnull=True)
+            elif evidence_tag:
+                queryset = queryset.filter(evidence_tags__slug=evidence_tag).distinct()
             queryset = queryset.order_by(*_document_list_sort_order(request))
             paginator = PublicDocumentListPagination()
             page = paginator.paginate_queryset(queryset, request, view=self)
