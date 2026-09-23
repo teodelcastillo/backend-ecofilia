@@ -340,6 +340,33 @@ def ai_fill_project(project, field_keys: list[str]) -> dict[str, Any]:
     return extract_fields(text, field_keys)
 
 
+def save_extracted(project_id: int, results: dict[str, Any], *, only_missing: bool) -> dict[str, str]:
+    """Escribe lo extraído en ``context_notes`` sobre la versión actual.
+
+    Relee la operación bajo bloqueo: armar el ``context_notes`` nuevo a partir
+    de una copia vieja —lo que hacía el frontend— pisaba lo que otra persona
+    hubiera guardado entre medio.
+    """
+    from django.db import transaction
+
+    from apps.project.models import Project
+
+    with transaction.atomic():
+        locked = Project.objects.select_for_update().get(pk=project_id)
+        current = locked.context_notes if isinstance(locked.context_notes, dict) else {}
+        filled = {
+            k: v.strip()
+            for k, v in results.items()
+            if isinstance(v, str)
+            and v.strip()
+            and not (only_missing and str(current.get(k) or "").strip())
+        }
+        if filled:
+            locked.context_notes = {**current, **filled}
+            locked.save(update_fields=["context_notes", "updated_at"])
+    return filled
+
+
 def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
     """Completa en la operación el objetivo y los componentes que falten.
 
@@ -354,8 +381,6 @@ def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
     guardar: lo que una persona haya escrito mientras el modelo trabajaba no se
     pisa.
     """
-    from django.db import transaction
-
     from apps.project.models import Project
 
     project = Project.objects.select_related("blueprint_document").get(pk=project_id)
@@ -365,17 +390,6 @@ def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
         return {}
 
     results = ai_fill_project(project, missing)
-
-    with transaction.atomic():
-        locked = Project.objects.select_for_update().get(pk=project_id)
-        current = locked.context_notes if isinstance(locked.context_notes, dict) else {}
-        filled = {
-            k: v
-            for k, v in results.items()
-            if isinstance(v, str) and v.strip() and not str(current.get(k) or "").strip()
-        }
-        if filled:
-            locked.context_notes = {**current, **filled}
-            locked.save(update_fields=["context_notes", "updated_at"])
+    filled = save_extracted(project_id, results, only_missing=True)
     logger.info("ai_fill: operación %s completada con %s", project_id, sorted(filled))
     return filled

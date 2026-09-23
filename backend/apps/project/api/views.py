@@ -922,10 +922,15 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         field_keys = serializer.validated_data["fields"]
 
-        from apps.project.services.ai_fill import ai_fill_project
+        from apps.project.services.ai_fill import ai_fill_project, save_extracted
 
         try:
             results = ai_fill_project(project, field_keys)
+            if serializer.validated_data.get("save"):
+                # Quien aprieta "Generar" pide ese campo: se escribe aunque
+                # otro lo haya completado en el medio, pero sobre la versión
+                # actual del resto de la operación.
+                save_extracted(project.id, results, only_missing=False)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:

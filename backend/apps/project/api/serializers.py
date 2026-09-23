@@ -719,4 +719,12 @@ class AiFillRequestSerializer(serializers.Serializer):
             "Consultá GET /projects/ai-fill-fields/ para ver las claves disponibles."
         ),
     )
+    save = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text=(
+            "Guardar lo extraído en `context_notes` en el mismo pedido, sobre "
+            "la versión actual de la operación."
+        ),
+    )
 

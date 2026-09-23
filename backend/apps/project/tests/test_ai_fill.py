@@ -137,3 +137,40 @@ class FillMissingFromBlueprintTestCase(TestCase):
         with patch("apps.project.tasks.fill_from_blueprint_task.delay") as delay:
             dispatch_fill_for_blueprint(self.ido.id)
         delay.assert_called_once_with(self.project.id)
+
+
+class AiFillSaveApiTestCase(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+
+        self.user = User.objects.create_user(email="s@example.com", password="x", username="s")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        ido = Document.objects.create(
+            owner=self.user, name="IDO", slug="ido-s", extracted_text="t", chunking_status="done"
+        )
+        self.project = Project.objects.create(
+            owner=self.user, name="Op", blueprint_document=ido, context_notes={"pais": "Chile"}
+        )
+
+    def test_save_merges_into_the_current_notes(self):
+        """El Resumen mezclaba con una copia vieja y pisaba cambios ajenos."""
+        from django.urls import reverse
+
+        def cambia_mientras(*_a, **_k):
+            Project.objects.filter(pk=self.project.pk).update(
+                context_notes={"pais": "Chile", "monto": "50"}
+            )
+            return {"objetivo": "Financiar"}
+
+        with patch.object(ai_fill, "extract_fields", side_effect=cambia_mientras):
+            response = self.client.post(
+                reverse("project-ai-fill", kwargs={"slug": self.project.slug}),
+                {"fields": ["objetivo"], "save": True},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.project.refresh_from_db()
+        self.assertEqual(
+            self.project.context_notes, {"pais": "Chile", "monto": "50", "objetivo": "Financiar"}
+        )
