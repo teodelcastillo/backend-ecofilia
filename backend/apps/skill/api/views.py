@@ -8,6 +8,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.skill.access import (
+    RUN_FORBIDDEN_MESSAGE,
+    user_can_run_assistants,
     executions_queryset_for_user,
     user_can_edit_execution_report,
     user_can_mutate_execution,
@@ -53,6 +55,12 @@ from apps.skill.services import approve_step, regenerate_step, rerun_execution, 
 from apps.skill.dispatch import dispatch_execution
 from apps.skill.tasks import run_skill_task
 
+
+
+def _ensure_can_run(user) -> None:
+    """Corta con 403 si el usuario no puede ejecutar asistentes."""
+    if not user_can_run_assistants(user):
+        raise PermissionDenied(RUN_FORBIDDEN_MESSAGE)
 
 
 def _accepted_or_unavailable(execution: SkillExecution) -> Response:
@@ -144,6 +152,7 @@ class SkillViewSet(viewsets.ModelViewSet):
         QUICK skills run synchronously and return the full output immediately.
         COPILOT skills are dispatched asynchronously and return the execution ID.
         """
+        _ensure_can_run(request.user)
         skill = self.get_object()
 
         serializer = RunSkillSerializer(data=request.data, context={"request": request})
@@ -426,6 +435,7 @@ class SkillExecutionViewSet(
         POST /api/skills/executions/{id}/approve/
         Body: { "override_content": "..." }   (optional)
         """
+        _ensure_can_run(request.user)
         execution = self.get_object()
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para modificar esta ejecución.")
@@ -449,6 +459,7 @@ class SkillExecutionViewSet(
 
         POST /api/skills/executions/{id}/regenerate-step/
         """
+        _ensure_can_run(request.user)
         execution = self.get_object()
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para modificar esta ejecución.")
@@ -476,6 +487,7 @@ class SkillExecutionViewSet(
         corrida original — si alguien la editó, la comparación lo dice en vez de
         que la repetición finja ser idéntica.
         """
+        _ensure_can_run(request.user)
         execution = self.get_object()
         # Repetir cuesta una corrida entera de modelo: se pide el mismo permiso
         # que para modificarla, no el de sólo verla.
@@ -512,6 +524,7 @@ class SkillExecutionViewSet(
         `apps.skill.reliability`), donde antes la única salida era un shell de
         producción.
         """
+        _ensure_can_run(request.user)
         execution = self.get_object()
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para reanudar esta ejecución.")

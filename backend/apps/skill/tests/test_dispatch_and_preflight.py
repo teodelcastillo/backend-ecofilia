@@ -31,7 +31,7 @@ User = get_user_model()
 
 class _Base(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="e@example.com", password="x", username="e")
+        self.user = User.objects.create_user(email="e@example.com", password="x", username="e", role="admin")
         self.project = Project.objects.create(owner=self.user, name="Operación")
         self.skill = Skill.objects.create(
             owner=self.user, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
@@ -110,7 +110,7 @@ class AtomicClaimTestCase(_Base):
 
 class PreflightApiTestCase(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="p@example.com", password="x", username="p")
+        self.user = User.objects.create_user(email="p@example.com", password="x", username="p", role="admin")
         self.client.force_authenticate(self.user)
         self.skill = Skill.objects.create(
             owner=self.user, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]

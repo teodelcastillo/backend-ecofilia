@@ -49,3 +49,26 @@ def user_can_edit_execution_report(user, execution: SkillExecution) -> bool:
     if user_can_mutate_execution(user, execution):
         return True
     return bool(execution.project_id and execution.project.can_edit(user))
+
+
+def user_can_run_assistants(user) -> bool:
+    """
+    Quién puede ejecutar asistentes (skills y workflows): lanzarlos, reanudarlos,
+    repetirlos o avanzar un paso.
+
+    Sólo superadmins —superusuarios de Ecofilia y administradores—, la misma
+    regla que usa el frontend (``isCafSuperAdmin``). El resto ve las
+    operaciones, sus informes y el chat, pero no dispara corridas: cada una
+    cuesta varios dólares y cambia el informe de la operación.
+    """
+    from apps.user.models import UserRole
+
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and (user.is_superuser or getattr(user, "role", None) == UserRole.ADMIN)
+    )
+
+
+RUN_FORBIDDEN_MESSAGE = (
+    "Ejecutar asistentes está habilitado sólo para administradores de Ecofilia."
+)

@@ -132,7 +132,8 @@ jobs:
             apps.document.tests.test_region_detector \
             apps.skill.tests.test_dispatch_and_preflight \
             apps.document.tests.test_bulk_evidence_tags \
-            apps.project.tests.test_alignment_history
+            apps.project.tests.test_alignment_history \
+            apps.skill.tests.test_run_permission
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

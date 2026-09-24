@@ -45,8 +45,7 @@ class StepApprovalGateTestCase(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email="gate@example.com", password="secret123", username="gate"
-        )
+            email="gate@example.com", password="secret123", username="gate", role="admin")
         self.project = Project.objects.create(owner=self.user, name="GateProject")
         self.doc = Document.objects.create(owner=self.user, name="Doc", slug="doc-gate")
         ProjectDocument.objects.create(project=self.project, document=self.doc, added_by=self.user)
@@ -130,8 +129,7 @@ class ReviewEachStepTestCase(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email="review@example.com", password="secret123", username="review"
-        )
+            email="review@example.com", password="secret123", username="review", role="admin")
         self.project = Project.objects.create(owner=self.user, name="ReviewProject")
         self.doc = Document.objects.create(owner=self.user, name="Doc", slug="doc-review")
         ProjectDocument.objects.create(project=self.project, document=self.doc, added_by=self.user)
@@ -222,8 +220,7 @@ class ApproveStepServiceTestCase(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email="approve@example.com", password="secret123", username="approve"
-        )
+            email="approve@example.com", password="secret123", username="approve", role="admin")
         self.project = Project.objects.create(owner=self.user, name="ApproveProject")
         self.doc = Document.objects.create(owner=self.user, name="Doc", slug="doc-approve")
         ProjectDocument.objects.create(project=self.project, document=self.doc, added_by=self.user)
@@ -332,8 +329,7 @@ class RegenerateStepServiceTestCase(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email="regen@example.com", password="secret123", username="regen"
-        )
+            email="regen@example.com", password="secret123", username="regen", role="admin")
         self.project = Project.objects.create(owner=self.user, name="RegenProject")
         self.doc = Document.objects.create(owner=self.user, name="Doc", slug="doc-regen")
         ProjectDocument.objects.create(project=self.project, document=self.doc, added_by=self.user)
@@ -415,8 +411,7 @@ class HumanInTheLoopAPITestCase(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            email="api@example.com", password="secret123", username="apiuser"
-        )
+            email="api@example.com", password="secret123", username="apiuser", role="admin")
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
 
@@ -504,8 +499,7 @@ class HumanInTheLoopAPITestCase(TestCase):
 
     def test_other_user_cannot_approve(self):
         other_user = User.objects.create_user(
-            email="other@example.com", password="secret", username="other"
-        )
+            email="other@example.com", password="secret", username="other", role="admin")
         other_client = APIClient()
         other_client.force_authenticate(user=other_user)
         execution = self._awaiting_execution()

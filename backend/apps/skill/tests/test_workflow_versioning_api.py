@@ -42,8 +42,7 @@ def _run_synchronously(execution):
 class VersioningAPITestCase(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            email="autor@example.com", password="secret123", username="autor",
-        )
+            email="autor@example.com", password="secret123", username="autor", role="admin")
         self.client.force_authenticate(self.user)
 
         self.project = Project.objects.create(owner=self.user, name="Operación 34")
@@ -177,11 +176,9 @@ class VersioningAPITestCase(APITestCase):
 class RerunAndCompareAPITestCase(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(
-            email="consultor@example.com", password="secret123", username="consultor",
-        )
+            email="consultor@example.com", password="secret123", username="consultor", role="admin")
         self.other_user = User.objects.create_user(
-            email="otro@example.com", password="secret123", username="otro",
-        )
+            email="otro@example.com", password="secret123", username="otro", role="admin")
         self.client.force_authenticate(self.user)
 
         self.project = Project.objects.create(owner=self.user, name="Operación 40")
