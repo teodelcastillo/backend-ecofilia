@@ -23,6 +23,7 @@ from apps.document.utils.client_openia import generate_chat_completion, generate
 from apps.document.utils.llm import (
     ROLE_BALANCED,
     effective_chat_model,
+    is_anthropic_model,
     tool_capable_model,
 )
 from apps.skill import context_budget
@@ -879,6 +880,9 @@ def _call_model(
         messages,
         model=model,
         temperature=skill.temperature,
+        # El mismo tope que el presupuesto reservó para la respuesta: ver
+        # `context_budget.output_reserve`. OpenAI sigue con su default.
+        max_tokens=context_budget.output_reserve(model) if is_anthropic_model(model) else None,
         citations_out=citations_out,
     )
     return text, usage, model
@@ -1464,6 +1468,7 @@ def build_step_corpus(
     document_texts: dict[int, str],
     strategy: str | None = None,
     retrieve_partials: bool = True,
+    context_window: int | None = None,
 ) -> "StepCorpus":
     """La base documental de un paso, tal como la va a ver el modelo.
 
@@ -1484,6 +1489,7 @@ def build_step_corpus(
         reserved_tokens=reserved_tokens,
         blueprint_id=blueprint_id,
         texts=document_texts,
+        context_window=context_window,
     )
     if retrieve_partials:
         partial_blocks, chunks, failures = _retrieve_partial_blocks(
@@ -1939,6 +1945,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             )
 
             tier_used = resolve_tier(skill, step)
+            model_for_step = _resolve_model(skill, tier_used)
             corpus = None
             if use_context_first:
                 # El presupuesto documental es lo que queda de la ventana una
@@ -1949,7 +1956,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 reserved = (
                     context_budget.estimate_tokens(system_prompt)
                     + context_budget.estimate_tokens(prompt)
-                    + context_budget.output_reserve()
+                    + context_budget.output_reserve(model_for_step)
                 )
                 corpus = build_step_corpus(
                     execution=execution,
@@ -1959,6 +1966,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     blueprint_id=blueprint_id,
                     document_texts=document_texts,
                     strategy=effective_retrieval_strategy,
+                    context_window=context_budget.context_window_for(model_for_step),
                 )
                 chunks = corpus.chunks
                 plan = corpus.plan
@@ -1972,7 +1980,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 documents=corpus.documents if corpus else [],
                 corpus_volatile=corpus.volatile if corpus else "",
                 step_prompt=prompt,
-                model=_resolve_model(skill, tier_used),
+                model=model_for_step,
             )
 
             tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)

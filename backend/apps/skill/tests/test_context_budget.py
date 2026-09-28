@@ -11,7 +11,9 @@ existe porque ya se rompió una vez: los fragmentos del documento degradado
 viajaban dentro del bloque cacheado, cambiaban en cada paso e invalidaban la
 caché en los diecisiete.
 """
+import os
 from dataclasses import dataclass
+from unittest import mock
 
 from django.test import SimpleTestCase
 
@@ -94,6 +96,49 @@ class PlanContextTests(SimpleTestCase):
             plan, texts={1: documents[0].extracted_text}
         )
         self.assertEqual([p.slug for p in payloads], ["ndc"])
+
+
+class ModelWindowTests(SimpleTestCase):
+    """El presupuesto es el del modelo que atiende el paso, no el del millón.
+
+    El caso real: un workflow en tier «Rápido» (Haiku 4.5, 200k) armaba pedidos
+    de 600k tokens y el paso 1 fallaba con «prompt is too long» en cada corrida.
+    """
+
+    def test_haiku_gets_the_short_window(self):
+        self.assertEqual(cb.context_window_for("claude-haiku-4-5"), 200_000)
+
+    def test_long_context_models_keep_the_million(self):
+        for model in ("claude-sonnet-5", "claude-opus-5", "anthropic.claude-opus-5"):
+            self.assertEqual(cb.context_window_for(model), cb.CONTEXT_WINDOW, model)
+
+    def test_unknown_models_are_budgeted_short(self):
+        self.assertEqual(cb.context_window_for("gpt-4o-mini"), 200_000)
+        self.assertEqual(cb.context_window_for(None), 200_000)
+
+    def test_short_window_plan_fits_the_window(self):
+        """Ocho documentos de 200k tokens: ni degradados a la cuota por
+        documento entran en 200k, así que la cuota se reparte."""
+        documents = [make_document(i, f"doc{i}", 460) for i in range(1, 9)]
+        plan = cb.plan_context(
+            documents, reserved_tokens=20_000, context_window=200_000
+        )
+
+        self.assertEqual(len(plan.degraded), 8)
+        self.assertLessEqual(plan.corpus_tokens, plan.budget_tokens)
+        self.assertLessEqual(
+            plan.corpus_tokens + 20_000 + cb.CONTEXT_SAFETY_MARGIN, 200_000
+        )
+
+    def test_long_context_models_reserve_room_to_reason(self):
+        """Sonnet 5 gastaba los 16.000 tokens de salida razonando sobre
+        expedientes de 700k y el paso fallaba sin texto."""
+        with mock.patch.dict(os.environ, {"LLM_MAX_TOKENS": "16000"}):
+            self.assertEqual(
+                cb.output_reserve("claude-sonnet-5"), cb.SKILL_MAX_OUTPUT_TOKENS
+            )
+            self.assertEqual(cb.output_reserve("claude-haiku-4-5"), 16_000)
+            self.assertEqual(cb.output_reserve(), 16_000)
 
 
 class InventoryTests(SimpleTestCase):

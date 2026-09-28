@@ -57,3 +57,31 @@ class EmptyResponseTestCase(SimpleTestCase):
                 self._call(_response("max_tokens", ["thinking"], input_tokens=812_345))
         self.assertIn("stop_reason=max_tokens", logs.output[0])
         self.assertIn("input_tokens=812345", logs.output[0])
+
+
+class LargeOutputCeilingTestCase(SimpleTestCase):
+    """Un tope de salida alto va por streaming: el SDK rechaza el pedido
+    sin streaming si podría tardar más de diez minutos."""
+
+    def test_high_ceiling_streams_and_returns_the_final_message(self):
+        final = SimpleNamespace(
+            stop_reason="end_turn",
+            content=[SimpleNamespace(type="text", text="Informe.", citations=None)],
+            usage=SimpleNamespace(
+                input_tokens=10, output_tokens=5,
+                cache_read_input_tokens=0, cache_creation_input_tokens=0,
+            ),
+        )
+        client = mock.MagicMock()
+        stream = client.messages.stream.return_value.__enter__.return_value
+        stream.get_final_message.return_value = final
+        with mock.patch.object(llm, "_anthropic_client", return_value=client):
+            text, _ = llm.anthropic_chat_completion(
+                [{"role": "user", "content": "hola"}],
+                model="claude-sonnet-5",
+                max_tokens=64_000,
+            )
+
+        self.assertEqual(text, "Informe.")
+        client.messages.create.assert_not_called()
+        self.assertEqual(client.messages.stream.call_args.kwargs["max_tokens"], 64_000)

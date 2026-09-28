@@ -105,3 +105,74 @@ def requeue_stuck_documents(*, threshold_minutes: int | None = None) -> dict[str
             result["requeued"], result["exhausted"], result["failed"],
         )
     return result
+
+
+# El caso que el reaper de `pending` no veía: el worker reclamó el documento
+# (PROCESSING) y murió a mitad —el 2026-09-28 el documento 928, un PDF de
+# Colombia con mucha imagen, mató al worker de ingesta por memoria a los 20
+# segundos—. `acks_late` reentrega el mensaje, pero la tarea ve PROCESSING y
+# sale con `already_claimed`: el documento queda "procesándose" para siempre, y
+# el chequeo previo de las corridas bloquea cualquier workflow sobre la
+# operación que lo contenga. El documento más largo que vimos tardó una hora;
+# cuatro horas sin terminar no es "va lento".
+STUCK_PROCESSING_MINUTES = int(os.environ.get("DOC_STUCK_PROCESSING_MINUTES", "240"))
+
+
+def requeue_stalled_processing(*, threshold_minutes: int | None = None) -> dict[str, list[int]]:
+    """Vuelve a `pending` y reencola los documentos que un worker muerto dejó en PROCESSING.
+
+    Reprocesar es seguro: la tarea borra los chunks del documento antes de
+    escribir los nuevos. Comparte el contador con el reaper de `pending`, así
+    que un documento que tumba al worker cada vez termina en ERROR con el
+    motivo, en vez de rotar para siempre.
+    """
+    minutes = (
+        threshold_minutes if threshold_minutes is not None else STUCK_PROCESSING_MINUTES
+    )
+    cutoff = timezone.now() - timedelta(minutes=minutes)
+    stalled = (
+        Document.objects
+        .filter(chunking_status=ChunkingStatus.PROCESSING)
+        .annotate(processing_since=Coalesce("status_changed_at", "created_at"))
+        .filter(processing_since__lt=cutoff)
+        .order_by("id")
+    )
+
+    result: dict[str, list[int]] = {"requeued": [], "failed": [], "exhausted": []}
+    for doc in stalled:
+        if doc.requeue_count >= MAX_AUTO_REQUEUES:
+            Document.objects.filter(pk=doc.pk).update(
+                chunking_status=ChunkingStatus.ERROR,
+                status_changed_at=timezone.now(),
+                last_error=(
+                    f"El procesamiento se cortó {doc.requeue_count + 1} veces sin "
+                    "terminar. Lo más probable es que el worker de ingesta se quede "
+                    "sin memoria con este archivo (/ecs/ecofilia-worker, buscar "
+                    "SIGKILL). Reprocesar a mano cuando se resuelva."
+                ),
+            )
+            result["exhausted"].append(doc.pk)
+            continue
+
+        # Condicionado al estado: si la tarea terminó entre la consulta y acá,
+        # no se pisa su resultado.
+        reset = Document.objects.filter(
+            pk=doc.pk, chunking_status=ChunkingStatus.PROCESSING
+        ).update(
+            chunking_status=ChunkingStatus.PENDING,
+            status_changed_at=timezone.now(),
+            requeue_count=doc.requeue_count + 1,
+        )
+        if not reset:
+            continue
+        if dispatch_processing(doc.pk):
+            result["requeued"].append(doc.pk)
+        else:
+            result["failed"].append(doc.pk)
+
+    if any(result.values()):
+        logger.warning(
+            "Documentos trabados en processing: reenviados=%s, agotados=%s, fallidos=%s",
+            result["requeued"], result["exhausted"], result["failed"],
+        )
+    return result

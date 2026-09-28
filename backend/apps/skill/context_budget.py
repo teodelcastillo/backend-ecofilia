@@ -46,6 +46,37 @@ CHARS_PER_TOKEN = float(os.environ.get("SKILL_CHARS_PER_TOKEN", "2.3"))
 
 CONTEXT_WINDOW = int(os.environ.get("SKILL_CONTEXT_WINDOW", "1000000"))
 
+# Ventana de los modelos que no llegan al millón. El presupuesto se calculaba
+# siempre contra `CONTEXT_WINDOW`, y un workflow en tier «Rápido» (Haiku 4.5,
+# 200k) armaba un pedido de 600k tokens que la API rechazaba antes de empezar:
+# el paso 1 fallaba en cinco segundos, en cada corrida, sin degradar nada.
+SHORT_CONTEXT_WINDOW = 200_000
+
+# Familias con ventana de un millón. Lo que no esté acá se presupuesta contra
+# la ventana corta: equivocarse para ese lado degrada documentos de más; para
+# el otro, rompe la llamada.
+_LONG_CONTEXT_PREFIXES = (
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-mythos",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+)
+
+
+def context_window_for(model: str | None) -> int:
+    """La ventana contra la que se presupuesta un pedido a ``model``."""
+    name = (model or "").lower()
+    if name.startswith("anthropic."):
+        name = name[len("anthropic."):]
+    if name.startswith(_LONG_CONTEXT_PREFIXES):
+        return CONTEXT_WINDOW
+    return min(CONTEXT_WINDOW, SHORT_CONTEXT_WINDOW)
+
+
 # Colchón sobre la ventana. Cubre el error del estimador y lo que el pedido
 # cobra por su propia estructura —encabezados de bloque, definiciones de
 # herramientas, andamiaje del formato— que no está en el texto que medimos.
@@ -56,14 +87,27 @@ CONTEXT_SAFETY_MARGIN = int(os.environ.get("SKILL_CONTEXT_SAFETY_MARGIN", "60000
 # sobre el que se busca, en vez de repartirse entre todos.
 DEGRADED_DOC_TOKENS = int(os.environ.get("SKILL_DEGRADED_DOC_TOKENS", "20000"))
 
-# Lo que hay que dejar libre para la respuesta. Es la misma variable que fija
-# el tope de salida del proveedor a propósito: si se sube el tope sin bajar el
-# presupuesto documental, la llamada se rompe justo en el paso más largo.
-def output_reserve() -> int:
+# Lo que hay que dejar libre para la respuesta. Es también el tope de salida
+# que el motor le pide al proveedor en cada paso, a propósito: si se sube el
+# tope sin bajar el presupuesto documental, la llamada se rompe justo en el
+# paso más largo.
+#
+# Los modelos de ventana larga razonan antes de escribir, y el razonamiento
+# sale del mismo tope. Con expedientes de 700k+ tokens, Sonnet 5 gastaba los
+# 16.000 de `LLM_MAX_TOKENS` pensando y el paso fallaba sin texto. Por eso los
+# pasos de workflow sobre esos modelos tienen su propio tope, más alto; es un
+# techo, no un consumo: sólo se paga lo que el modelo realmente escribe.
+SKILL_MAX_OUTPUT_TOKENS = int(os.environ.get("SKILL_MAX_OUTPUT_TOKENS", "64000"))
+
+
+def output_reserve(model: str | None = None) -> int:
     try:
-        return int(os.environ.get("LLM_MAX_TOKENS", "4096"))
+        base = int(os.environ.get("LLM_MAX_TOKENS", "4096"))
     except ValueError:
-        return 4096
+        base = 4096
+    if model and context_window_for(model) >= CONTEXT_WINDOW:
+        return max(base, SKILL_MAX_OUTPUT_TOKENS)
+    return base
 
 
 # Tokens que ocupa en promedio un fragmento recuperado, para traducir el
@@ -182,6 +226,7 @@ def plan_context(
     reserved_tokens: int,
     blueprint_id: int | None = None,
     texts: dict | None = None,
+    context_window: int | None = None,
 ) -> ContextPlan:
     """Decide, documento por documento, qué entra entero y qué se degrada.
 
@@ -196,8 +241,12 @@ def plan_context(
 
     ``texts`` permite pasar los textos ya cargados; sin él se leen del
     documento. Es para no releer el mismo corpus una vez por paso.
+
+    ``context_window`` es la ventana del modelo que va a atender el paso (ver
+    ``context_window_for``); sin él se asume la larga.
     """
-    budget = max(0, CONTEXT_WINDOW - CONTEXT_SAFETY_MARGIN - max(0, reserved_tokens))
+    window = context_window or CONTEXT_WINDOW
+    budget = max(0, window - CONTEXT_SAFETY_MARGIN - max(0, reserved_tokens))
 
     deliveries: list[DocumentDelivery] = []
     for document in documents:
@@ -278,6 +327,17 @@ def plan_context(
             blueprint.full_tokens,
             budget,
         )
+
+    # Con todo degradado puede seguir sin entrar: son `DEGRADED_DOC_TOKENS` por
+    # documento, y en una ventana de 200k diez anexos ya no caben ni en
+    # fragmentos. Se reparte lo que queda entre los degradados en vez de
+    # mandar un pedido que la API va a rechazar.
+    partials = [d for d in deliveries if d.mode == PARTIAL]
+    if partials and _total() > budget:
+        full_tokens = sum(d.tokens for d in deliveries if d.mode == FULL)
+        share = max(TOKENS_PER_CHUNK, (budget - full_tokens) // len(partials))
+        for delivery in partials:
+            delivery.tokens = min(delivery.tokens, share)
 
     plan = ContextPlan(
         deliveries=deliveries,

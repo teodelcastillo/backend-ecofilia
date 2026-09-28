@@ -10,7 +10,10 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.document.models import ChunkingStatus, Document
-from apps.document.reliability import requeue_stuck_documents
+from apps.document.reliability import (
+    requeue_stalled_processing,
+    requeue_stuck_documents,
+)
 
 User = get_user_model()
 
@@ -115,7 +118,7 @@ class RequeueStuckDocumentsTests(TestCase):
 
     def test_ignores_documents_that_are_not_pending(self):
         for status in (
-            ChunkingStatus.PROCESSING,
+            ChunkingStatus.PROCESSING,  # tiene su propio reaper, abajo
             ChunkingStatus.DONE,
             ChunkingStatus.PARTIAL,
             ChunkingStatus.ERROR,
@@ -130,6 +133,62 @@ class RequeueStuckDocumentsTests(TestCase):
             requeue_stuck_documents()
 
         dispatch.assert_not_called()
+
+
+class RequeueStalledProcessingTests(TestCase):
+    """Un worker que muere a mitad deja el documento en PROCESSING para siempre.
+
+    El caso real: el documento 928 tumbó al worker de ingesta por memoria; el
+    mensaje reentregado vio PROCESSING y salió con `already_claimed`.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="stalled@example.com", password="pass1234"
+        )
+
+    def _stalled(self, hours: float = 5, **overrides) -> Document:
+        overrides.setdefault(
+            "status_changed_at", timezone.now() - timedelta(hours=hours)
+        )
+        return _make_document(
+            self.user, chunking_status=ChunkingStatus.PROCESSING, **overrides
+        )
+
+    def test_requeues_a_document_abandoned_mid_processing(self):
+        doc = self._stalled()
+
+        with patch("apps.document.reliability.dispatch_processing", return_value=True) as dispatch:
+            result = requeue_stalled_processing()
+
+        dispatch.assert_called_once_with(doc.pk)
+        self.assertEqual(result["requeued"], [doc.pk])
+        doc.refresh_from_db()
+        # Vuelve a PENDING: si no, la tarea reencolada lo vería PROCESSING y
+        # saldría otra vez con `already_claimed`.
+        self.assertEqual(doc.chunking_status, ChunkingStatus.PENDING)
+        self.assertEqual(doc.requeue_count, 1)
+
+    def test_leaves_long_but_live_processing_alone(self):
+        self._stalled(hours=1)
+
+        with patch("apps.document.reliability.dispatch_processing") as dispatch:
+            result = requeue_stalled_processing()
+
+        dispatch.assert_not_called()
+        self.assertEqual(result["requeued"], [])
+
+    def test_gives_up_with_a_reason_after_repeated_crashes(self):
+        doc = self._stalled(requeue_count=3)
+
+        with patch("apps.document.reliability.dispatch_processing") as dispatch:
+            result = requeue_stalled_processing()
+
+        dispatch.assert_not_called()
+        self.assertEqual(result["exhausted"], [doc.pk])
+        doc.refresh_from_db()
+        self.assertEqual(doc.chunking_status, ChunkingStatus.ERROR)
+        self.assertIn("sin memoria", doc.last_error)
 
 
 class DispatchProcessingTests(TestCase):

@@ -415,10 +415,17 @@ def backfill_chunk_context_for_document(self, doc_id: int, batch_size: int = 50)
 
 @shared_task(name="document.requeue_stuck")
 def requeue_stuck_documents_task():
-    """Red de seguridad para documentos que quedaron en `pending` sin arrancar.
+    """Red de seguridad para documentos que quedaron en `pending` sin arrancar
+    o en `processing` porque el worker murió a mitad.
 
     El porqué está en ``apps.document.reliability``. Corre desde Celery beat.
     """
-    from apps.document.reliability import requeue_stuck_documents
+    from apps.document.reliability import (
+        requeue_stalled_processing,
+        requeue_stuck_documents,
+    )
 
-    return requeue_stuck_documents()
+    return {
+        "pending": requeue_stuck_documents(),
+        "processing": requeue_stalled_processing(),
+    }

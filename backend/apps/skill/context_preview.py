@@ -225,7 +225,9 @@ def build_preview(
 
     system_prompt = _with_operation_context(skill.system_prompt, execution)
     system_tokens = context_budget.estimate_tokens(system_prompt)
-    output_reserve = context_budget.output_reserve()
+    # El encabezado describe el modelo del workflow; cada paso usa el suyo.
+    skill_model = _resolve_model(skill, resolve_tier(skill))
+    output_reserve = context_budget.output_reserve(skill_model)
 
     document_texts: dict[int, str] = {}
     previews: list[StepPreview] = []
@@ -238,13 +240,15 @@ def build_preview(
             continue
 
         tier = resolve_tier(skill, step)
+        model = _resolve_model(skill, tier)
+        window = context_budget.context_window_for(model)
         step_tokens = context_budget.estimate_tokens(
             f"{step.title}\n{step.instructions}"
         )
         # La reserva del paso sin las secciones previas: acá no hay corrida, así
         # que no existen. Es el mejor caso; en la corrida real el historial come
         # presupuesto y algún documento más puede degradarse.
-        reserved = system_tokens + step_tokens + output_reserve
+        reserved = system_tokens + step_tokens + context_budget.output_reserve(model)
 
         evidence_mode = step.evidence_mode or StepEvidenceMode.BOTH
         reads_documents = evidence_mode != StepEvidenceMode.PREVIOUS
@@ -260,14 +264,14 @@ def build_preview(
                     title=step.title,
                     tier=tier,
                     tier_source="step" if step.tier else "skill",
-                    model=_resolve_model(skill, tier),
+                    model=model,
                     evidence_mode=evidence_mode,
                     reads_documents=False,
                     reserved_tokens=reserved,
                     cacheable_tokens=0,
                     variable_tokens=0,
                     total_tokens=reserved,
-                    exceeds_window=reserved > context_budget.CONTEXT_WINDOW,
+                    exceeds_window=reserved > window,
                     documents=[],
                 )
             )
@@ -290,6 +294,7 @@ def build_preview(
             blueprint_id=blueprint_id,
             document_texts=document_texts,
             retrieve_partials=measure_fragments,
+            context_window=window,
         )
         plan = corpus.plan
         stable = "\n\n".join([corpus.inventory] + [d.text for d in corpus.documents])
@@ -318,21 +323,21 @@ def build_preview(
                 title=step.title,
                 tier=tier,
                 tier_source="step" if step.tier else "skill",
-                model=_resolve_model(skill, tier),
+                model=model,
                 evidence_mode=evidence_mode,
                 reads_documents=True,
                 reserved_tokens=reserved,
                 cacheable_tokens=stable_tokens,
                 variable_tokens=volatile_tokens,
                 total_tokens=total,
-                exceeds_window=total > context_budget.CONTEXT_WINDOW,
+                exceeds_window=total > window,
                 documents=docs,
             )
         )
         cacheable.append(stable_tokens)
         variable.append(reserved + (volatile_tokens or 0))
 
-        if total > context_budget.CONTEXT_WINDOW:
+        if total > window:
             warnings.append(
                 f"El paso {step.position} excede la ventana: {total:,} tokens."
             )
@@ -360,7 +365,7 @@ def build_preview(
             ),
         },
         window={
-            "context_window": context_budget.CONTEXT_WINDOW,
+            "context_window": context_budget.context_window_for(skill_model),
             "safety_margin": context_budget.CONTEXT_SAFETY_MARGIN,
             "output_reserve": output_reserve,
             "system_tokens": system_tokens,

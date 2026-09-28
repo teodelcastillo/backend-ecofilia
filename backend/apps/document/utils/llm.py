@@ -176,6 +176,10 @@ def is_prompt_caching_enabled() -> bool:
 _prompt_caching_enabled = is_prompt_caching_enabled  # alias interno histórico
 
 
+# Por encima de esto el pedido va por streaming (ver `anthropic_chat_completion`).
+_NON_STREAMING_MAX_TOKENS = 16_000
+
+
 def _default_max_tokens() -> int:
     try:
         return int(os.environ.get("LLM_MAX_TOKENS", "4096"))
@@ -323,7 +327,14 @@ def anthropic_chat_completion(
         messages, model=model, temperature=temperature, max_tokens=max_tokens
     )
     caller = client.with_options(timeout=timeout) if timeout else client
-    response = caller.messages.create(**params)
+    if params["max_tokens"] > _NON_STREAMING_MAX_TOKENS:
+        # El SDK rechaza un pedido sin streaming cuyo tope de salida podría
+        # tardar más de diez minutos. El mensaje final es el mismo objeto que
+        # devuelve `create`, así que el resto no cambia.
+        with caller.messages.stream(**params) as stream:
+            response = stream.get_final_message()
+    else:
+        response = caller.messages.create(**params)
 
     text, citations = _text_and_citations(response.content)
 

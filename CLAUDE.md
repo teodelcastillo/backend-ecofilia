@@ -254,8 +254,16 @@ reprocesamiento vuelve a `pending` un documento viejo. En las filas anteriores a
 este campo el reaper cae a `created_at`, así que los que ya estaban trabados se
 rescatan en la primera pasada.
 
+3. **Documentos que quedan en `processing`** porque el worker murió a mitad
+   (típicamente SIGKILL por memoria): la reentrega de `acks_late` ve
+   `processing` y sale con `already_claimed`. La misma tarea de beat los vuelve
+   a `pending` y los reencola pasadas `DOC_STUCK_PROCESSING_MINUTES`; comparten
+   el contador de reenvíos, así que un archivo que tumba al worker cada vez
+   termina en `error` con el motivo.
+
 **Variables de entorno:** `DOC_STUCK_PENDING_MINUTES` (default `15`),
-`DOC_MAX_AUTO_REQUEUES` (default `3`).
+`DOC_STUCK_PROCESSING_MINUTES` (default `240`), `DOC_MAX_AUTO_REQUEUES`
+(default `3`).
 
 **Reprocesar documentos** (resetea el estado, así también destraba los colgados
 en `processing`):

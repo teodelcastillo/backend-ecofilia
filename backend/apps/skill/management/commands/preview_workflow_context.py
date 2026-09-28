@@ -173,8 +173,10 @@ class Command(BaseCommand):
         from apps.skill.services import (
             _resolve_step_documents,
             _with_operation_context,
+            _resolve_model,
             build_step_corpus,
             resolve_documents,
+            resolve_tier,
         )
 
         step = next((s for s in skill.steps.all() if s.position == position), None)
@@ -182,10 +184,11 @@ class Command(BaseCommand):
             return
         documents = resolve_documents(execution)
         system_prompt = _with_operation_context(skill.system_prompt, execution)
+        model = _resolve_model(skill, resolve_tier(skill, step))
         reserved = (
             context_budget.estimate_tokens(system_prompt)
             + context_budget.estimate_tokens(f"{step.title}\n{step.instructions}")
-            + context_budget.output_reserve()
+            + context_budget.output_reserve(model)
         )
         blueprint_id = getattr(execution.project, "blueprint_document_id", None)
         corpus = build_step_corpus(
@@ -202,6 +205,7 @@ class Command(BaseCommand):
             blueprint_id=blueprint_id,
             document_texts={},
             retrieve_partials=not options["no_retrieval"],
+            context_window=context_budget.context_window_for(model),
         )
         parts = [corpus.inventory] + [d.text for d in corpus.documents]
         if corpus.volatile:
