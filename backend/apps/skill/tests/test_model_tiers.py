@@ -61,6 +61,14 @@ class EffectiveChatModelRoleTests(SimpleTestCase):
                 effective_chat_model("claude-haiku-4-5", ROLE_DEEP), "claude-haiku-4-5"
             )
 
+    def test_empty_model_resolves_by_tier(self):
+        """El default de `Skill.model` ahora es vacío: el tier decide."""
+        with anthropic_env():
+            self.assertEqual(effective_chat_model("", ROLE_DEEP), "claude-opus-5")
+            self.assertEqual(
+                effective_chat_model("", "fast"), "claude-haiku-4-5"
+            )
+
     def test_openai_provider_preserves_the_stored_id(self):
         """Sin el switch de provider, nada cambia."""
         with mock.patch.dict("os.environ", {"LLM_PROVIDER": "openai"}, clear=False):

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import os
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-DEFAULT_MODEL = os.environ.get("MODEL_COMPLETION", "gpt-4o-mini")
 
 
 class SkillType(models.TextChoices):
@@ -119,8 +117,11 @@ class Skill(models.Model):
         ),
     )
     # Precede al tier sólo si guarda un id de Claude explícito: es la escotilla
-    # de escape para fijar un modelo puntual, no el control primario.
-    model = models.CharField(max_length=100, default=DEFAULT_MODEL)
+    # de escape para fijar un modelo puntual, no el control primario. Vacío por
+    # defecto: el default viejo era `MODEL_COMPLETION` (`gpt-4o-mini`), que el
+    # motor descarta bajo Anthropic pero que cada skill nueva guardaba igual y
+    # hacía parecer que corría en OpenAI.
+    model = models.CharField(max_length=100, blank=True, default="")
     temperature = models.FloatField(default=0.3)
     comparative_mode_enabled = models.BooleanField(
         default=False,
