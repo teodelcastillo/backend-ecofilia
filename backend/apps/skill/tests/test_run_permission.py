@@ -64,6 +64,11 @@ class RunPermissionTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
+# Un workflow no se guarda sin pasos: el serializer los exige en cada edición,
+# y el editor siempre los manda. Los PATCH de estos tests también.
+STEPS = [{"title": "Paso", "instructions": "Describí el marco.", "position": 1}]
+
+
 class MembersCanRunTestCase(APITestCase):
     """Cada asistente decide si lo ejecutan también los que no son superadmin."""
 
@@ -122,7 +127,7 @@ class MembersCanRunTestCase(APITestCase):
 
         response = self.client.patch(
             reverse("skill-detail", kwargs={"slug": mine.slug}),
-            {"members_can_run": True},
+            {"members_can_run": True, "steps": STEPS},
             format="json",
         )
 
@@ -152,7 +157,9 @@ class AssignToOrganizationTestCase(APITestCase):
 
     def _patch(self, **data):
         return self.client.patch(
-            reverse("skill-detail", kwargs={"slug": self.skill.slug}), data, format="json"
+            reverse("skill-detail", kwargs={"slug": self.skill.slug}),
+            {"steps": STEPS, **data},
+            format="json",
         )
 
     def test_assigns_visibility_and_default_for_new_operations(self):
@@ -165,22 +172,25 @@ class AssignToOrganizationTestCase(APITestCase):
         self.assertFalse(self.existing.enabled_skills.filter(pk=self.skill.pk).exists())
 
     def test_enabling_on_existing_operations_is_explicit(self):
-        self._patch(organization_slugs=["caf"], enable_on_existing_operations=["caf"])
+        response = self._patch(organization_slugs=["caf"], enable_on_existing_operations=["caf"])
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(self.existing.enabled_skills.filter(pk=self.skill.pk).exists())
 
     def test_unassigning_removes_it(self):
         self.org.enabled_skills.add(self.skill)
 
-        self._patch(organization_slugs=[])
+        response = self._patch(organization_slugs=[])
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertFalse(self.org.enabled_skills.filter(pk=self.skill.pk).exists())
 
     def test_saving_without_the_fields_leaves_the_assignment_alone(self):
         self.org.enabled_skills.add(self.skill)
 
-        self._patch(name="Renombrado")
+        response = self._patch(name="Renombrado")
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(self.org.enabled_skills.filter(pk=self.skill.pk).exists())
 
     def test_organizations_listing_is_for_superadmins(self):
