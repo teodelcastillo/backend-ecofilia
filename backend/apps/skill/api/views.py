@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from django.db.models import Prefetch, Q
+from django.db import connection
+from django.db.models import IntegerField, Prefetch, Q
+from django.db.models.expressions import RawSQL
+from django.db.models.fields.json import KT
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -25,7 +28,9 @@ from apps.skill.api.serializers import (
     SaveExecutionEditSerializer,
     SaveSectionDraftSerializer,
     SkillDefinitionVersionSerializer,
+    HEAVY_EXECUTION_FIELDS,
     SkillExecutionSerializer,
+    SkillExecutionSummarySerializer,
     SkillExecutionVersionSerializer,
     SkillSerializer,
     SkillWriteSerializer,
@@ -379,6 +384,34 @@ class SkillViewSet(viewsets.ModelViewSet):
         return ExecutionOutputMode.TEXT, {}
 
 
+def _summary_annotations() -> dict:
+    """Lo que el resumen de una corrida necesita de su JSON, calculado en Postgres.
+
+    Contar secciones y citas en Python exige cargar `output_structured` entero
+    —cientos de KB por corrida—, que es exactamente lo que el resumen evita.
+    """
+    column = (
+        f"{connection.ops.quote_name(SkillExecution._meta.db_table)}."
+        f"{connection.ops.quote_name('output_structured')}"
+    )
+
+    def count(path: str) -> RawSQL:
+        return RawSQL(
+            f"COALESCE(jsonb_array_length(jsonb_path_query_array({column}, '{path}')), 0)",
+            (),
+            output_field=IntegerField(),
+        )
+
+    return {
+        "sections_count": count("$.steps[*]"),
+        "citations_count": count("$.steps[*].citations[*]"),
+        "citations_verified_count": count(
+            "$.steps[*].citations[*] ? (@.verified == true)"
+        ),
+        "rerun_of_raw": KT("metadata__rerun_of"),
+    }
+
+
 class SkillExecutionViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -388,9 +421,20 @@ class SkillExecutionViewSet(
     """
     Read-only view of skill executions for the current user and shared contexts.
     Supports filtering by skill, status, repository, project.
+
+    ``?view=summary`` en el listado devuelve cada corrida sin su informe (ver
+    ``SkillExecutionSummarySerializer``).
     """
     permission_classes = [IsAuthenticated]
     serializer_class = SkillExecutionSerializer
+
+    def _is_summary(self) -> bool:
+        return self.action == "list" and self.request.query_params.get("view") == "summary"
+
+    def get_serializer_class(self):
+        if self._is_summary():
+            return SkillExecutionSummarySerializer
+        return super().get_serializer_class()
 
     def get_queryset(self):
         user = self.request.user
@@ -411,6 +455,8 @@ class SkillExecutionViewSet(
             qs = qs.filter(project__slug=project_slug)
         if status_filter := self.request.query_params.get("status"):
             qs = qs.filter(status=status_filter)
+        if self._is_summary():
+            qs = qs.defer(*HEAVY_EXECUTION_FIELDS).annotate(**_summary_annotations())
         return qs
 
     def get_object(self):

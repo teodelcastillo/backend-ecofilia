@@ -627,6 +627,43 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
         )
 
 
+HEAVY_EXECUTION_FIELDS = ("output", "output_structured", "edited_output", "metadata")
+
+
+class SkillExecutionSummarySerializer(SkillExecutionSerializer):
+    """Una corrida sin su informe, para los listados (``?view=summary``).
+
+    El listado completo mandaba cada corrida entera —informe, pasos con sus
+    citas, metadata— y crecía con cada una: 6 MB el 9 de septiembre, 12 MB el
+    28. Armar esa respuesta mataba a los workers de la API por memoria, así que
+    las pantallas que sólo necesitan el estado de cada corrida piden esta forma
+    y el informe se pide por id cuando se abre.
+
+    Lo poco que los listados sí leían de los campos pesados viaja resumido. Los
+    conteos salen de anotaciones del queryset (ver
+    ``SkillExecutionViewSet.get_queryset``): calcularlos acá obligaría a cargar
+    el JSON que justamente se quiere dejar en la base.
+    """
+
+    sections_count = serializers.IntegerField(read_only=True)
+    citations_count = serializers.IntegerField(read_only=True)
+    citations_verified_count = serializers.IntegerField(read_only=True)
+    rerun_of = serializers.SerializerMethodField()
+
+    class Meta(SkillExecutionSerializer.Meta):
+        fields = tuple(
+            f for f in SkillExecutionSerializer.Meta.fields if f not in HEAVY_EXECUTION_FIELDS
+        ) + ("sections_count", "citations_count", "citations_verified_count", "rerun_of")
+        read_only_fields = fields
+
+    def get_rerun_of(self, obj) -> int | None:
+        value = getattr(obj, "rerun_of_raw", None)
+        try:
+            return int(value) if value not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+
+
 class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
     """Una versión de la definición, para poder leer con qué se corrió."""
 
