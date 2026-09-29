@@ -39,7 +39,10 @@ import json
 # cambio de forma: mueve todas las huellas de golpe, y por eso el número sube
 # — una comparación contra una corrida vieja tiene que poder distinguir esto de
 # un cambio real del autor del workflow.
-DEFINITION_SCHEMA = 2
+# 3: los pasos pueden declarar su propio formato (``format_instructions``).
+# El campo nuevo entra en todas las serializaciones, vacío o no, así que mueve
+# las huellas de todos los workflows sin que nadie haya editado nada.
+DEFINITION_SCHEMA = 3
 
 # Un `skill_ref` apunta a otra skill, y esa otra skill también puede cambiar. Se
 # le calcula huella propia hasta esta profundidad; más abajo se registra sólo el
@@ -107,6 +110,7 @@ STEP_FIELDS = (
     "table_schema",
     "output_validation",
     "approval_required",
+    "format_instructions",
 )
 
 STEP_FIELDS_IGNORED = (

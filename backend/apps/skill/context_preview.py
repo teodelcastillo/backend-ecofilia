@@ -243,7 +243,7 @@ def build_preview(
         model = _resolve_model(skill, tier)
         window = context_budget.context_window_for(model)
         step_tokens = context_budget.estimate_tokens(
-            f"{step.title}\n{step.instructions}"
+            f"{step.title}\n{step.instructions}\n{step.format_instructions}"
         )
         # La reserva del paso sin las secciones previas: acá no hay corrida, así
         # que no existen. Es el mejor caso; en la corrida real el historial come

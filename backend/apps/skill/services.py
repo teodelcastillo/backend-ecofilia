@@ -152,6 +152,42 @@ def deliverable_standard(*, context_first: bool) -> str:
     )
 
 
+def step_output_rules(
+    *,
+    format_instructions: str,
+    is_table_step: bool,
+    comparative_mode_enabled: bool,
+    strict_missing_evidence: bool,
+    context_first: bool,
+) -> list[str]:
+    """Las reglas de forma de la respuesta de un paso: las del autor o las del motor.
+
+    Si el paso declara su formato, ese es el único que viaja. Si no, rigen el
+    modo comparativo y el estándar de entregable, como siempre. Nunca las dos:
+    con ambas en el pedido el modelo decidía cuál pesaba más, y un paso que
+    pedía «un solo párrafo» salía con cinco y subtítulos por documento. La
+    precedencia la resuelve el motor, no el modelo — y así tampoco se pagan
+    tokens por instrucciones que no van a regir.
+
+    Un paso de tabla no lleva ninguna: su forma es el esquema JSON.
+    """
+    if is_table_step:
+        return []
+    custom = (format_instructions or "").strip()
+    if custom:
+        return [f"## Formato de la respuesta\n{custom}"]
+    rules: list[str] = []
+    if comparative_mode_enabled:
+        rules.append(
+            "## Comparative constraints:\n"
+            + _comparative_instruction_block(
+                strict_missing_evidence, has_inventory=context_first
+            )
+        )
+    rules.append(deliverable_standard(context_first=context_first))
+    return rules
+
+
 # ---------------------------------------------------------------------------
 # Document resolver
 # ---------------------------------------------------------------------------
@@ -1906,26 +1942,24 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 # encontró contenido documental" lo empuja a declarar una carencia
                 # que no existe.
                 lines.append("\n(No document content found for this section — note this in your output.)")
-            if skill.comparative_mode_enabled and not is_table_step:
-                lines.append(
-                    "\n## Comparative constraints:\n"
-                    + _comparative_instruction_block(
-                        skill.strict_missing_evidence,
-                        has_inventory=use_context_first,
-                    )
-                )
-            # Professional deliverable standard — only for authored prose steps.
-            # Table steps must return strict JSON, so we never relax their format.
-            if not is_table_step:
-                lines.append(
-                    f"\n{deliverable_standard(context_first=use_context_first)}"
-                )
-
             if use_context_first:
                 lines.append(
                     "\nCeñite a la base documental listada al comienzo de este "
                     "mensaje y a sus reglas de uso."
                 )
+            # Las reglas de forma van últimas: son lo último que el modelo lee
+            # antes de escribir. Son las del paso o las del motor, nunca ambas
+            # (ver `step_output_rules`).
+            lines.extend(
+                f"\n{rule}"
+                for rule in step_output_rules(
+                    format_instructions=step.format_instructions,
+                    is_table_step=is_table_step,
+                    comparative_mode_enabled=skill.comparative_mode_enabled,
+                    strict_missing_evidence=skill.strict_missing_evidence,
+                    context_first=use_context_first,
+                )
+            )
 
             prompt = "\n".join(lines)
             # El contexto de la operación va en el system prompt, no en el

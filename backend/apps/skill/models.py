@@ -383,6 +383,20 @@ class SkillStep(models.Model):
         blank=True,
         help_text="What the AI should produce for this section of the output.",
     )
+    # Cómo tiene que verse la respuesta del paso: extensión, estructura,
+    # formato. Si está, es la única regla de formato del pedido: reemplaza al
+    # estándar de entregable y a las del modo comparativo. Si está vacío, rigen
+    # esas. Nunca las dos, para no dejarle al modelo decidir cuál pesa más —
+    # que es como un paso que pedía un párrafo terminaba con cinco.
+    format_instructions = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Formato de la respuesta del paso. Si se completa, reemplaza al "
+            "formato profesional por defecto y a las reglas de formato del modo "
+            "comparativo."
+        ),
+    )
     position = models.PositiveIntegerField(default=1)
 
     # Step type — an "instruction" step authors content from the step's own

@@ -13,6 +13,7 @@ from apps.skill.services import (
     COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST,
     _comparative_instruction_block,
     deliverable_standard,
+    step_output_rules,
 )
 
 
@@ -84,3 +85,53 @@ class ComparativeBlockTests(SimpleTestCase):
         loose = _comparative_instruction_block(False, has_inventory=True)
 
         self.assertEqual(strict, loose)
+
+
+class StepOutputRulesTests(SimpleTestCase):
+    """El formato del paso, si existe, es el único que viaja.
+
+    El caso real: pasos que pedían «un solo párrafo» salían con cinco, y
+    comparaciones de alineación salían con un subtítulo por documento. El
+    estándar de entregable pedía subtítulos y listas, el modo comparativo
+    pedía ordenar por documento, y el modelo elegía cuál pesaba más.
+    """
+
+    def _rules(self, fmt="", **overrides):
+        options = {
+            "format_instructions": fmt,
+            "is_table_step": False,
+            "comparative_mode_enabled": True,
+            "strict_missing_evidence": True,
+            "context_first": True,
+        }
+        options.update(overrides)
+        return "\n".join(step_output_rules(**options))
+
+    def test_author_format_replaces_every_engine_rule(self):
+        rules = self._rules("Un único párrafo, sin subtítulos ni listas.")
+
+        self.assertIn("Un único párrafo, sin subtítulos ni listas.", rules)
+        self.assertNotIn("subtítulos, párrafos y listas", rules)
+        self.assertNotIn("Comparative", rules)
+        self.assertNotIn("Cubrí cada documento", rules)
+
+    def test_without_author_format_the_engine_default_stays(self):
+        rules = self._rules("")
+
+        self.assertIn("Comparative", rules)
+        self.assertEqual(
+            rules.split("\n")[-1],
+            COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST.split("\n")[-1],
+        )
+
+    def test_blank_format_counts_as_absent(self):
+        self.assertEqual(self._rules("   \n "), self._rules(""))
+
+    def test_comparative_block_only_when_enabled(self):
+        self.assertNotIn("Comparative", self._rules("", comparative_mode_enabled=False))
+
+    def test_table_steps_get_no_prose_rules(self):
+        """Su forma es el esquema JSON; un formato de prosa lo contradiría."""
+        self.assertEqual(self._rules("Un párrafo.", is_table_step=True), "")
+        self.assertEqual(self._rules("", is_table_step=True), "")
+

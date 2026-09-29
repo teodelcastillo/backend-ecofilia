@@ -135,6 +135,7 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "instructions",
+            "format_instructions",
             "position",
             "step_type",
             "tier",
@@ -187,6 +188,8 @@ class SkillStepWriteSerializer(serializers.Serializer):
     # skill_ref steps (the linked skill carries its own prompt). Validation
     # below enforces the per-type rule.
     instructions = serializers.CharField(required=False, allow_blank=True, default="")
+    # Vacío: rige el formato profesional por defecto. Ver SkillStep.format_instructions.
+    format_instructions = serializers.CharField(required=False, allow_blank=True, default="")
     position = serializers.IntegerField(min_value=1)
     step_type = serializers.ChoiceField(
         choices=SkillStepType.choices,
