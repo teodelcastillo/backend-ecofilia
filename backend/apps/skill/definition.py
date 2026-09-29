@@ -39,9 +39,11 @@ import json
 # cambio de forma: mueve todas las huellas de golpe, y por eso el número sube
 # — una comparación contra una corrida vieja tiene que poder distinguir esto de
 # un cambio real del autor del workflow.
-# 3: los pasos pueden declarar su propio formato (``format_instructions``).
-# El campo nuevo entra en todas las serializaciones, vacío o no, así que mueve
-# las huellas de todos los workflows sin que nadie haya editado nada.
+# 3: el formato de la respuesta se declara por workflow y por paso
+# (``default_format_instructions``, ``format_instructions``) y el modo
+# comparativo se puede apagar por paso (``comparative_enabled``). Los campos
+# nuevos entran en todas las serializaciones, así que mueven las huellas de
+# todos los workflows sin que nadie haya editado nada.
 DEFINITION_SCHEMA = 3
 
 # Un `skill_ref` apunta a otra skill, y esa otra skill también puede cambiar. Se
@@ -75,6 +77,7 @@ SKILL_FIELDS = (
     "total_limit",
     "max_per_doc_after_rerank",
     "default_output_mode",
+    "default_format_instructions",
     "table_schema",
     "pinned_document_slugs",
     "tools_enabled",
@@ -111,6 +114,7 @@ STEP_FIELDS = (
     "output_validation",
     "approval_required",
     "format_instructions",
+    "comparative_enabled",
 )
 
 STEP_FIELDS_IGNORED = (

@@ -163,6 +163,18 @@ class Skill(models.Model):
         help_text="Max chunks kept per document after global reranking.",
     )
 
+    # Formato por defecto de los pasos de texto del workflow. Precedencia: el
+    # formato del paso, si lo tiene; si no, éste; si tampoco, el estándar de
+    # entregable del motor. Uno solo por paso (ver `step_output_rules`).
+    default_format_instructions = models.TextField(
+        blank=True,
+        default="",
+        help_text=(
+            "Formato por defecto de la respuesta de cada paso de texto. Un paso "
+            "con formato propio lo reemplaza; vacío, rige el formato profesional "
+            "del motor."
+        ),
+    )
     default_output_mode = models.CharField(
         max_length=20,
         choices=ExecutionOutputMode.choices,
@@ -492,6 +504,18 @@ class SkillStep(models.Model):
         help_text=(
             "When enabled, the copilot pauses after this step completes and waits for "
             "the consultant to review, optionally edit, and approve before continuing."
+        ),
+    )
+    # Si el paso recibe las reglas del modo comparativo (hallazgos documento
+    # por documento, cubrir cada documento). Rige sólo con el modo comparativo
+    # del workflow activado: ese es el interruptor general, éste permite
+    # sacar un paso puntual —un resumen, una conclusión— donde ordenar por
+    # documento deforma la respuesta. Es independiente del formato.
+    comparative_enabled = models.BooleanField(
+        default=True,
+        help_text=(
+            "Con el modo comparativo del workflow activado, si este paso recibe "
+            "sus reglas. Apagado, el paso no organiza su respuesta por documento."
         ),
     )
     table_schema = models.JSONField(

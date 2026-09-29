@@ -149,6 +149,7 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "table_schema",
             "output_validation",
             "approval_required",
+            "comparative_enabled",
         )
 
 
@@ -166,7 +167,7 @@ class SkillSerializer(serializers.ModelSerializer):
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
-            "default_output_mode", "table_schema",
+            "default_output_mode", "default_format_instructions", "table_schema",
             "pinned_document_slugs",
             # Sprint 1 + 2
             "tools_enabled",
@@ -274,6 +275,9 @@ class SkillStepWriteSerializer(serializers.Serializer):
     )
     table_schema = serializers.DictField(required=False)
     approval_required = serializers.BooleanField(required=False, default=False)
+    # Encendido por defecto: con el modo comparativo del workflow activado, el
+    # paso lo recibe salvo que el autor lo apague.
+    comparative_enabled = serializers.BooleanField(required=False, default=True)
 
     def validate(self, attrs):
         step_type = attrs.get("step_type", SkillStepType.INSTRUCTION)
@@ -357,7 +361,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
-            "default_output_mode", "table_schema",
+            "default_output_mode", "default_format_instructions", "table_schema",
             "pinned_document_slugs",
             # Sprint 1 + 2
             "tools_enabled",

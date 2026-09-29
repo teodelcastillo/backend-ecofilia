@@ -154,37 +154,46 @@ def deliverable_standard(*, context_first: bool) -> str:
 
 def step_output_rules(
     *,
-    format_instructions: str,
+    step_format: str,
+    workflow_format: str,
     is_table_step: bool,
-    comparative_mode_enabled: bool,
+    comparative: bool,
     strict_missing_evidence: bool,
     context_first: bool,
 ) -> list[str]:
-    """Las reglas de forma de la respuesta de un paso: las del autor o las del motor.
+    """Las reglas de forma de un paso, decididas por el motor y no por el modelo.
 
-    Si el paso declara su formato, ese es el único que viaja. Si no, rigen el
-    modo comparativo y el estándar de entregable, como siempre. Nunca las dos:
-    con ambas en el pedido el modelo decidía cuál pesaba más, y un paso que
-    pedía «un solo párrafo» salía con cinco y subtítulos por documento. La
-    precedencia la resuelve el motor, no el modelo — y así tampoco se pagan
-    tokens por instrucciones que no van a regir.
+    Son dos decisiones independientes, cada una con un solo resultado:
+
+    * **Comparativo** — si el paso ordena sus hallazgos documento por
+      documento. Rige con el modo comparativo del workflow activado y el paso
+      sin excluirse (``comparative`` ya viene resuelto así).
+    * **Formato** — el del paso si lo tiene; si no, el del workflow; si
+      tampoco, el estándar de entregable del motor. Uno solo.
+
+    Antes el estándar del motor viajaba siempre, detrás de la instrucción del
+    paso, y el modelo decidía cuál pesaba más: un paso que pedía «un solo
+    párrafo» salía con cinco. Ahora al pedido sólo llega la regla que rige, y
+    no se pagan tokens por las que no.
 
     Un paso de tabla no lleva ninguna: su forma es el esquema JSON.
     """
     if is_table_step:
         return []
-    custom = (format_instructions or "").strip()
-    if custom:
-        return [f"## Formato de la respuesta\n{custom}"]
     rules: list[str] = []
-    if comparative_mode_enabled:
+    if comparative:
         rules.append(
             "## Comparative constraints:\n"
             + _comparative_instruction_block(
                 strict_missing_evidence, has_inventory=context_first
             )
         )
-    rules.append(deliverable_standard(context_first=context_first))
+    custom = (step_format or "").strip() or (workflow_format or "").strip()
+    rules.append(
+        f"## Formato de la respuesta\n{custom}"
+        if custom
+        else deliverable_standard(context_first=context_first)
+    )
     return rules
 
 
@@ -1953,9 +1962,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             lines.extend(
                 f"\n{rule}"
                 for rule in step_output_rules(
-                    format_instructions=step.format_instructions,
+                    step_format=step.format_instructions,
+                    workflow_format=skill.default_format_instructions,
                     is_table_step=is_table_step,
-                    comparative_mode_enabled=skill.comparative_mode_enabled,
+                    comparative=skill.comparative_mode_enabled and step.comparative_enabled,
                     strict_missing_evidence=skill.strict_missing_evidence,
                     context_first=use_context_first,
                 )

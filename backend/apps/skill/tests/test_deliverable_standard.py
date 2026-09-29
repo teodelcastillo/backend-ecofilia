@@ -88,50 +88,63 @@ class ComparativeBlockTests(SimpleTestCase):
 
 
 class StepOutputRulesTests(SimpleTestCase):
-    """El formato del paso, si existe, es el único que viaja.
+    """Las reglas de forma de un paso las decide el motor, una por decisión.
 
     El caso real: pasos que pedían «un solo párrafo» salían con cinco, y
     comparaciones de alineación salían con un subtítulo por documento. El
-    estándar de entregable pedía subtítulos y listas, el modo comparativo
-    pedía ordenar por documento, y el modelo elegía cuál pesaba más.
+    estándar del motor viajaba siempre detrás de la instrucción del paso y el
+    modelo elegía cuál pesaba más.
     """
 
-    def _rules(self, fmt="", **overrides):
+    def _rules(self, step="", workflow="", **overrides):
         options = {
-            "format_instructions": fmt,
+            "step_format": step,
+            "workflow_format": workflow,
             "is_table_step": False,
-            "comparative_mode_enabled": True,
+            "comparative": False,
             "strict_missing_evidence": True,
             "context_first": True,
         }
         options.update(overrides)
         return "\n".join(step_output_rules(**options))
 
-    def test_author_format_replaces_every_engine_rule(self):
+    def test_step_format_replaces_the_engine_standard(self):
         rules = self._rules("Un único párrafo, sin subtítulos ni listas.")
 
         self.assertIn("Un único párrafo, sin subtítulos ni listas.", rules)
         self.assertNotIn("subtítulos, párrafos y listas", rules)
-        self.assertNotIn("Comparative", rules)
-        self.assertNotIn("Cubrí cada documento", rules)
 
-    def test_without_author_format_the_engine_default_stays(self):
-        rules = self._rules("")
+    def test_step_format_wins_over_the_workflow_format(self):
+        rules = self._rules("Un párrafo.", "Tres párrafos con subtítulos.")
 
-        self.assertIn("Comparative", rules)
-        self.assertEqual(
-            rules.split("\n")[-1],
-            COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST.split("\n")[-1],
-        )
+        self.assertIn("Un párrafo.", rules)
+        self.assertNotIn("Tres párrafos", rules)
+
+    def test_workflow_format_applies_when_the_step_has_none(self):
+        rules = self._rules("", "Tres párrafos con subtítulos.")
+
+        self.assertIn("Tres párrafos con subtítulos.", rules)
+        self.assertNotIn("subtítulos, párrafos y listas", rules)
+
+    def test_engine_standard_is_the_fallback(self):
+        rules = self._rules("", "")
+
+        self.assertEqual(rules, COPILOT_DELIVERABLE_STANDARD_CONTEXT_FIRST)
 
     def test_blank_format_counts_as_absent(self):
-        self.assertEqual(self._rules("   \n "), self._rules(""))
+        self.assertEqual(self._rules("   \n ", " "), self._rules("", ""))
 
-    def test_comparative_block_only_when_enabled(self):
-        self.assertNotIn("Comparative", self._rules("", comparative_mode_enabled=False))
+    def test_comparative_is_independent_of_the_format(self):
+        """Apagar el comparativo no toca el formato, y declarar un formato no
+        apaga el comparativo: son dos selectores distintos."""
+        with_both = self._rules("Un párrafo.", comparative=True)
+        self.assertIn("Comparative", with_both)
+        self.assertIn("Un párrafo.", with_both)
+
+        without = self._rules("Un párrafo.", comparative=False)
+        self.assertNotIn("Comparative", without)
+        self.assertIn("Un párrafo.", without)
 
     def test_table_steps_get_no_prose_rules(self):
         """Su forma es el esquema JSON; un formato de prosa lo contradiría."""
-        self.assertEqual(self._rules("Un párrafo.", is_table_step=True), "")
-        self.assertEqual(self._rules("", is_table_step=True), "")
-
+        self.assertEqual(self._rules("Un párrafo.", "X", is_table_step=True, comparative=True), "")
