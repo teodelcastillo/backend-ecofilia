@@ -41,7 +41,9 @@ import json
 # un cambio real del autor del workflow.
 # 3: el formato de la respuesta se declara por workflow y por paso
 # (``default_format_instructions``, ``format_instructions``) y el modo
-# comparativo se puede apagar por paso (``comparative_enabled``). Los campos
+# comparativo se puede apagar por paso (``comparative_enabled``); cada paso
+# elige qué secciones previas ve (``history_mode``, ``history_positions``) y
+# cómo razona (``reasoning_effort``, ``reasoning_instructions``). Los campos
 # nuevos entran en todas las serializaciones, así que mueven las huellas de
 # todos los workflows sin que nadie haya editado nada.
 DEFINITION_SCHEMA = 3
@@ -115,6 +117,10 @@ STEP_FIELDS = (
     "approval_required",
     "format_instructions",
     "comparative_enabled",
+    "history_mode",
+    "history_positions",
+    "reasoning_effort",
+    "reasoning_instructions",
 )
 
 STEP_FIELDS_IGNORED = (

@@ -59,7 +59,7 @@ class ComparativeBlockTests(SimpleTestCase):
         y la sección hablaba de tres."""
         block = _comparative_instruction_block(True, has_inventory=False)
 
-        self.assertIn("include every active document", block)
+        self.assertIn("incluí todos los documentos activos", block)
         self.assertIn("Sin evidencia en fuentes provistas", block)
 
     def test_with_inventory_it_drops_the_single_formula(self):
@@ -138,11 +138,11 @@ class StepOutputRulesTests(SimpleTestCase):
         """Apagar el comparativo no toca el formato, y declarar un formato no
         apaga el comparativo: son dos selectores distintos."""
         with_both = self._rules("Un párrafo.", comparative=True)
-        self.assertIn("Comparative", with_both)
+        self.assertIn("Requisitos comparativos", with_both)
         self.assertIn("Un párrafo.", with_both)
 
         without = self._rules("Un párrafo.", comparative=False)
-        self.assertNotIn("Comparative", without)
+        self.assertNotIn("Requisitos comparativos", without)
         self.assertIn("Un párrafo.", without)
 
     def test_table_steps_get_no_prose_rules(self):

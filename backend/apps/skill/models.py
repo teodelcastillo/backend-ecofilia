@@ -388,6 +388,21 @@ class StepEvidenceSelection(models.TextChoices):
     MANUAL = "manual", _("Sólo los documentos nombrados")
 
 
+class StepHistoryMode(models.TextChoices):
+    AUTO = "auto", _("Automático")
+    SELECTED = "selected", _("Elegidas")
+
+
+class StepReasoningEffort(models.TextChoices):
+    """Los niveles de `output_config.effort` de la API."""
+    DEFAULT = "", _("Por defecto")
+    LOW = "low", _("Bajo")
+    MEDIUM = "medium", _("Medio")
+    HIGH = "high", _("Alto")
+    XHIGH = "xhigh", _("Muy alto")
+    MAX = "max", _("Máximo")
+
+
 class SkillStep(models.Model):
     skill = models.ForeignKey(Skill, related_name="steps", on_delete=models.CASCADE)
     title = models.CharField(max_length=255)
@@ -518,6 +533,32 @@ class SkillStep(models.Model):
             "sus reglas. Apagado, el paso no organiza su respuesta por documento."
         ),
     )
+
+    # Qué secciones previas ve el paso. "auto" es el comportamiento de
+    # siempre: las últimas completas y el resto compactado. "selected" es la
+    # lista del autor, completas y ninguna otra (ver `select_history`).
+    history_mode = models.CharField(
+        max_length=10,
+        choices=StepHistoryMode.choices,
+        default=StepHistoryMode.AUTO,
+    )
+    history_positions = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Con history_mode='selected', las posiciones de los pasos previos que ve.",
+    )
+    # Cuánto razona el modelo en este paso (`output_config.effort`). Vacío: el
+    # default del modelo. Un nivel distinto entre pasos reescribe la caché del
+    # expediente, así que conviene usarlo donde el juicio lo justifique.
+    reasoning_effort = models.CharField(
+        max_length=10,
+        choices=StepReasoningEffort.choices,
+        blank=True,
+        default="",
+    )
+    # Criterios y metodología con los que el paso tiene que razonar. Parte de
+    # la tarea, no del formato: viaja pegado a la instrucción.
+    reasoning_instructions = models.TextField(blank=True, default="")
     table_schema = models.JSONField(
         default=dict,
         blank=True,

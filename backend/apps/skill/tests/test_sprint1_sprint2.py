@@ -530,7 +530,7 @@ class CopilotResearchPhaseTestCase(TestCase):
 
         # The first step's prompt should contain the research scratchpad section label
         first_step_prompt = mock_completion.call_args_list[0].args[0][1]["content"]
-        self.assertIn("Research scratchpad", first_step_prompt)
+        self.assertIn("Relevamiento previo del expediente", first_step_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")
     @patch("apps.skill.services.fetch_relevant_chunks")
@@ -571,7 +571,7 @@ class CopilotResearchPhaseTestCase(TestCase):
         # Exactly 2 fetch calls (one per step), no research phase
         self.assertEqual(mock_fetch.call_count, 2)
         first_step_prompt = mock_completion.call_args_list[0].args[0][1]["content"]
-        self.assertNotIn("Research scratchpad", first_step_prompt)
+        self.assertNotIn("Relevamiento previo del expediente", first_step_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")
     @patch("apps.skill.services.fetch_relevant_chunks")

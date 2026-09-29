@@ -27,6 +27,7 @@ from apps.document.utils.llm import (
     tool_capable_model,
 )
 from apps.skill import context_budget
+from apps.skill import prompt_text
 from apps.skill import definition as definition_module
 from apps.skill.citations import citation_stats, resolve_citations
 from apps.skill.models import (
@@ -183,14 +184,15 @@ def step_output_rules(
     rules: list[str] = []
     if comparative:
         rules.append(
-            "## Comparative constraints:\n"
+            prompt_text.text("comparative_header")
+            + "\n"
             + _comparative_instruction_block(
                 strict_missing_evidence, has_inventory=context_first
             )
         )
     custom = (step_format or "").strip() or (workflow_format or "").strip()
     rules.append(
-        f"## Formato de la respuesta\n{custom}"
+        prompt_text.text("format", text=custom)
         if custom
         else deliverable_standard(context_first=context_first)
     )
@@ -486,23 +488,17 @@ def _comparative_instruction_block(
     más preciso que un booleano: dice documento por documento cuál llegó
     completo y cuál en fragmentos.
     """
-    lines = ["Comparative output requirements:",
-             "1) Present findings by document first for each criterion."]
+    lines = [
+        prompt_text.text("comparative_intro"),
+        prompt_text.text("comparative_by_document"),
+    ]
     if not has_inventory:
+        lines.append(prompt_text.text("comparative_cover_all"))
         lines.append(
-            "2) For every criterion, include every active document even if there is "
-            "no direct evidence."
+            prompt_text.text(
+                "comparative_strict" if strict_missing_evidence else "comparative_lenient"
+            )
         )
-        if strict_missing_evidence:
-            lines.append(
-                "3) If a document does not contain evidence for a criterion, explicitly "
-                "write: 'Sin evidencia en fuentes provistas'."
-            )
-        else:
-            lines.append(
-                "3) If evidence is missing, state that limitation clearly and avoid "
-                "unsupported inference."
-            )
     else:
         lines.append(
             "2) Cubrí cada documento del inventario en cada criterio. "
@@ -885,6 +881,7 @@ def _call_model(
     tier: str,
     tool_ctx=None,
     citations_out: list | None = None,
+    effort: str | None = None,
 ) -> tuple[str, dict, str]:
     """
     Dispatch to generate_with_tools or generate_chat_completion depending on
@@ -917,6 +914,7 @@ def _call_model(
             tool_executor=_executor,
             model=model,
             temperature=skill.temperature,
+            effort=effort,
         )
         return text, usage, model
 
@@ -929,6 +927,7 @@ def _call_model(
         # `context_budget.output_reserve`. OpenAI sigue con su default.
         max_tokens=context_budget.output_reserve(model) if is_anthropic_model(model) else None,
         citations_out=citations_out,
+        effort=effort,
     )
     return text, usage, model
 
@@ -1275,6 +1274,35 @@ class StepScope:
 
     documents: QuerySet[Document]
     diagnostics: dict
+
+
+def select_history(step, steps, previous_sections) -> list[str]:
+    """Las secciones previas que ve ``step``, ya renderizadas.
+
+    Por defecto, como siempre: las últimas ``HISTORY_FULL_STEPS`` completas y
+    el resto compactado. Con ``history_mode="selected"`` el autor elige cuáles,
+    y esas van completas —si las nombró es porque las necesita enteras— y
+    ninguna otra: un resumen final que integra todo y un paso descriptivo que
+    no necesita nada no deberían recibir lo mismo.
+
+    ``previous_sections`` tiene una entrada por paso ya ejecutado, en el orden
+    de ``steps``: la posición de cada sección es la del paso que la escribió.
+    """
+    if not previous_sections:
+        return []
+    if getattr(step, "history_mode", "auto") != "selected":
+        return _render_history(
+            previous_sections,
+            full_steps=HISTORY_FULL_STEPS,
+            max_chars=HISTORY_SUMMARY_CHARS,
+        )
+    wanted = set(getattr(step, "history_positions", None) or [])
+    chosen = [
+        section
+        for previous_step, section in zip(steps, previous_sections)
+        if previous_step.position in wanted
+    ]
+    return _render_history(chosen, full_steps=len(chosen), max_chars=HISTORY_SUMMARY_CHARS)
 
 
 def _clean_slugs(values) -> list[str]:
@@ -1725,6 +1753,7 @@ def _coerce_with_retry(
         tier=tier,
         tool_ctx=tool_ctx,
         citations_out=citas_reintento,
+        effort=getattr(step, "reasoning_effort", "") or None,
     )
     if citations_out is not None:
         # Las del primer intento describen un texto que ya no existe, así que se
@@ -1893,10 +1922,16 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
 
             # Compose the user prompt for this step
             lines = [
-                f"## Task: {step.title}",
+                prompt_text.text("task", title=step.title),
                 "",
-                f"Instructions: {step.instructions}",
+                prompt_text.text("instructions", instructions=step.instructions),
             ]
+            # Cómo razonar el paso: criterios y metodología del autor. Va
+            # pegado a la instrucción porque es parte de la tarea, no del
+            # formato de la respuesta.
+            reasoning = (step.reasoning_instructions or "").strip()
+            if reasoning:
+                lines.append("\n" + prompt_text.text("reasoning", text=reasoning))
             # Bajo contexto-primero el inventario ya lista, uno por uno, los
             # documentos que el paso tiene. Este aviso decía lo mismo peor: "un
             # subconjunto" sin decir de qué.
@@ -1927,30 +1962,31 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     if v not in (None, "")
                 ]
                 if param_lines:
-                    lines.append("\n## Run parameters:\n" + "\n".join(param_lines))
+                    lines.append(
+                        "\n" + prompt_text.text("run_parameters", lines="\n".join(param_lines))
+                    )
 
             if execution.extra_instructions:
-                lines.append(f"\nAdditional instructions from user: {execution.extra_instructions}")
-            if wants_history and previous_sections:
-                lines.append("\n## Secciones previas de este informe:")
-                lines.extend(
-                    _render_history(
-                        previous_sections,
-                        full_steps=HISTORY_FULL_STEPS,
-                        max_chars=HISTORY_SUMMARY_CHARS,
-                    )
+                lines.append(
+                    "\n" + prompt_text.text("extra_instructions", text=execution.extra_instructions)
                 )
+            history = (
+                select_history(step, steps, previous_sections) if wants_history else []
+            )
+            if history:
+                lines.append("\n" + prompt_text.text("previous_sections"))
+                lines.extend(history)
             # Shared research scratchpad (Sprint 2A)
             if shared_scratchpad:
-                lines.append(f"\n## Research scratchpad (broad corpus overview):\n{shared_scratchpad}")
+                lines.append("\n" + prompt_text.text("research_scratchpad", text=shared_scratchpad))
             if context_block:
-                lines.append(f"\n## Document context (targeted for this section):\n{context_block}")
+                lines.append("\n" + prompt_text.text("document_context", text=context_block))
             elif wants_documents and not use_context_first:
                 # Sólo se avisa de la ausencia cuando el paso esperaba evidencia.
                 # A un paso que integra resultados anteriores decirle que "no se
                 # encontró contenido documental" lo empuja a declarar una carencia
                 # que no existe.
-                lines.append("\n(No document content found for this section — note this in your output.)")
+                lines.append("\n" + prompt_text.text("no_document_content"))
             if use_context_first:
                 lines.append(
                     "\nCeñite a la base documental listada al comienzo de este "
@@ -2038,6 +2074,8 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 tier=tier_used,
                 tool_ctx=tool_ctx,
                 citations_out=raw_citations,
+                # Vacío: el default del modelo. Ver SkillStep.reasoning_effort.
+                effort=step.reasoning_effort or None,
             )
             all_step_chunks.extend(tool_ctx.additional_chunks)
 

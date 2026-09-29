@@ -220,6 +220,7 @@ def generate_chat_completion(
     timeout: float | None = None,
     response_format: dict | None = None,
     citations_out: list | None = None,
+    effort: str | None = None,
 ) -> Tuple[str, dict]:
     """
     Generate chat completion using OpenAI's chat models.
@@ -261,6 +262,7 @@ def generate_chat_completion(
             max_tokens=max_tokens,
             timeout=timeout,
             citations_out=citations_out,
+            effort=effort,
         )
 
     # Format messages for OpenAI Chat Completions API
@@ -325,6 +327,7 @@ def generate_with_tools(
     model: str | None = None,
     temperature: float = 0.1,
     max_iterations: int = 6,
+    effort: str | None = None,
 ) -> Tuple[str, dict]:
     """
     Agentic chat completion with tool-call loop.
@@ -356,6 +359,7 @@ def generate_with_tools(
             model=effective_model,
             temperature=temperature,
             max_iterations=max_iterations,
+            effort=effort,
         )
     client = get_openai_client()
     conversation = [{"role": m["role"], "content": m["content"]} for m in messages]

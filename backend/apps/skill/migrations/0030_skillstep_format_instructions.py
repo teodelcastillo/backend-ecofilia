@@ -8,6 +8,46 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
+            model_name="skillstep",
+            name="history_mode",
+            field=models.CharField(
+                choices=[("auto", "Automático"), ("selected", "Elegidas")],
+                default="auto",
+                max_length=10,
+            ),
+        ),
+        migrations.AddField(
+            model_name="skillstep",
+            name="history_positions",
+            field=models.JSONField(
+                blank=True,
+                default=list,
+                help_text="Con history_mode='selected', las posiciones de los pasos previos que ve.",
+            ),
+        ),
+        migrations.AddField(
+            model_name="skillstep",
+            name="reasoning_effort",
+            field=models.CharField(
+                blank=True,
+                choices=[
+                    ("", "Por defecto"),
+                    ("low", "Bajo"),
+                    ("medium", "Medio"),
+                    ("high", "Alto"),
+                    ("xhigh", "Muy alto"),
+                    ("max", "Máximo"),
+                ],
+                default="",
+                max_length=10,
+            ),
+        ),
+        migrations.AddField(
+            model_name="skillstep",
+            name="reasoning_instructions",
+            field=models.TextField(blank=True, default=""),
+        ),
+        migrations.AddField(
             model_name="skill",
             name="default_format_instructions",
             field=models.TextField(

@@ -23,6 +23,8 @@ from apps.skill.models import (
     SkillTier,
     StepEvidenceMode,
     StepEvidenceSelection,
+    StepHistoryMode,
+    StepReasoningEffort,
     SkillType,
 )
 from apps.skill.table_schema import (
@@ -150,6 +152,10 @@ class SkillStepSerializer(serializers.ModelSerializer):
             "output_validation",
             "approval_required",
             "comparative_enabled",
+            "history_mode",
+            "history_positions",
+            "reasoning_effort",
+            "reasoning_instructions",
         )
 
 
@@ -278,8 +284,25 @@ class SkillStepWriteSerializer(serializers.Serializer):
     # Encendido por defecto: con el modo comparativo del workflow activado, el
     # paso lo recibe salvo que el autor lo apague.
     comparative_enabled = serializers.BooleanField(required=False, default=True)
+    history_mode = serializers.ChoiceField(
+        choices=StepHistoryMode.choices, required=False, default=StepHistoryMode.AUTO,
+    )
+    history_positions = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), required=False, default=list,
+    )
+    reasoning_effort = serializers.ChoiceField(
+        choices=StepReasoningEffort.choices, required=False, allow_blank=True, default="",
+    )
+    reasoning_instructions = serializers.CharField(required=False, allow_blank=True, default="")
 
     def validate(self, attrs):
+        # Un paso sólo puede ver secciones que ya estén escritas cuando corre.
+        # Lo demás se descarta en vez de rechazar el guardado: una posición que
+        # quedó adelante después de borrar un paso no es un error del autor.
+        position = attrs.get("position", 0)
+        attrs["history_positions"] = sorted(
+            {p for p in attrs.get("history_positions") or [] if p < position}
+        )
         step_type = attrs.get("step_type", SkillStepType.INSTRUCTION)
         linked_slug = attrs.get("linked_skill_slug")
         instructions = (attrs.get("instructions") or "").strip()

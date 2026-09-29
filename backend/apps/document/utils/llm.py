@@ -158,6 +158,30 @@ def _model_accepts_temperature(model: str) -> bool:
     return False
 
 
+# Familias que aceptan `output_config.effort`. Haiku 4.5 y Sonnet 4.5 lo
+# rechazan con un 400; a esos no se les manda y responden con su default.
+_EFFORT_MODEL_PREFIXES = (
+    "claude-sonnet-5",
+    "claude-opus-5",
+    "claude-fable-5",
+    "claude-mythos",
+    "claude-opus-4-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-6",
+)
+
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def _model_accepts_effort(model: str) -> bool:
+    name = (model or "").lower()
+    if name.startswith("anthropic."):
+        name = name[len("anthropic."):]
+    return name.startswith(_EFFORT_MODEL_PREFIXES)
+
+
 def _thinking_enabled() -> bool:
     return os.environ.get("LLM_THINKING", "0").strip().lower() in ("1", "true", "yes", "on")
 
@@ -193,8 +217,13 @@ def _build_request(
     model: str,
     temperature: float | None,
     max_tokens: int | None,
+    effort: str | None = None,
 ) -> dict:
-    """Translate OpenAI-style messages into Anthropic Messages API params."""
+    """Translate OpenAI-style messages into Anthropic Messages API params.
+
+    ``effort`` es cuánto razona el modelo (``output_config.effort``). Sin él,
+    el default del modelo. Se descarta en los modelos que no lo aceptan.
+    """
     system_parts = [
         str(m.get("content") or "")
         for m in messages
@@ -226,6 +255,8 @@ def _build_request(
         params["temperature"] = temperature
     if _thinking_enabled():
         params["thinking"] = {"type": "adaptive"}
+    if effort in EFFORT_LEVELS and _model_accepts_effort(model):
+        params["output_config"] = {"effort": effort}
     return params
 
 
@@ -311,6 +342,7 @@ def anthropic_chat_completion(
     max_tokens: int | None = None,
     timeout: float | None = None,
     citations_out: list | None = None,
+    effort: str | None = None,
 ) -> Tuple[str, dict]:
     """Anthropic Messages API call shaped like ``generate_chat_completion``.
 
@@ -324,7 +356,7 @@ def anthropic_chat_completion(
     """
     client = _anthropic_client()
     params = _build_request(
-        messages, model=model, temperature=temperature, max_tokens=max_tokens
+        messages, model=model, temperature=temperature, max_tokens=max_tokens, effort=effort
     )
     caller = client.with_options(timeout=timeout) if timeout else client
     if params["max_tokens"] > _NON_STREAMING_MAX_TOKENS:
@@ -409,7 +441,7 @@ def anthropic_structured_completion(
 
     client = _anthropic_client()
     params = _build_request(messages, model=model, temperature=None, max_tokens=max_tokens)
-    params["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+    params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": schema}
     caller = client.with_options(timeout=timeout) if timeout else client
     response = caller.messages.create(**params)
 
@@ -515,6 +547,7 @@ def anthropic_chat_with_tools(
     max_tokens: int | None = None,
     max_iterations: int = 6,
     timeout: float | None = None,
+    effort: str | None = None,
 ) -> Tuple[str, dict]:
     """Anthropic-native agentic tool loop, mirroring ``generate_with_tools``.
 
@@ -532,7 +565,7 @@ def anthropic_chat_with_tools(
 
     client = _anthropic_client()
     params = _build_request(
-        messages, model=model, temperature=temperature, max_tokens=max_tokens
+        messages, model=model, temperature=temperature, max_tokens=max_tokens, effort=effort
     )
     params["tools"] = _to_anthropic_tools(tools)
     convo = params["messages"]
