@@ -1,5 +1,5 @@
 """
-Instrumentos país (NDC, NAP, LTS, AC): asignación automática por país.
+Instrumentos país (NDC, NAP, LTS, AC, NBSAP): asignación automática por país.
 
 Son documentos que un país presenta ante la CMNUCC y versiona en el tiempo —
 hay una NDC de 2016 y otra de 2021 para el mismo país. Para una operación de
@@ -20,9 +20,11 @@ from apps.project.services.evidence_tags import effective_tags, override_tags
 
 # Ampliable: cualquier etiqueta de la biblioteca donde "un documento por
 # país, el más nuevo gana" tenga sentido puede sumarse acá (ver el catálogo
-# sembrado en apps/document/migrations/0016_seed_evidence_tags.py — nbsap y
-# pancd son candidatos razonables si en algún momento se pide extenderlo).
-COUNTRY_INSTRUMENT_TAG_SLUGS = ["ndc", "nap", "lts", "comunicacion-adaptacion"]
+# sembrado en apps/document/migrations/0016_seed_evidence_tags.py; pancd es el
+# otro candidato razonable). La NBSAP (Estrategia Nacional de Biodiversidad)
+# entró el 2026-09-29: los pasos de biodiversidad del IET la leen, y el país
+# la versiona igual que la NDC.
+COUNTRY_INSTRUMENT_TAG_SLUGS = ["ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap"]
 
 
 def country_instrument_documents(

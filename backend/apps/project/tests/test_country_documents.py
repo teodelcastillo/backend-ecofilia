@@ -1,5 +1,5 @@
 """
-Asignación automática de instrumentos país (NDC, NAP, LTS, AC).
+Asignación automática de instrumentos país (NDC, NAP, LTS, AC, NBSAP).
 
 Lo que importa acá es la regla de negocio: entre varias versiones del mismo
 instrumento para un país, sólo la más nueva queda vinculada y etiquetada — y
@@ -195,3 +195,32 @@ class CountryInstrumentDocumentsTestCase(APITestCase):
         by_tag = country_instrument_documents(self.owner, "Colombia", ["ndc"])
 
         self.assertEqual(by_tag["ndc"], [])
+
+    def test_the_latest_nbsap_is_assigned_too(self):
+        """La NBSAP se versiona por país igual que la NDC: la vigente entra sola."""
+        tag_nbsap, _ = EvidenceTag.objects.update_or_create(
+            slug="nbsap", defaults={"name": "NBSAP", "source_topics": ["nbsap"]}
+        )
+        old = Document.objects.create(
+            owner=self.owner, name="NBSAP 2012", slug="nbsap-2012", region="Colombia",
+            is_public=True, year=2012,
+        )
+        new = Document.objects.create(
+            owner=self.owner, name="NBSAP 2016-2030", slug="nbsap-2016", region="Colombia",
+            is_public=True, year=2016,
+        )
+        old.evidence_tags.set([tag_nbsap])
+        new.evidence_tags.set([tag_nbsap])
+        project = Project.objects.create(
+            owner=self.owner, name="Operación", context_notes={"pais": "Colombia"}
+        )
+
+        assigned = sync_country_instrument_documents(project)
+
+        self.assertEqual(assigned["nbsap"], new)
+        self.assertEqual(
+            effective_tag_slugs(ProjectDocument.objects.get(project=project, document=new)),
+            ["nbsap"],
+        )
+        self.assertFalse(ProjectDocument.objects.filter(project=project, document=old).exists())
+
