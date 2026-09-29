@@ -69,6 +69,23 @@ def user_can_run_assistants(user) -> bool:
     )
 
 
+def user_can_run_skill(user, skill) -> bool:
+    """Si ``user`` puede ejecutar ``skill``: superadmin, o el asistente habilitado
+    para usuarios (``Skill.members_can_run``).
+
+    El acceso a la operación o al repositorio sobre el que corre se controla
+    aparte, en cada vista; esto sólo decide si el asistente está abierto a
+    quien no es superadmin.
+    """
+    if user_can_run_assistants(user):
+        return True
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and skill is not None
+        and getattr(skill, "members_can_run", False)
+    )
+
+
 RUN_FORBIDDEN_MESSAGE = (
-    "Ejecutar asistentes está habilitado sólo para administradores de Ecofilia."
+    "Este asistente está habilitado sólo para administradores de Ecofilia."
 )

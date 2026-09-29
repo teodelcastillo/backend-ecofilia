@@ -83,7 +83,7 @@ class SkillRunnerServiceTestCase(TestCase):
 
         self.assertTrue(mock_completion.called)
         rendered_prompt = mock_completion.call_args.args[0][1]["content"]
-        self.assertIn("Present findings by document first", rendered_prompt)
+        self.assertIn("Presentá los hallazgos documento por documento", rendered_prompt)
         self.assertIn("Sin evidencia en fuentes provistas", rendered_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")

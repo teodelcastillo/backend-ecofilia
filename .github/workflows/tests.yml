@@ -135,7 +135,8 @@ jobs:
             apps.project.tests.test_alignment_history \
             apps.skill.tests.test_run_permission \
             apps.skill.tests.test_execution_summary \
-            apps.skill.tests.test_step_controls
+            apps.skill.tests.test_step_controls \
+            apps.skill.tests.test_run_isolation
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from apps.skill.access import (
     RUN_FORBIDDEN_MESSAGE,
     user_can_run_assistants,
+    user_can_run_skill,
     executions_queryset_for_user,
     user_can_edit_execution_report,
     user_can_mutate_execution,
@@ -62,9 +63,9 @@ from apps.skill.tasks import run_skill_task
 
 
 
-def _ensure_can_run(user) -> None:
-    """Corta con 403 si el usuario no puede ejecutar asistentes."""
-    if not user_can_run_assistants(user):
+def _ensure_can_run(user, skill) -> None:
+    """Corta con 403 si el usuario no puede ejecutar este asistente."""
+    if not user_can_run_skill(user, skill):
         raise PermissionDenied(RUN_FORBIDDEN_MESSAGE)
 
 
@@ -93,7 +94,9 @@ class SkillViewSet(viewsets.ModelViewSet):
             Skill.objects
             .filter(Q(owner__isnull=True) | Q(owner=user))
             .prefetch_related(
-                Prefetch("steps", queryset=SkillStep.objects.order_by("position"))
+                Prefetch("steps", queryset=SkillStep.objects.order_by("position")),
+                "enabled_for_organizations",
+                "default_for_organizations",
             )
             .select_related("owner")
         )
@@ -150,6 +153,37 @@ class SkillViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You cannot delete this skill.")
         instance.delete()
 
+    @action(detail=False, methods=["get"], url_path="organizations")
+    def organizations(self, request):
+        """
+        Las organizaciones a las que se puede asignar un asistente, para el editor.
+
+        GET /api/skills/organizations/
+
+        Sólo superadmins. Trae cuántas operaciones tiene cada una, que es lo
+        que se toca al habilitar un asistente en las existentes.
+        """
+        if not user_can_run_assistants(request.user):
+            raise PermissionDenied("Sólo un superadmin asigna asistentes a organizaciones.")
+        from django.db.models import Count
+
+        from apps.user.models import Organization
+
+        orgs = Organization.objects.annotate(
+            operations_count=Count("members__projects", distinct=True)
+        ).order_by("name")
+        return Response(
+            [
+                {
+                    "slug": org.slug,
+                    "name": org.name,
+                    "restricted": org.restricted,
+                    "operations_count": org.operations_count,
+                }
+                for org in orgs
+            ]
+        )
+
     @action(detail=True, methods=["post"], url_path="run")
     def run(self, request, slug=None):
         """
@@ -157,8 +191,8 @@ class SkillViewSet(viewsets.ModelViewSet):
         QUICK skills run synchronously and return the full output immediately.
         COPILOT skills are dispatched asynchronously and return the execution ID.
         """
-        _ensure_can_run(request.user)
         skill = self.get_object()
+        _ensure_can_run(request.user, skill)
 
         serializer = RunSkillSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
@@ -481,8 +515,8 @@ class SkillExecutionViewSet(
         POST /api/skills/executions/{id}/approve/
         Body: { "override_content": "..." }   (optional)
         """
-        _ensure_can_run(request.user)
         execution = self.get_object()
+        _ensure_can_run(request.user, execution.skill)
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para modificar esta ejecución.")
         serializer = ApproveStepSerializer(data=request.data)
@@ -505,8 +539,8 @@ class SkillExecutionViewSet(
 
         POST /api/skills/executions/{id}/regenerate-step/
         """
-        _ensure_can_run(request.user)
         execution = self.get_object()
+        _ensure_can_run(request.user, execution.skill)
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para modificar esta ejecución.")
         try:
@@ -533,8 +567,8 @@ class SkillExecutionViewSet(
         corrida original — si alguien la editó, la comparación lo dice en vez de
         que la repetición finja ser idéntica.
         """
-        _ensure_can_run(request.user)
         execution = self.get_object()
+        _ensure_can_run(request.user, execution.skill)
         # Repetir cuesta una corrida entera de modelo: se pide el mismo permiso
         # que para modificarla, no el de sólo verla.
         if not user_can_mutate_execution(request.user, execution):
@@ -570,8 +604,8 @@ class SkillExecutionViewSet(
         `apps.skill.reliability`), donde antes la única salida era un shell de
         producción.
         """
-        _ensure_can_run(request.user)
         execution = self.get_object()
+        _ensure_can_run(request.user, execution.skill)
         if not user_can_mutate_execution(request.user, execution):
             raise PermissionDenied("No tienes permisos para reanudar esta ejecución.")
 

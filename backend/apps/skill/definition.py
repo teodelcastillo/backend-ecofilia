@@ -92,6 +92,7 @@ SKILL_FIELDS = (
 # que cada campo esté en una lista o en la otra.
 SKILL_FIELDS_IGNORED = (
     "id",
+    "members_can_run",   # quién lo ejecuta, no qué produce
     "owner",
     "slug",              # identidad de la skill, no contenido de la definición
     "allowed_contexts",  # dónde se la puede correr, no qué produce

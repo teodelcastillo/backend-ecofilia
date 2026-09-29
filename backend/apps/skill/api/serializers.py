@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.document.services import accessible_documents_for
 from apps.skill.models import (
@@ -159,8 +160,19 @@ class SkillStepSerializer(serializers.ModelSerializer):
         )
 
 
+def _is_superadmin(serializer) -> bool:
+    from apps.skill.access import user_can_run_assistants
+
+    request = serializer.context.get("request")
+    return bool(request and user_can_run_assistants(request.user))
+
+
 class SkillSerializer(serializers.ModelSerializer):
     owner_email = serializers.EmailField(source="owner.email", read_only=True, allow_null=True)
+    # A qué organizaciones está asignado. Sólo para superadmins: a un usuario
+    # de un cliente no le corresponde ver qué otros clientes tienen el asistente.
+    organization_slugs = serializers.SerializerMethodField()
+    default_organization_slugs = serializers.SerializerMethodField()
     steps = SkillStepSerializer(many=True, read_only=True)
     parameters = SkillParameterSerializer(many=True, read_only=True)
 
@@ -174,6 +186,7 @@ class SkillSerializer(serializers.ModelSerializer):
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
             "default_output_mode", "default_format_instructions", "table_schema",
+            "members_can_run", "organization_slugs", "default_organization_slugs",
             "pinned_document_slugs",
             # Sprint 1 + 2
             "tools_enabled",
@@ -187,6 +200,16 @@ class SkillSerializer(serializers.ModelSerializer):
             "id", "slug", "is_template", "is_default_enabled",
             "owner", "owner_email", "created_at", "updated_at",
         )
+
+    def get_organization_slugs(self, obj) -> list[str]:
+        if not _is_superadmin(self):
+            return []
+        return sorted(org.slug for org in obj.enabled_for_organizations.all())
+
+    def get_default_organization_slugs(self, obj) -> list[str]:
+        if not _is_superadmin(self):
+            return []
+        return sorted(org.slug for org in obj.default_for_organizations.all())
 
 
 class SkillStepWriteSerializer(serializers.Serializer):
@@ -367,6 +390,20 @@ class SkillStepWriteSerializer(serializers.Serializer):
 
 class SkillWriteSerializer(serializers.ModelSerializer):
     steps = SkillStepWriteSerializer(many=True, required=False)
+    # Disponibilidad: quién lo ejecuta y a qué organizaciones está asignado.
+    # Sólo superadmins; ausentes, no se toca lo que haya.
+    members_can_run = serializers.BooleanField(required=False)
+    organization_slugs = serializers.ListField(
+        child=serializers.SlugField(), required=False, write_only=True,
+    )
+    default_organization_slugs = serializers.ListField(
+        child=serializers.SlugField(), required=False, write_only=True,
+    )
+    # Acción, no estado: habilitarlo en las operaciones que ya existen de estas
+    # organizaciones. Las nuevas lo reciben por `default_organization_slugs`.
+    enable_on_existing_operations = serializers.ListField(
+        child=serializers.SlugField(), required=False, write_only=True,
+    )
     parameters = SkillParameterWriteSerializer(many=True, required=False)
     table_schema = serializers.DictField(required=False)
     default_output_mode = serializers.ChoiceField(
@@ -391,7 +428,61 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             "research_phase_enabled", "research_queries",
             "steps",
             "parameters",
+            "members_can_run",
+            "organization_slugs",
+            "default_organization_slugs",
+            "enable_on_existing_operations",
         )
+
+    _ORGANIZATION_FIELDS = (
+        "organization_slugs",
+        "default_organization_slugs",
+        "enable_on_existing_operations",
+    )
+
+    def _organizations(self, slugs: list[str], field: str) -> list:
+        from apps.user.models import Organization
+
+        orgs = list(Organization.objects.filter(slug__in=slugs))
+        missing = sorted(set(slugs) - {org.slug for org in orgs})
+        if missing:
+            raise serializers.ValidationError(
+                {field: f"Organizaciones inexistentes: {', '.join(missing)}"}
+            )
+        return orgs
+
+    def _pop_availability(self, validated_data: dict) -> dict:
+        """Saca la asignación a organizaciones de los datos del modelo.
+
+        ``members_can_run`` queda en ``validated_data`` —es un campo del
+        modelo—, pero pide el mismo permiso: quién ejecuta un asistente y a
+        qué clientes llega lo decide un superadmin.
+        """
+        slugs = {
+            key: validated_data.pop(key)
+            for key in self._ORGANIZATION_FIELDS
+            if key in validated_data
+        }
+        if (slugs or "members_can_run" in validated_data) and not _is_superadmin(self):
+            raise PermissionDenied(
+                "Sólo un superadmin decide quién ejecuta un asistente y a qué "
+                "organizaciones está asignado."
+            )
+        return {key: self._organizations(value, key) for key, value in slugs.items()}
+
+    def _apply_availability(self, skill: Skill, availability: dict) -> None:
+        from apps.project.models import Project
+
+        if "organization_slugs" in availability:
+            skill.enabled_for_organizations.set(availability["organization_slugs"])
+        if "default_organization_slugs" in availability:
+            skill.default_for_organizations.set(availability["default_organization_slugs"])
+        existing = availability.get("enable_on_existing_operations")
+        contexts = set(skill.allowed_contexts or [])
+        if existing and contexts & {"project", "any"}:
+            skill.enabled_projects.add(
+                *Project.objects.filter(owner__organization__in=existing)
+            )
 
     def validate_allowed_contexts(self, value):
         if not value:
@@ -566,16 +657,19 @@ class SkillWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         steps_data = validated_data.pop("steps", [])
         parameters_data = validated_data.pop("parameters", [])
+        availability = self._pop_availability(validated_data)
         skill = Skill.objects.create(**validated_data)
         for step in steps_data:
             self._materialize_step(skill, step)
         for param in parameters_data:
             SkillParameter.objects.create(skill=skill, **param)
+        self._apply_availability(skill, availability)
         return skill
 
     def update(self, instance, validated_data):
         steps_data = validated_data.pop("steps", None)
         parameters_data = validated_data.pop("parameters", None)
+        availability = self._pop_availability(validated_data)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -587,6 +681,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             instance.parameters.all().delete()
             for param in parameters_data:
                 SkillParameter.objects.create(skill=instance, **param)
+        self._apply_availability(instance, availability)
         return instance
 
 
@@ -597,6 +692,9 @@ class SkillWriteSerializer(serializers.ModelSerializer):
 class SkillExecutionSerializer(serializers.ModelSerializer):
     skill_name = serializers.CharField(source="skill.name", read_only=True)
     skill_type = serializers.CharField(source="skill.skill_type", read_only=True)
+    # Para que el frente sepa si ofrecer reanudar, repetir o avanzar a quien
+    # no es superadmin, sin pedir la definición del asistente.
+    skill_members_can_run = serializers.BooleanField(source="skill.members_can_run", read_only=True)
     context_label = serializers.CharField(read_only=True)
     # Resolve context slugs for the frontend
     repository_slug = serializers.SlugField(source="repository.slug", read_only=True, allow_null=True)
@@ -624,7 +722,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SkillExecution
         fields = (
-            "id", "skill", "skill_name", "skill_type",
+            "id", "skill", "skill_name", "skill_type", "skill_members_can_run",
             "status", "context_label",
             "repository_slug", "project_slug", "document_slug",
             "extra_instructions", "input_values", "output_mode",

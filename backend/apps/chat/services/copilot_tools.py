@@ -439,6 +439,19 @@ def _execute_run_skill(args: dict, ctx: CopilotToolContext) -> str:
     except Skill.DoesNotExist:
         return f"Skill '{skill_slug}' not found."
 
+    # Las mismas reglas que el botón de ejecutar: un restringido no ve lo que
+    # no está asignado a su organización, y ejecutar lo decide el asistente.
+    # Sin esto el chat era una puerta lateral a cualquier skill por su slug.
+    from apps.skill.access import RUN_FORBIDDEN_MESSAGE, user_can_run_skill
+
+    user = ctx.user
+    if getattr(user, "is_restricted", False) and not skill.enabled_for_organizations.filter(
+        pk=user.organization_id
+    ).exists():
+        return f"Skill '{skill_slug}' not found."
+    if not user_can_run_skill(user, skill):
+        return RUN_FORBIDDEN_MESSAGE
+
     if skill.skill_type != SkillType.QUICK:
         return (
             f"Skill '{skill.name}' is a copilot (multi-step) skill and cannot be run "

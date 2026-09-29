@@ -163,6 +163,17 @@ class Skill(models.Model):
         help_text="Max chunks kept per document after global reranking.",
     )
 
+    # Quién puede ejecutarlo. Por defecto sólo superadmins: cada corrida
+    # cuesta dinero y cambia el informe de la operación. Encendido, también lo
+    # ejecutan los usuarios que tienen acceso a la operación —en una
+    # organización restringida, sólo si además está asignado a ella—.
+    members_can_run = models.BooleanField(
+        default=False,
+        help_text=(
+            "Si los usuarios que no son superadmin pueden ejecutar este asistente "
+            "en las operaciones a las que tienen acceso."
+        ),
+    )
     # Formato por defecto de los pasos de texto del workflow. Precedencia: el
     # formato del paso, si lo tiene; si no, éste; si tampoco, el estándar de
     # entregable del motor. Uno solo por paso (ver `step_output_rules`).
