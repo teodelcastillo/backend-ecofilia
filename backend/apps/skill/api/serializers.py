@@ -471,15 +471,34 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         return {key: self._organizations(value, key) for key, value in slugs.items()}
 
     def _apply_availability(self, skill: Skill, availability: dict) -> None:
+        """Asignar un asistente a una organización lo habilita en todas sus operaciones.
+
+        Las que ya existen lo reciben ahora; las nuevas, al crearse
+        (``default_for_organizations``). Es una sola decisión: una organización
+        que tiene el asistente asignado no debería tener operaciones donde no
+        se puede correr. Se vuelve a aplicar en cada guardado, así que una
+        operación a la que le faltaba lo recibe también.
+
+        Desasignar lo saca de las operaciones nuevas, pero no de las
+        existentes: esas conservan su historial de corridas, y la organización
+        igual deja de verlo.
+        """
         from apps.project.models import Project
 
         if "organization_slugs" in availability:
-            skill.enabled_for_organizations.set(availability["organization_slugs"])
+            orgs = availability["organization_slugs"]
+            skill.enabled_for_organizations.set(orgs)
+            skill.default_for_organizations.set(orgs)
+            if orgs and set(skill.allowed_contexts or []) & {"project", "any"}:
+                skill.enabled_projects.add(
+                    *Project.objects.filter(owner__organization__in=orgs)
+                )
+            return
+        # Compatibilidad con clientes que todavía mandan los campos separados.
         if "default_organization_slugs" in availability:
             skill.default_for_organizations.set(availability["default_organization_slugs"])
         existing = availability.get("enable_on_existing_operations")
-        contexts = set(skill.allowed_contexts or [])
-        if existing and contexts & {"project", "any"}:
+        if existing and set(skill.allowed_contexts or []) & {"project", "any"}:
             skill.enabled_projects.add(
                 *Project.objects.filter(owner__organization__in=existing)
             )

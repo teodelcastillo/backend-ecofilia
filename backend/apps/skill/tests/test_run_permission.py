@@ -162,28 +162,33 @@ class AssignToOrganizationTestCase(APITestCase):
             format="json",
         )
 
-    def test_assigns_visibility_and_default_for_new_operations(self):
-        response = self._patch(organization_slugs=["caf"], default_organization_slugs=["caf"])
+    def test_assigning_enables_it_in_every_operation_new_or_old(self):
+        response = self._patch(organization_slugs=["caf"])
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(self.org.enabled_skills.filter(pk=self.skill.pk).exists())
+        # Las operaciones nuevas lo traen de fábrica…
         self.assertTrue(self.org.default_project_skills.filter(pk=self.skill.pk).exists())
-        # Las existentes no se tocan sin pedirlo.
-        self.assertFalse(self.existing.enabled_skills.filter(pk=self.skill.pk).exists())
-
-    def test_enabling_on_existing_operations_is_explicit(self):
-        response = self._patch(organization_slugs=["caf"], enable_on_existing_operations=["caf"])
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        # …y las que ya existían lo reciben al asignarlo.
         self.assertTrue(self.existing.enabled_skills.filter(pk=self.skill.pk).exists())
 
-    def test_unassigning_removes_it(self):
-        self.org.enabled_skills.add(self.skill)
+    def test_saving_again_fills_operations_that_were_missing_it(self):
+        self._patch(organization_slugs=["caf"])
+        late = Project.objects.create(owner=self.member, name="Operación sin el asistente")
+        late.enabled_skills.clear()
+
+        self._patch(organization_slugs=["caf"])
+
+        self.assertTrue(late.enabled_skills.filter(pk=self.skill.pk).exists())
+
+    def test_unassigning_removes_it_from_the_organization_and_new_operations(self):
+        self._patch(organization_slugs=["caf"])
 
         response = self._patch(organization_slugs=[])
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertFalse(self.org.enabled_skills.filter(pk=self.skill.pk).exists())
+        self.assertFalse(self.org.default_project_skills.filter(pk=self.skill.pk).exists())
 
     def test_saving_without_the_fields_leaves_the_assignment_alone(self):
         self.org.enabled_skills.add(self.skill)
