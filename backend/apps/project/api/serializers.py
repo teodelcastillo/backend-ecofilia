@@ -7,6 +7,7 @@ from rest_framework import serializers
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.project.services.country_documents import sync_country_instrument_documents
+from apps.project.services.organization_operations import organization_default_skills_for
 from apps.project.services.evidence_tags import effective_tag_slugs
 from apps.project.services.alignment_history import record_if_changed
 from apps.project.models import (
@@ -299,6 +300,12 @@ class ProjectWriteSerializer(ProjectSerializer):
             if sent_skills
             else _default_skills_for(project.owner)
         )
+        # Una operación nueva recibe también los asistentes de las
+        # organizaciones a las que pertenece —por quien la creó o por los
+        # asistentes que ya trae—, aunque el cliente haya mandado una lista
+        # fija. Mandar `[]` sigue significando «sin agentes».
+        if not sent_skills or self.context.get("validated_enabled_skills"):
+            project.enabled_skills.add(*organization_default_skills_for(project))
         sync_country_instrument_documents(project)
         request = self.context.get("request")
         record_if_changed(project, {}, getattr(request, "user", None))

@@ -165,22 +165,18 @@ class SkillViewSet(viewsets.ModelViewSet):
         """
         if not user_can_run_assistants(request.user):
             raise PermissionDenied("Sólo un superadmin asigna asistentes a organizaciones.")
-        from django.db.models import Count
-
+        from apps.project.services.organization_operations import organization_operations
         from apps.user.models import Organization
 
-        orgs = Organization.objects.annotate(
-            operations_count=Count("members__projects", distinct=True)
-        ).order_by("name")
         return Response(
             [
                 {
                     "slug": org.slug,
                     "name": org.name,
                     "restricted": org.restricted,
-                    "operations_count": org.operations_count,
+                    "operations_count": organization_operations([org]).count(),
                 }
-                for org in orgs
+                for org in Organization.objects.order_by("name")
             ]
         )
 

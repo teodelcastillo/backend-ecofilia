@@ -484,6 +484,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         igual deja de verlo.
         """
         from apps.project.models import Project
+        from apps.project.services.organization_operations import organization_operations
 
         if "organization_slugs" in availability:
             orgs = availability["organization_slugs"]
@@ -491,7 +492,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             skill.default_for_organizations.set(orgs)
             if orgs and set(skill.allowed_contexts or []) & {"project", "any"}:
                 skill.enabled_projects.add(
-                    *Project.objects.filter(owner__organization__in=orgs)
+                    *organization_operations(orgs, exclude_skill=skill)
                 )
             return
         # Compatibilidad con clientes que todavía mandan los campos separados.

@@ -198,6 +198,42 @@ class AssignToOrganizationTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertTrue(self.org.enabled_skills.filter(pk=self.skill.pk).exists())
 
+    def test_operations_created_by_staff_count_as_the_organizations(self):
+        """Una operación CAF que armó alguien de Ecofilia no tiene dueño de CAF,
+        pero tiene el IET: es de CAF, y un workflow asignado a CAF le llega."""
+        iet = Skill.objects.create(
+            owner=None, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
+        )
+        self.org.enabled_skills.add(iet)
+        by_staff = Project.objects.create(owner=self.admin, name="Operación armada por staff")
+        by_staff.enabled_skills.add(iet)
+        unrelated = Project.objects.create(owner=self.admin, name="Proyecto de otra cosa")
+
+        self._patch(organization_slugs=["caf"])
+
+        self.assertTrue(by_staff.enabled_skills.filter(pk=self.skill.pk).exists())
+        self.assertFalse(unrelated.enabled_skills.filter(pk=self.skill.pk).exists())
+
+    def test_a_new_operation_from_the_caf_portal_gets_the_organizations_assistants(self):
+        """El formulario del portal manda una lista fija (el IET); la operación
+        igual recibe los demás asistentes asignados a CAF."""
+        iet = Skill.objects.create(
+            owner=None, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
+        )
+        self.org.enabled_skills.add(iet)
+        self._patch(organization_slugs=["caf"])
+
+        response = self.client.post(
+            reverse("project-list"),
+            {"name": "Operación nueva", "enabled_skill_slugs": [iet.slug]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        created = Project.objects.get(slug=response.data["slug"])
+        self.assertTrue(created.enabled_skills.filter(pk=self.skill.pk).exists())
+        self.assertTrue(created.enabled_skills.filter(pk=iet.pk).exists())
+
     def test_organizations_listing_is_for_superadmins(self):
         listing = self.client.get(reverse("skill-organizations"))
         self.assertEqual(listing.status_code, status.HTTP_200_OK)
