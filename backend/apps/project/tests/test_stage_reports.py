@@ -14,7 +14,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase
 
 from apps.document.models import Document
 from apps.project.models import (
@@ -257,6 +257,11 @@ class InstitutionalFolderTestCase(_ReportBase):
         self.assertEqual([item["project_slug"] for item in listed], [self.project.slug])
         self.assertEqual(listed[0]["emitted_markdown"], "# IET")
         self.assertEqual(listed[0]["project_pais"], "Perú")
+        # Lee el informe, pero la operación no es suya: no se la ofrece abrir.
+        self.assertFalse(listed[0]["can_open_project"])
+        self.client.force_authenticate(self.owner)
+        own = self.client.get("/api/projects/stage-reports/emitidos/?organization=caf").data
+        self.assertTrue(own[0]["can_open_project"])
 
         self.client.force_authenticate(outsider)
         self.assertEqual(self.client.get("/api/projects/stage-reports/emitidos/").data, [])
@@ -265,3 +270,46 @@ class InstitutionalFolderTestCase(_ReportBase):
         self._post(self.editor, "stage-report/", {"origin": "editado"})
         self.client.force_authenticate(self.owner)
         self.assertEqual(self.client.get("/api/projects/stage-reports/emitidos/").data, [])
+
+
+class GuiadoDispatchFailureTestCase(APITransactionTestCase):
+    """Sin transacción alrededor, como en producción: la corrida se encola en el
+    acto y, si no llega a la cola, el pedido lo sabe."""
+
+    def test_a_generation_that_cannot_be_queued_changes_nothing(self):
+        # Un TransactionTestCase vacía la base al terminar: el workflow guiado
+        # se arma acá en vez de depender de lo que sembró la migración.
+        skill, _ = Skill.objects.get_or_create(
+            slug=GUIADO_SLUG,
+            defaults={"name": "IET guiada", "skill_type": "copilot", "allowed_contexts": ["project"]},
+        )
+        skill.parameters.get_or_create(
+            key="criterio_ejecutivo",
+            defaults={"label": "Criterio del ejecutivo", "param_type": "text", "required": True},
+        )
+        caf = Organization.objects.create(name="CAF", slug="caf")
+        owner = User.objects.create_user(email="owner@caf.com", password="x", organization=caf)
+        project = Project.objects.create(
+            owner=owner, organization=caf, name="Operación",
+            context_notes={
+                "estado": "ido_cci",
+                "alineacion_paris": {"ct_a1": "Riesgo medio"},
+                "alineacion_fundamentos": {"ct_a1": "APRC de CESAS."},
+            },
+        )
+        doc = Document.objects.create(
+            owner=owner, name="Documento", slug="doc-op", chunking_status="done", extracted_text="x"
+        )
+        ProjectDocument.objects.create(project=project, document=doc, is_primary=True)
+        project.blueprint_document = doc
+        project.save(update_fields=["blueprint_document"])
+
+        self.client.force_authenticate(owner)
+        with patch(DELAY, side_effect=RuntimeError("SQS caído")):
+            response = self.client.post(f"/api/projects/{project.slug}/stage-report/guiado/", {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertFalse(ProjectStageReport.objects.filter(project=project).exists())
+        # La corrida que no arrancó no cuenta para el tope: se puede reintentar.
+        detail = self.client.get(f"/api/projects/{project.slug}/").data
+        self.assertEqual(detail["guiado_runs"]["used"], 0)

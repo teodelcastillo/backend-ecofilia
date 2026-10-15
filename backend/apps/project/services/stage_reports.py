@@ -168,6 +168,12 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
     )
     if outcome.execution is None:
         raise StageReportError(outcome.reason or "No se pudo generar el informe guiado.")
+    if outcome.status == "failed":
+        # No llegó a la cola: la vía del informe no cambia, y la corrida
+        # fallida no cuenta para el tope, así que se puede volver a intentar.
+        raise StageReportError(
+            "No se pudo poner en marcha la generación. Volvé a intentarlo en unos minutos."
+        )
 
     report.origin = Origin.GUIADO
     report.execution = outcome.execution

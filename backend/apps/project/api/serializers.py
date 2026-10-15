@@ -340,14 +340,22 @@ class EmittedStageReportSerializer(ProjectStageReportSerializer):
     project_slug = serializers.SlugField(source="project.slug", read_only=True)
     project_name = serializers.CharField(source="project.name", read_only=True)
     project_pais = serializers.SerializerMethodField()
+    # Un miembro de la institución lee el informe aunque no tenga acceso a la
+    # operación: la interfaz enlaza a la operación sólo si puede abrirla.
+    can_open_project = serializers.SerializerMethodField()
 
     class Meta(ProjectStageReportSerializer.Meta):
         fields = ProjectStageReportSerializer.Meta.fields + (
             "project_slug",
             "project_name",
             "project_pais",
+            "can_open_project",
         )
         read_only_fields = fields
+
+    def get_can_open_project(self, obj) -> bool:
+        request = self.context.get("request")
+        return bool(request and obj.project.can_view(request.user))
 
     def get_project_pais(self, obj):
         notes = obj.project.context_notes if isinstance(obj.project.context_notes, dict) else {}
