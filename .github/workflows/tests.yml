@@ -143,7 +143,10 @@ jobs:
             apps.user.tests.test_organization_scope \
             apps.project.tests.test_operation_roles \
             apps.user.tests.test_institution_admin \
-            apps.document.tests.test_document_create.ReuploadLongNameTestCase
+            apps.document.tests.test_document_create.ReuploadLongNameTestCase \
+            apps.project.tests.test_stages \
+            apps.project.tests.test_stage_reports \
+            apps.skill.tests.test_caf_stage_workflows
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

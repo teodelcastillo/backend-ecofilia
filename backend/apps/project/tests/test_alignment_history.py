@@ -36,14 +36,34 @@ class AlignmentHistoryTestCase(APITestCase):
         self._patch(alineacion_paris={"objetivo_1": "Alineada", "actualizado_en": "b"}, sector="Agua")
         self.assertEqual(ProjectAlignmentSnapshot.objects.count(), 1)
 
+    def _move_to(self, stage):
+        # La etapa se cambia con la acción de etapa, no editando la operación
+        # (ver ``apps.project.services.stages``).
+        return self.client.post(
+            reverse("project-stage", kwargs={"slug": self.project.slug}), {"to": stage}, format="json"
+        )
+
     def test_stage_change_takes_a_new_snapshot(self):
         self._patch(alineacion_paris={"objetivo_1": "Con brechas por CT A2"})
+        self.assertEqual(self._move_to("dec").status_code, status.HTTP_200_OK)
+        snaps = list(ProjectAlignmentSnapshot.objects.values_list("estado", "alineacion"))
+        self.assertEqual(
+            snaps,
+            [
+                ("ido_cci", {"objetivo_1": "Con brechas por CT A2"}),
+                ("dec", {"objetivo_1": "Con brechas por CT A2"}),
+            ],
+        )
+
+    def test_editing_cannot_change_the_stage(self):
         self._patch(estado="dec", alineacion_paris={"objetivo_1": "Alineada"})
-        estados = list(ProjectAlignmentSnapshot.objects.values_list("estado", flat=True))
-        self.assertEqual(estados, ["ido_cci", "dec"])
+        self.assertEqual(Project.objects.get(pk=self.project.pk).context_notes["estado"], "ido_cci")
+        self.assertEqual(
+            list(ProjectAlignmentSnapshot.objects.values_list("estado", flat=True)), ["ido_cci"]
+        )
 
     def test_no_determination_no_snapshot(self):
-        self._patch(estado="dec")
+        self.assertEqual(self._move_to("dec").status_code, status.HTTP_200_OK)
         self.assertFalse(ProjectAlignmentSnapshot.objects.exists())
 
     def test_history_endpoint_only_lists_visible_operations(self):

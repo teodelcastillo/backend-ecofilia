@@ -63,6 +63,12 @@ _SKIP_KEYS = {
     # agente la leyera antes de analizar, repetiría la conclusión en vez de
     # llegar a la suya.
     "alineacion_paris",
+    # Lo mismo para el resto de la mirada del ejecutivo: sus fundamentos, lo
+    # que respondió al insumo y lo que considera además de los criterios. El
+    # informe guiado lo recibe completo por parámetro; el resto no lo ve.
+    "alineacion_fundamentos",
+    "alineacion_insumo",
+    "consideraciones_adicionales",
 }
 
 _MAX_SUMMARY_CHARS = 4000

@@ -265,6 +265,156 @@ class ProjectAlignmentSnapshot(models.Model):
         return f"{self.project_id} @ {self.captured_at:%Y-%m-%d} ({self.estado or 'sin etapa'})"
 
 
+class ProjectStageTransition(models.Model):
+    """
+    Un cambio de etapa de una operación (pre-originación → IDO → DEC…).
+
+    La etapa vive en ``context_notes["estado"]``, pero cambiarla no es editar
+    un campo: entrar a IDO lanza el reporte de Ecofilia y el insumo para el
+    ejecutivo. Este registro guarda quién la cambió, cuándo y qué se lanzó —o
+    por qué no se pudo—, y es lo que permite reintentar después lo que quedó
+    bloqueado (ver ``apps.project.services.stages``).
+    """
+
+    project = models.ForeignKey(
+        Project, related_name="stage_transitions", on_delete=models.CASCADE
+    )
+    from_stage = models.CharField(max_length=40, blank=True)
+    to_stage = models.CharField(max_length=40)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    # Por skill: {"skill_slug", "status": launched|exists|blocked|unavailable,
+    # "execution_id", "reason"}. Se actualiza cuando un reintento lanza lo que
+    # estaba bloqueado.
+    launches = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        indexes = [models.Index(fields=["project", "created_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.project_id}: {self.from_stage or '—'} → {self.to_stage}"
+
+
+class ProjectStageReportOrigin(models.TextChoices):
+    # El ejecutivo trabaja sobre el reporte de Ecofilia: sus ediciones son
+    # capas sobre la corrida, así que el original no se pierde.
+    EDITADO = "editado", _("Editado sobre el reporte de Ecofilia")
+    # Ecofilia redacta con las determinaciones y fundamentos del ejecutivo.
+    GUIADO = "guiado", _("Guiado con el criterio del ejecutivo")
+    # El ejecutivo lo escribió afuera y lo subió.
+    SUBIDO = "subido", _("Subido por el ejecutivo")
+
+
+class ProjectStageReport(models.Model):
+    """
+    El informe del ejecutivo para una etapa de la operación.
+
+    Coexiste con el reporte de Ecofilia: aquel es la base objetiva; éste es la
+    versión oficial, que el ejecutivo arma por una de tres vías y después
+    **emite**. Emitido, queda inmutable —el snapshot no cambia aunque la corrida
+    se siga editando— y visible para toda la institución en modo lectura.
+
+    Hay a lo sumo uno vigente (no anulado) por etapa. Hasta emitirlo el
+    ejecutivo puede cambiar de vía; emitido, sólo el staff lo anula, y anularlo
+    conserva el registro.
+    """
+
+    project = models.ForeignKey(
+        Project, related_name="stage_reports", on_delete=models.CASCADE
+    )
+    stage = models.CharField(max_length=40)
+    origin = models.CharField(max_length=20, choices=ProjectStageReportOrigin.choices)
+
+    # Editado o guiado: la corrida cuyo informe (con sus ediciones) es el del
+    # ejecutivo.
+    execution = models.ForeignKey(
+        "skill.SkillExecution",
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    # Subido: el documento del ejecutivo. No se vincula al expediente de la
+    # operación a propósito: si lo estuviera, las corridas de Ecofilia leerían
+    # la conclusión del ejecutivo como evidencia.
+    document = models.ForeignKey(
+        Document,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    # La lectura estructurada del documento subido (determinaciones,
+    # recomendaciones, consideraciones), para compararlo con Ecofilia.
+    reader_execution = models.ForeignKey(
+        "skill.SkillExecution",
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    emitted_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    emitted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    # El informe tal como se emitió. Para los que viven en una corrida es el
+    # markdown ensamblado (carátula, insumo y secciones con sus ediciones);
+    # para el subido, vacío: el documento mismo es el emitido.
+    emitted_markdown = models.TextField(blank=True)
+    # La mirada estructurada del ejecutivo al emitir: determinaciones y
+    # fundamentos por criterio, o la lectura del documento subido.
+    emitted_assessment = models.JSONField(default=dict, blank=True)
+
+    voided_at = models.DateTimeField(null=True, blank=True)
+    voided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    void_reason = models.CharField(max_length=500, blank=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "stage"],
+                condition=Q(voided_at__isnull=True),
+                name="project_stage_report_one_active",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.project_id} {self.stage} ({self.origin})"
+
+    @property
+    def is_emitted(self) -> bool:
+        return self.emitted_at is not None and self.voided_at is None
+
+
 class ProjectShareRole(models.TextChoices):
     VIEWER = "viewer", _("Viewer")
     EDITOR = "editor", _("Editor")

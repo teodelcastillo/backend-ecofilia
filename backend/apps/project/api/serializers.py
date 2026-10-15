@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import serializers
 
@@ -21,6 +22,7 @@ from apps.project.models import (
     ProjectSectionStatus,
     ProjectShare,
     ProjectShareRole,
+    ProjectStageReport,
     ProjectStructureSection,
     ProjectStructureTemplate,
 )
@@ -160,6 +162,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     can_edit = serializers.SerializerMethodField()
     can_manage_shares = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
+    can_revert_stage = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -182,6 +185,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "can_edit",
             "can_manage_shares",
             "can_delete",
+            "can_revert_stage",
             "created_at",
             "updated_at",
         )
@@ -199,6 +203,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "can_edit",
             "can_manage_shares",
             "can_delete",
+            "can_revert_stage",
             "created_at",
             "updated_at",
         )
@@ -214,6 +219,140 @@ class ProjectSerializer(serializers.ModelSerializer):
     def get_can_delete(self, obj):
         request = self.context.get("request")
         return bool(request and obj.can_delete(request.user))
+
+    def get_can_revert_stage(self, obj):
+        from apps.project.services.stages import can_revert
+
+        request = self.context.get("request")
+        return bool(request and can_revert(request.user, obj))
+
+
+class ProjectStageReportSerializer(serializers.ModelSerializer):
+    """El informe del ejecutivo de una etapa, con lo que la interfaz necesita
+    para mostrarlo sin pedir las corridas aparte."""
+
+    execution_id = serializers.IntegerField(read_only=True, allow_null=True)
+    execution_status = serializers.CharField(source="execution.status", read_only=True, default=None)
+    execution_skill_slug = serializers.CharField(source="execution.skill.slug", read_only=True, default=None)
+    document = serializers.SerializerMethodField()
+    reader_execution_id = serializers.IntegerField(read_only=True, allow_null=True)
+    reader_status = serializers.CharField(source="reader_execution.status", read_only=True, default=None)
+    reading = serializers.SerializerMethodField()
+    created_by_email = serializers.EmailField(source="created_by.email", read_only=True, default=None)
+    emitted_by_email = serializers.EmailField(source="emitted_by.email", read_only=True, default=None)
+    voided_by_email = serializers.EmailField(source="voided_by.email", read_only=True, default=None)
+    is_emitted = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = ProjectStageReport
+        fields = (
+            "id",
+            "stage",
+            "origin",
+            "execution_id",
+            "execution_status",
+            "execution_skill_slug",
+            "document",
+            "reader_execution_id",
+            "reader_status",
+            "reading",
+            "created_by_email",
+            "created_at",
+            "updated_at",
+            "is_emitted",
+            "emitted_at",
+            "emitted_by_email",
+            "emitted_markdown",
+            "emitted_assessment",
+            "voided_at",
+            "voided_by_email",
+            "void_reason",
+        )
+        read_only_fields = fields
+
+    def get_document(self, obj):
+        doc = obj.document
+        if doc is None:
+            return None
+        try:
+            file_url = doc.file.url if doc.file else None
+        except Exception:  # noqa: BLE001 — sin storage configurado no hay URL
+            file_url = None
+        return {
+            "slug": doc.slug,
+            "name": doc.name,
+            "chunking_status": doc.chunking_status,
+            "file_url": file_url,
+        }
+
+    def get_reading(self, obj):
+        from apps.project.services.stage_reports import reading_assessment
+
+        return reading_assessment(obj) or None
+
+
+class ProjectDetailSerializer(ProjectSerializer):
+    """El detalle de una operación: suma su ciclo de etapas.
+
+    Va aparte del serializer del listado a propósito: el portal lista la
+    cartera entera, y estas dos colecciones costarían consultas por operación.
+    """
+
+    stage_history = serializers.SerializerMethodField()
+    stage_reports = serializers.SerializerMethodField()
+    guiado_runs = serializers.SerializerMethodField()
+
+    class Meta(ProjectSerializer.Meta):
+        fields = ProjectSerializer.Meta.fields + ("stage_history", "stage_reports", "guiado_runs")
+        read_only_fields = fields
+
+    def get_stage_history(self, obj):
+        from apps.project.services.stages import stage_history
+
+        return stage_history(obj)
+
+    def get_stage_reports(self, obj):
+        reports = (
+            obj.stage_reports.select_related(
+                "execution__skill", "document", "reader_execution",
+                "created_by", "emitted_by", "voided_by",
+            )
+            .order_by("created_at", "id")
+        )
+        return ProjectStageReportSerializer(reports, many=True, context=self.context).data
+
+    def get_guiado_runs(self, obj):
+        """Cuántas generaciones guiadas lleva la etapa actual y cuántas admite."""
+        from apps.project.services.stage_reports import GUIADO_MAX_PER_STAGE, guiado_runs_used
+        from apps.project.services.stages import current_stage, is_ecofilia_staff
+
+        request = self.context.get("request")
+        is_staff = bool(request and is_ecofilia_staff(request.user))
+        return {
+            "used": guiado_runs_used(obj, current_stage(obj)),
+            "max": None if is_staff else GUIADO_MAX_PER_STAGE,
+        }
+
+
+class EmittedStageReportSerializer(ProjectStageReportSerializer):
+    """Un informe emitido en la carpeta institucional: con su operación."""
+
+    project_slug = serializers.SlugField(source="project.slug", read_only=True)
+    project_name = serializers.CharField(source="project.name", read_only=True)
+    project_pais = serializers.SerializerMethodField()
+
+    class Meta(ProjectStageReportSerializer.Meta):
+        fields = ProjectStageReportSerializer.Meta.fields + (
+            "project_slug",
+            "project_name",
+            "project_pais",
+        )
+        read_only_fields = fields
+
+    def get_project_pais(self, obj):
+        notes = obj.project.context_notes if isinstance(obj.project.context_notes, dict) else {}
+        value = notes.get("pais")
+        return value if isinstance(value, str) else None
 
 
 class ProjectWriteSerializer(ProjectSerializer):
@@ -371,6 +510,18 @@ class ProjectWriteSerializer(ProjectSerializer):
         validated_data.pop("enabled_skill_slugs", None)
         should_sync_blueprint = "blueprint_document_slug" in validated_data
         blueprint_slug = validated_data.pop("blueprint_document_slug", None)
+        previous_blueprint_id = instance.blueprint_document_id
+        # La etapa no se edita como un campo: cambiarla tiene efectos (entrar
+        # a IDO lanza el reporte y el insumo) y pasa sólo por la acción de
+        # etapa (ver ``apps.project.services.stages``). Se preserva la del
+        # servidor: un formulario con datos viejos no la revierte sin querer.
+        if "context_notes" in validated_data and isinstance(validated_data["context_notes"], dict):
+            incoming = dict(validated_data["context_notes"])
+            if "estado" in previous_notes:
+                incoming["estado"] = previous_notes["estado"]
+            else:
+                incoming.pop("estado", None)
+            validated_data["context_notes"] = incoming
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
@@ -395,6 +546,21 @@ class ProjectWriteSerializer(ProjectSerializer):
                 instance.save(update_fields=["blueprint_document"])
         if should_sync_blueprint:
             self._sync_blueprint(instance, blueprint_slug)
+            if instance.blueprint_document_id and instance.blueprint_document_id != previous_blueprint_id:
+                # Con el principal recién elegido, lo que la etapa dejó
+                # bloqueado puede arrancar: primero se completan objetivo y
+                # componentes y después se reintenta (ver
+                # ``fill_from_blueprint_task``). Si el documento todavía se
+                # procesa, lo dispara el final de la ingesta.
+                from apps.document.models import ChunkingStatus
+                from apps.project.tasks import dispatch_fill_for_project
+
+                if instance.blueprint_document.chunking_status in (
+                    ChunkingStatus.DONE,
+                    ChunkingStatus.PARTIAL,
+                ):
+                    project_id = instance.pk
+                    transaction.on_commit(lambda: dispatch_fill_for_project(project_id))
         if should_sync_skills:
             instance.enabled_skills.set(self.context.get("validated_enabled_skills", []))
         sync_country_instrument_documents(instance)

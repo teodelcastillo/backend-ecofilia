@@ -3,7 +3,7 @@ from rest_framework.generics import CreateAPIView, ListAPIView
 from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import APIException, PermissionDenied
 
 from apps.document.services import visible_documents_q
 from apps.user.access import is_ecofilia_admin, is_ecofilia_superuser, is_organization_admin
@@ -747,6 +747,23 @@ class DocumentAccessPermission(permissions.BasePermission):
         return obj.can_write(request.user)
 
 
+class EmittedReportLocked(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = (
+        "Este documento es el informe oficial emitido de una operación: "
+        "no se puede modificar ni borrar."
+    )
+    default_code = "emitted_report_locked"
+
+
+def _ensure_not_emitted_report(document) -> None:
+    """Un informe emitido queda tal como se emitió, para todos."""
+    from apps.project.services.stage_reports import is_emitted_document
+
+    if is_emitted_document(document):
+        raise EmittedReportLocked()
+
+
 class DocumentViewSet(
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
@@ -786,8 +803,13 @@ class DocumentViewSet(
             qs = qs.filter(visible_documents_q(user)).distinct()
         return qs
     
+    def perform_update(self, serializer):
+        _ensure_not_emitted_report(serializer.instance)
+        serializer.save()
+
     def perform_destroy(self, instance):
         """Delete the document instance"""
+        _ensure_not_emitted_report(instance)
         instance.delete()
 
     @action(

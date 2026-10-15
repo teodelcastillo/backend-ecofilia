@@ -36,7 +36,6 @@ from apps.skill.api.serializers import (
     SkillWriteSerializer,
 )
 from apps.skill.models import (
-    ExecutionOutputMode,
     ExecutionStatus,
     Skill,
     SkillExecution,
@@ -55,9 +54,9 @@ from apps.skill.report_edits import (
     step_ids_of,
 )
 from apps.skill.context_preview import build_preview
-from apps.skill.table_schema import schema_has_columns
 from apps.skill.services import approve_step, regenerate_step, rerun_execution, resume_execution
 from apps.skill.dispatch import dispatch_execution
+from apps.skill.launch import create_execution, resolve_effective_output
 from apps.skill.tasks import run_skill_task
 
 
@@ -211,7 +210,7 @@ class SkillViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            effective_output_mode, effective_table_schema = self._resolve_effective_output(
+            effective_output_mode, effective_table_schema = resolve_effective_output(
                 skill=skill,
                 run_output_mode=data.get("output_mode"),
                 run_table_schema=data.get("table_schema") or {},
@@ -253,7 +252,7 @@ class SkillViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        execution = SkillExecution.objects.create(
+        execution = create_execution(
             skill=skill,
             owner=request.user,
             repository=data.get("repository"),
@@ -262,34 +261,12 @@ class SkillViewSet(viewsets.ModelViewSet):
             extra_instructions=data.get("extra_instructions", ""),
             input_values=input_values,
             output_mode=effective_output_mode,
-            metadata={
-                "table_columns": [
-                    col.get("key")
-                    for col in (effective_table_schema.get("columns") or [])
-                    if isinstance(col, dict) and col.get("key")
-                ],
-                "table_schema": effective_table_schema,
-                "document_slugs_filter": requested_doc_slugs,
-                "step_document_overrides": data.get("step_document_overrides") or {},
-                "review_each_step": bool(data.get("review_each_step")),
-                # Lo que el chequeo previo advirtió y se lanzó igual: explica
-                # después por qué un paso salió sin evidencia o sin contexto.
-                **(
-                    {"preflight_warnings": preflight.warnings}
-                    if preflight and preflight.warnings
-                    else {}
-                ),
-                # Claves que no corresponden a ningún parámetro declarado. No
-                # bloquean —romperían a cualquier llamador que hoy manda campos
-                # de más— pero quedan registradas: casi siempre son un typo, y
-                # un typo acá deja un `{{token}}` sin resolver en el prompt.
-                **(
-                    {"input_value_warnings": issues}
-                    if issues
-                    else {}
-                ),
-            },
-            status=ExecutionStatus.PENDING,
+            table_schema=effective_table_schema,
+            document_slugs=requested_doc_slugs,
+            step_document_overrides=data.get("step_document_overrides") or {},
+            review_each_step=bool(data.get("review_each_step")),
+            preflight_warnings=preflight.warnings if preflight and preflight.warnings else None,
+            input_value_warnings=issues or None,
         )
 
         if skill.skill_type == SkillType.QUICK:
@@ -374,46 +351,6 @@ class SkillViewSet(viewsets.ModelViewSet):
             return bool(project and project.enabled_skills.filter(pk=skill.pk).exists())
         return False
 
-    def _resolve_effective_output(
-        self,
-        *,
-        skill: Skill,
-        run_output_mode,
-        run_table_schema: dict,
-    ) -> tuple[str, dict]:
-        """
-        Resolve the effective output_mode and table_schema for a run.
-
-        Precedence:
-          1. Explicit `output_mode` in the run payload (with optional override schema).
-          2. Skill `default_output_mode` (and its persisted `table_schema`).
-          3. Defaults to TEXT.
-
-        For Copilots the *skill-level* table_schema is intentionally ignored;
-        each step decides its own output_mode/table_schema, so we only honor a
-        run-level override when the user explicitly requests a single tabular
-        output for the whole copilot.
-        """
-        if run_output_mode:
-            mode = run_output_mode
-        else:
-            mode = skill.default_output_mode or ExecutionOutputMode.TEXT
-
-        if mode == ExecutionOutputMode.TABLE:
-            if skill.skill_type == SkillType.COPILOT and not run_table_schema:
-                raise ValueError(
-                    "Copilots produce tabular output per step. "
-                    "Either configure step output_mode='table' on the skill, or "
-                    "send a run-level table_schema to consolidate the result."
-                )
-            schema = run_table_schema or skill.table_schema or {}
-            if not schema_has_columns(schema):
-                raise ValueError(
-                    "Cannot run skill in table mode: no table_schema is configured."
-                )
-            return mode, schema
-        return ExecutionOutputMode.TEXT, {}
-
 
 def _summary_annotations() -> dict:
     """Lo que el resumen de una corrida necesita de su JSON, calculado en Postgres.
@@ -434,7 +371,9 @@ def _summary_annotations() -> dict:
         )
 
     return {
-        "sections_count": count("$.steps[*]"),
+        # Las secciones del informe: los pasos internos ("S.", la síntesis por
+        # criterio) son un dato para comparar, no una sección que se edite.
+        "sections_count": count('$.steps[*] ? (!(@.title starts with "S."))'),
         "citations_count": count("$.steps[*].citations[*]"),
         "citations_verified_count": count(
             "$.steps[*].citations[*] ? (@.verified == true)"

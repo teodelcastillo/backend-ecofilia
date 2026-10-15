@@ -709,6 +709,10 @@ class SkillWriteSerializer(serializers.ModelSerializer):
 
 class SkillExecutionSerializer(serializers.ModelSerializer):
     skill_name = serializers.CharField(source="skill.name", read_only=True)
+    # El portal reconoce sus workflows por slug (IET, insumo, guiado…): por id
+    # tendría que listar todos los skills, y quien pertenece a una institución
+    # sólo ve los habilitados para ella.
+    skill_slug = serializers.SlugField(source="skill.slug", read_only=True)
     skill_type = serializers.CharField(source="skill.skill_type", read_only=True)
     # Para que el frente sepa si ofrecer reanudar, repetir o avanzar a quien
     # no es superadmin, sin pedir la definición del asistente.
@@ -745,7 +749,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
     class Meta:
         model = SkillExecution
         fields = (
-            "id", "skill", "skill_name", "skill_type", "skill_members_can_run",
+            "id", "skill", "skill_name", "skill_slug", "skill_type", "skill_members_can_run",
             "can_continue", "status", "context_label",
             "repository_slug", "project_slug", "document_slug",
             "extra_instructions", "input_values", "output_mode",
@@ -756,6 +760,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "document_snapshot", "metadata", "error_message",
             "definition_version", "definition_version_number", "definition_fingerprint",
             "started_at", "finished_at", "promoted_at", "created_at", "last_progress_at",
+            "stage",
         )
         read_only_fields = fields
 

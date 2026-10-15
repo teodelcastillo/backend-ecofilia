@@ -285,9 +285,12 @@ def process_document_chunks(self, doc_id: int) -> str:
 
         # La operación que tiene este documento como principal puede estar
         # esperando su objetivo y componentes: ahora ya hay de dónde sacarlos.
-        from apps.project.tasks import dispatch_fill_for_blueprint
+        from apps.project.tasks import dispatch_fill_for_blueprint, dispatch_stage_followups
 
         transaction.on_commit(lambda: dispatch_fill_for_blueprint(doc_id))
+        # El informe subido de un ejecutivo se lee recién ahora, y lo que una
+        # etapa dejó bloqueado por documentos en proceso puede arrancar.
+        transaction.on_commit(lambda: dispatch_stage_followups(doc_id))
 
         if final_status == ChunkingStatus.PARTIAL:
             logger.warning(

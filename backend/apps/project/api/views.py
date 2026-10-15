@@ -41,6 +41,7 @@ from apps.project.api.serializers import (
     ProjectSectionCreateSerializer,
     ProjectSectionSerializer,
     ProjectSectionUpdateSerializer,
+    ProjectDetailSerializer,
     ProjectSerializer,
     ProjectShareRoleUpdateSerializer,
     ProjectShareSerializer,
@@ -124,6 +125,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action in {"create", "update", "partial_update"}:
             return ProjectWriteSerializer
+        if self.action == "retrieve":
+            return ProjectDetailSerializer
         return ProjectSerializer
 
     def perform_create(self, serializer):
@@ -901,6 +904,222 @@ class ProjectViewSet(viewsets.ModelViewSet):
     # AI fill
     # ------------------------------------------------------------------
 
+    # ── Ciclo de la operación: etapas ────────────────────────────────────
+
+    @action(detail=True, methods=["post"], url_path="stage", url_name="stage")
+    def change_stage(self, request, slug=None):
+        """
+        Mueve la operación de etapa y lanza lo que la etapa nueva pide.
+
+        POST /projects/{slug}/stage/   {"to": "ido_cci"}
+
+        Avanzar es de quien edita; volver atrás, del staff o de quien
+        administra la institución. Entrar a IDO lanza el reporte de Ecofilia y
+        el insumo (una vez por etapa); lo que no se pudo lanzar vuelve con su
+        motivo y se reintenta solo cuando la operación esté lista.
+        """
+        from apps.project.services.stages import StageError, StagePermissionError, transition
+
+        project = self.get_object()
+        try:
+            record = transition(project, str(request.data.get("to") or "").strip(), request.user)
+        except StagePermissionError as exc:
+            raise PermissionDenied(str(exc))
+        except StageError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {"project": self._serialize_project(project), "launches": record.launches},
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="stage/launch", url_name="stage-launch")
+    def launch_stage(self, request, slug=None):
+        """
+        Lanza lo que la etapa actual pide y todavía no corrió.
+
+        POST /projects/{slug}/stage/launch/
+
+        Es el "Generar ahora" de la guía: para lo que quedó bloqueado y para
+        las operaciones creadas directamente en la etapa. Nunca repite: lo que
+        ya corrió, o falló, queda como está.
+        """
+        from apps.project.services.stages import (
+            current_stage,
+            launch_stage_workflows,
+            record_launches,
+        )
+
+        project = self.get_object()
+        stage = current_stage(project)
+        launches = launch_stage_workflows(project, stage, request.user)
+        record_launches(project, stage, launches)
+        return Response(
+            {"project": self._serialize_project(project), "launches": launches},
+            status=status.HTTP_200_OK,
+        )
+
+    # ── Ciclo de la operación: el informe del ejecutivo ──────────────────
+
+    def _stage_report_response(self, project, fn):
+        from apps.project.services.stage_reports import (
+            StageReportError,
+            StageReportPermissionError,
+        )
+
+        try:
+            fn()
+        except StageReportPermissionError as exc:
+            raise PermissionDenied(str(exc))
+        except StageReportError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self._serialize_project(project), status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="stage-report", url_name="stage-report")
+    def stage_report(self, request, slug=None):
+        """
+        Elige la vía del informe del ejecutivo en la etapa actual.
+
+        POST /projects/{slug}/stage-report/
+            {"origin": "editado"}
+            {"origin": "subido", "document_slug": "..."}
+
+        El guiado tiene su propio endpoint porque lanza una corrida.
+        """
+        from apps.project.services import stage_reports
+
+        project = self.get_object()
+        origin = str(request.data.get("origin") or "").strip()
+        if origin == "editado":
+            return self._stage_report_response(
+                project, lambda: stage_reports.choose_editado(project, request.user)
+            )
+        if origin == "subido":
+            document_slug = str(request.data.get("document_slug") or "").strip()
+            if not document_slug:
+                return Response(
+                    {"detail": "Falta el documento del informe."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return self._stage_report_response(
+                project,
+                lambda: stage_reports.attach_subido(project, request.user, document_slug),
+            )
+        return Response(
+            {"detail": "La vía tiene que ser 'editado' o 'subido'."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="stage-report/guiado",
+        url_name="stage-report-guiado",
+    )
+    def stage_report_guiado(self, request, slug=None):
+        """
+        Genera el informe del ejecutivo con su criterio.
+
+        POST /projects/{slug}/stage-report/guiado/
+
+        Toma las determinaciones, fundamentos y respuestas al insumo que el
+        ejecutivo guardó en Alineación. Hasta tres generaciones por etapa.
+        """
+        from apps.project.services import stage_reports
+
+        project = self.get_object()
+        return self._stage_report_response(
+            project, lambda: stage_reports.generate_guiado(project, request.user)
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="stage-report/emitir",
+        url_name="stage-report-emitir",
+    )
+    def stage_report_emitir(self, request, slug=None):
+        """
+        Emite el informe del ejecutivo de la etapa actual. Desde ahí es inmutable.
+
+        POST /projects/{slug}/stage-report/emitir/   {"markdown": "..."}
+
+        Para los informes que viven en una corrida, ``markdown`` es el informe
+        ensamblado tal como se ve (carátula, insumo y secciones con sus
+        ediciones). Para el subido no hace falta: el emitido es el documento.
+        """
+        from apps.project.services import stage_reports
+
+        project = self.get_object()
+        markdown = request.data.get("markdown") or ""
+        if not isinstance(markdown, str):
+            return Response(
+                {"detail": "El contenido del informe tiene que ser texto."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return self._stage_report_response(
+            project, lambda: stage_reports.emit(project, request.user, markdown)
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path=r"stage-report/(?P<report_id>\d+)/anular",
+        url_name="stage-report-anular",
+    )
+    def stage_report_anular(self, request, slug=None, report_id=None):
+        """
+        Anula un informe del ejecutivo (staff). Conserva el registro.
+
+        POST /projects/{slug}/stage-report/{id}/anular/   {"reason": "..."}
+        """
+        from apps.project.models import ProjectStageReport
+        from apps.project.services import stage_reports
+
+        project = self.get_object()
+        report = get_object_or_404(ProjectStageReport, pk=report_id, project=project)
+        return self._stage_report_response(
+            project,
+            lambda: stage_reports.void(report, request.user, str(request.data.get("reason") or "")),
+        )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="stage-reports/emitidos",
+        url_name="stage-reports-emitidos",
+    )
+    def stage_reports_emitidos(self, request):
+        """
+        La carpeta institucional: los informes emitidos, en modo lectura.
+
+        GET /projects/stage-reports/emitidos/[?organization=caf]
+
+        Un informe emitido es de la institución: lo ve todo miembro de la
+        organización de la operación, aunque no tenga acceso a la operación
+        misma. Nadie lo puede modificar.
+        """
+        from apps.project.api.serializers import EmittedStageReportSerializer
+        from apps.project.models import ProjectStageReport
+
+        user = request.user
+        qs = ProjectStageReport.objects.filter(
+            emitted_at__isnull=False, voided_at__isnull=True
+        ).select_related(
+            "project", "document", "execution__skill", "reader_execution",
+            "created_by", "emitted_by", "voided_by",
+        )
+        if not user.is_staff:
+            visible = Q(project_id__in=Project.objects.for_user(user).values("id"))
+            if getattr(user, "organization_id", None):
+                visible |= Q(project__organization_id=user.organization_id)
+            qs = qs.filter(visible)
+        if org := request.query_params.get("organization"):
+            qs = qs.filter(project__organization__slug=org)
+        qs = qs.order_by("-emitted_at", "-id")
+        return Response(
+            EmittedStageReportSerializer(qs, many=True, context=self.get_serializer_context()).data
+        )
+
     @action(detail=False, methods=["get"], url_path="alignment-history")
     def alignment_history(self, request):
         """
@@ -994,7 +1213,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def _serialize_project(self, project: Project):
         refreshed = self.get_queryset().get(pk=project.pk)
-        return ProjectSerializer(
+        return ProjectDetailSerializer(
             refreshed, context=self.get_serializer_context()
         ).data
 

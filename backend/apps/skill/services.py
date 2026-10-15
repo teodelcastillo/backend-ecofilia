@@ -2473,6 +2473,9 @@ def rerun_execution(
         output_mode=execution.output_mode,
         metadata=metadata,
         status=ExecutionStatus.PENDING,
+        # Repetir el informe de IDO sigue siendo el informe de IDO, aunque la
+        # operación ya esté en otra etapa.
+        stage=execution.stage,
     )
 
 

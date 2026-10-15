@@ -20,6 +20,47 @@ def fill_from_blueprint_task(project_id: int) -> list[str]:
         # reintentar. Queda el botón "Generar" del Resumen.
         logger.info("ai_fill automático omitido para la operación %s: %s", project_id, exc)
         return []
+    finally:
+        # Con el principal ya leído (y objetivo y componentes completos si se
+        # pudo), lo que la etapa dejó bloqueado puede arrancar.
+        _retry_stage_launches(project_id)
+
+
+def _retry_stage_launches(project_id: int) -> None:
+    try:
+        from apps.project.models import Project
+        from apps.project.services.stages import retry_pending_stage_launches
+
+        project = Project.objects.filter(pk=project_id).first()
+        if project is not None:
+            retry_pending_stage_launches(project)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudieron reintentar los lanzamientos de la operación %s", project_id)
+
+
+def dispatch_fill_for_project(project_id: int) -> None:
+    """Encola el autocompletado (y el reintento de la etapa) de una operación.
+
+    Nunca levanta: se llama después de guardar la operación.
+    """
+    try:
+        fill_from_blueprint_task.delay(project_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo encolar el autocompletado de la operación %s", project_id)
+
+
+def dispatch_stage_followups(document_id: int) -> None:
+    """Lo que habilita un documento que terminó de procesarse: la lectura del
+    informe subido de un ejecutivo y los lanzamientos bloqueados de su etapa.
+
+    Nunca levanta: se llama al final de la ingesta.
+    """
+    try:
+        from apps.project.services.stage_reports import run_followups_for_document
+
+        run_followups_for_document(document_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falló el seguimiento de etapa del documento %s", document_id)
 
 
 def dispatch_fill_for_blueprint(document_id: int) -> None:

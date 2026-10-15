@@ -800,6 +800,18 @@ class SkillExecution(models.Model):
             "adelante hasta que corra una nueva."
         ),
     )
+    # La etapa de la operación (pre-originación, IDO, DEC…) en la que se lanzó
+    # la corrida. Sin esto, el informe de IDO y el de DEC de una misma
+    # operación serían indistinguibles: las dos son corridas del mismo agente
+    # sobre el mismo proyecto. Vacío en las corridas anteriores al campo, que
+    # por definición son de IDO (el IET era el informe de IDO).
+    stage = models.CharField(
+        max_length=40,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Etapa de la operación al lanzar la corrida (context_notes.estado).",
+    )
 
     class Meta:
         ordering = ("-created_at",)
