@@ -191,10 +191,13 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ),
+    # Las de siempre (JWT, sesión, básica), con el alcance de la organización
+    # aplicado: un miembro de una organización nunca llega con acceso global
+    # (ver ``apps/authentication/org_scope.py``).
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
-        "rest_framework.authentication.SessionAuthentication",
-        "rest_framework.authentication.BasicAuthentication",
+        "apps.authentication.org_scope.OrgScopedJWTAuthentication",
+        "apps.authentication.org_scope.OrgScopedSessionAuthentication",
+        "apps.authentication.org_scope.OrgScopedBasicAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
@@ -309,3 +312,46 @@ X_FRAME_OPTIONS = "DENY"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Logging
+#
+# Sin esto un 500 en producción no dejaba rastro: con DEBUG apagado, Django
+# manda el traceback de ``django.request`` sólo a ``mail_admins`` (que no está
+# configurado) y CloudWatch no ve más que la línea de acceso de gunicorn. El
+# 1-oct-2026 hubo cuatro subidas de documento seguidas en 500 y no había forma
+# de saber por qué.
+#
+# ``django.request`` va a la consola en ERROR: los 5xx con su traceback, sin
+# el ruido de cada 400/404 (que Django registra en WARNING). El resto de los
+# loggers de la app salen por la raíz desde WARNING, como ya salían; con
+# LOG_LEVEL=INFO se ven también los ``logger.info``. Los workers de Celery
+# configuran su propio logging y no cambian.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {
+            "format": "[{asctime}] {levelname} {name}: {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "stream": "ext://sys.stdout",
+            "formatter": "plain",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": os.environ.get("LOG_LEVEL", "WARNING"),
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}

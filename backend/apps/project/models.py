@@ -119,6 +119,15 @@ class Project(models.Model):
     def can_manage_shares(self, user) -> bool:
         return user.is_staff or self.owner_id == user.id
 
+    def can_delete(self, user) -> bool:
+        """Borrar la operación es del dueño (o del staff), no de quien la edita.
+
+        Un editor compartido trabaja la operación pero no decide que deje de
+        existir: borrarla se lleva documentos vinculados, corridas e informe
+        de todos los que participan.
+        """
+        return user.is_staff or self.owner_id == user.id
+
 
 class ProjectDocument(models.Model):
     project = models.ForeignKey(

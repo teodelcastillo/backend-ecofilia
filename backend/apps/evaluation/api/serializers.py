@@ -6,6 +6,8 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
 
+from apps.user.sharing import resolve_share_target
+
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.evaluation.models import (
@@ -320,12 +322,7 @@ class EvaluationShareWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Valida el email y obtiene el usuario"""
         email = attrs.get('user_email')
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({
-                'user_email': f"No existe un usuario con el email: {email}"
-            })
+        user = resolve_share_target(self.context["request"].user, email)
         
         evaluation = self.context.get("evaluation")
         if evaluation and user == evaluation.owner:

@@ -4,6 +4,8 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import serializers
 
+from apps.user.sharing import resolve_share_target
+
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.project.services.country_documents import sync_country_instrument_documents
@@ -152,6 +154,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     )
     can_edit = serializers.SerializerMethodField()
     can_manage_shares = serializers.SerializerMethodField()
+    can_delete = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -172,6 +175,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "structure_template_slug",
             "can_edit",
             "can_manage_shares",
+            "can_delete",
             "created_at",
             "updated_at",
         )
@@ -187,6 +191,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "structure_template_slug",
             "can_edit",
             "can_manage_shares",
+            "can_delete",
             "created_at",
             "updated_at",
         )
@@ -198,6 +203,10 @@ class ProjectSerializer(serializers.ModelSerializer):
     def get_can_manage_shares(self, obj):
         request = self.context.get("request")
         return bool(request and obj.can_manage_shares(request.user))
+
+    def get_can_delete(self, obj):
+        request = self.context.get("request")
+        return bool(request and obj.can_delete(request.user))
 
 
 class ProjectWriteSerializer(ProjectSerializer):
@@ -429,12 +438,7 @@ class ProjectShareWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Valida el email y obtiene el usuario"""
         email = attrs.get('user_email')
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({
-                'user_email': f"No existe un usuario con el email: {email}"
-            })
+        user = resolve_share_target(self.context["request"].user, email)
         
         project = self.context.get("project")
         if project and user == project.owner:

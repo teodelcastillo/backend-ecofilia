@@ -127,7 +127,7 @@ class EvaluationViewSet(viewsets.ModelViewSet):
 
         serializer = EvaluationShareWriteSerializer(
             data=request.data,
-            context={"evaluation": evaluation},
+            context={"evaluation": evaluation, "request": request},
         )
         serializer.is_valid(raise_exception=True)
         share, _ = EvaluationShare.objects.update_or_create(

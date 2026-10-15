@@ -12,7 +12,6 @@ from rest_framework.response import Response
 
 from apps.skill.access import (
     RUN_FORBIDDEN_MESSAGE,
-    user_can_run_assistants,
     user_can_run_skill,
     executions_queryset_for_user,
     user_can_edit_execution_report,
@@ -163,7 +162,9 @@ class SkillViewSet(viewsets.ModelViewSet):
         Sólo superadmins. Trae cuántas operaciones tiene cada una, que es lo
         que se toca al habilitar un asistente en las existentes.
         """
-        if not user_can_run_assistants(request.user):
+        from apps.user.access import is_ecofilia_admin
+
+        if not is_ecofilia_admin(request.user):
             raise PermissionDenied("Sólo un superadmin asigna asistentes a organizaciones.")
         from apps.project.services.organization_operations import organization_operations
         from apps.user.models import Organization

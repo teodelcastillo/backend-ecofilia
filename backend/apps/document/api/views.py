@@ -4,6 +4,9 @@ from rest_framework import status, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
+
+from apps.document.services import visible_documents_q
+from apps.user.access import is_ecofilia_admin
 from rest_framework import viewsets, mixins
 from django.shortcuts import get_object_or_404
 
@@ -28,7 +31,6 @@ from apps.document.models import (
 from apps.document.dispatch import dispatch_processing
 from apps.document.tasks import process_document_chunks
 from apps.document.category_utils import category_descendant_ids
-from apps.user.models import UserRole
 from apps.document.api.filters import DocumentFilter
 from apps.document.api.serializers import (
     SmartChunkSerializer,
@@ -63,9 +65,9 @@ DOCUMENT_CHAT_SYSTEM_PROMPT = (
 
 
 def _can_manage_public_documents(user) -> bool:
-    if not user:
-        return False
-    return bool(user.is_superuser or getattr(user, "role", None) == UserRole.ADMIN)
+    # La biblioteca pública es de toda la plataforma: la cura Ecofilia, no el
+    # administrador de una organización (ver ``apps/user/access.py``).
+    return bool(user) and is_ecofilia_admin(user)
 
 
 class RAGQueryView(APIView):
@@ -81,17 +83,7 @@ class RAGQueryView(APIView):
         if user.is_staff:
             qs = SmartChunk.objects.all()
         else:
-            # Incluir chunks de documentos propios, públicos, compartidos y de proyectos compartidos
-            from apps.project.models import ProjectShare
-            shared_project_ids = ProjectShare.objects.filter(
-                user=user
-            ).values_list('project_id', flat=True)
-            qs = SmartChunk.objects.filter(
-                Q(document__owner=user) 
-                | Q(document__is_public=True) 
-                | Q(document__shares__user=user)
-                | Q(document__projects__id__in=shared_project_ids)
-            ).distinct()
+            qs = SmartChunk.objects.filter(visible_documents_q(user, prefix="document__")).distinct()
 
         slugs = request.query_params.getlist("documents")
         if slugs:
@@ -580,17 +572,7 @@ class DocumentListAPIView(ListAPIView):
             elif scope == "shared":
                 qs = qs.filter(shares__user=user).exclude(owner=user).distinct()
             else:
-                from apps.project.models import ProjectShare
-
-                shared_project_ids = ProjectShare.objects.filter(
-                    user=user
-                ).values_list("project_id", flat=True)
-                qs = qs.filter(
-                    Q(owner=user)
-                    | Q(is_public=True)
-                    | Q(shares__user=user)
-                    | Q(projects__id__in=shared_project_ids)
-                ).distinct()
+                qs = qs.filter(visible_documents_q(user)).distinct()
         return qs
 
     def list(self, request, *args, **kwargs):
@@ -799,17 +781,7 @@ class DocumentViewSet(
         qs = Document.objects.all().select_related("category_ref", "owner").prefetch_related("evidence_tags")
         user = self.request.user
         if not user.is_staff:
-            # Incluir documentos propios, públicos, compartidos y de proyectos compartidos
-            from apps.project.models import ProjectShare
-            shared_project_ids = ProjectShare.objects.filter(
-                user=user
-            ).values_list('project_id', flat=True)
-            qs = qs.filter(
-                Q(owner=user) 
-                | Q(is_public=True) 
-                | Q(shares__user=user)
-                | Q(projects__id__in=shared_project_ids)
-            ).distinct()
+            qs = qs.filter(visible_documents_q(user)).distinct()
         return qs
     
     def perform_destroy(self, instance):
@@ -1055,16 +1027,7 @@ class TopicsAutocompleteView(APIView):
         user = request.user
         qs = Document.objects.all()
         if not user.is_staff:
-            from apps.project.models import ProjectShare
-            shared_project_ids = ProjectShare.objects.filter(
-                user=user
-            ).values_list('project_id', flat=True)
-            qs = qs.filter(
-                Q(owner=user)
-                | Q(is_public=True)
-                | Q(shares__user=user)
-                | Q(projects__id__in=shared_project_ids)
-            ).distinct()
+            qs = qs.filter(visible_documents_q(user)).distinct()
 
         all_topics_lists = qs.exclude(topics__len=0).values_list('topics', flat=True)
 

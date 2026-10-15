@@ -9,31 +9,46 @@ from django.db.models import Q, QuerySet
 from apps.document.models import Document, EvidenceTag
 
 
+def visible_documents_q(user, prefix: str = "") -> Q:
+    """
+    Qué documentos ve un usuario que no es staff, como condición de filtro.
+
+    Los propios, los públicos, los compartidos con él y los de cualquier
+    operación en la que participa, sea como dueño o como colaborador. Antes
+    sólo contaban las operaciones compartidas con él: el dueño de una
+    operación no veía los documentos que un colaborador había subido a su
+    propia operación (404 al abrirlos, 400 al chatear con ellos, y el RAG los
+    descartaba en silencio), mientras que un lector de esa misma operación sí
+    los veía.
+
+    ``prefix`` es el camino hasta el documento desde el modelo que se filtra:
+    ``"document__"`` para fragmentos.
+
+    Es la única definición de esta regla; el staff se resuelve antes, en cada
+    llamador, porque ve todo.
+    """
+    from apps.project.models import Project
+
+    project_ids = Project.objects.filter(
+        Q(owner=user) | Q(shares__user=user)
+    ).values("pk")
+    return (
+        Q(**{f"{prefix}owner": user})
+        | Q(**{f"{prefix}is_public": True})
+        | Q(**{f"{prefix}shares__user": user})
+        | Q(**{f"{prefix}projects__id__in": project_ids})
+    )
+
+
 def accessible_documents_for(user, slugs: Iterable[str]) -> QuerySet[Document]:
     """
-    Returns the subset of documents identified by `slugs` that the user can access.
-    Includes:
-    - Own documents
-    - Public documents
-    - Documents shared directly with user
-    - Documents in projects shared with user
+    Returns the subset of documents identified by `slugs` that the user can
+    access (see ``visible_documents_q``).
     """
     qs = Document.objects.filter(slug__in=slugs)
     if user.is_staff:
         return qs
-    
-    # Documents in projects shared with user
-    from apps.project.models import ProjectShare
-    shared_project_ids = ProjectShare.objects.filter(
-        user=user
-    ).values_list('project_id', flat=True)
-    
-    return qs.filter(
-        Q(owner=user) 
-        | Q(is_public=True) 
-        | Q(shares__user=user)
-        | Q(projects__id__in=shared_project_ids)
-    ).distinct()
+    return qs.filter(visible_documents_q(user)).distinct()
 
 
 def accessible_library_documents(user) -> QuerySet[Document]:
@@ -44,17 +59,7 @@ def accessible_library_documents(user) -> QuerySet[Document]:
     qs = Document.objects.all()
     if user.is_staff:
         return qs
-    from apps.project.models import ProjectShare
-
-    shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-        "project_id", flat=True
-    )
-    return qs.filter(
-        Q(owner=user)
-        | Q(is_public=True)
-        | Q(shares__user=user)
-        | Q(projects__id__in=shared_project_ids)
-    ).distinct()
+    return qs.filter(visible_documents_q(user)).distinct()
 
 
 

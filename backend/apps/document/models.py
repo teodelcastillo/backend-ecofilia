@@ -170,13 +170,10 @@ class Document(models.Model):
             return True
         if self.shares.filter(user=user).exists():
             return True
-        # Align with list/retrieve/RAG: project collaborators may read linked docs.
-        from apps.project.models import ProjectShare
-
-        shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-            "project_id", flat=True
-        )
-        return self.projects.filter(id__in=shared_project_ids).exists()
+        # Misma regla que listado/detalle/RAG (``visible_documents_q``): los
+        # documentos de cualquier operación en la que participa, como dueño o
+        # como colaborador.
+        return self.projects.filter(Q(owner=user) | Q(shares__user=user)).exists()
 
     def can_edit(self, user) -> bool:
         """Verifica si el usuario puede editar el documento"""

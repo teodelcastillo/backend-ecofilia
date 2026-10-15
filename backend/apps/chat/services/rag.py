@@ -388,17 +388,9 @@ def suggest_related_library_documents(
         embedding__isnull=True
     )
     if not user.is_staff:
-        from apps.project.models import ProjectShare
+        from apps.document.services import visible_documents_q
 
-        shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-            "project_id", flat=True
-        )
-        chunk_qs = chunk_qs.filter(
-            Q(document__owner=user)
-            | Q(document__is_public=True)
-            | Q(document__shares__user=user)
-            | Q(document__projects__id__in=shared_project_ids)
-        ).distinct()
+        chunk_qs = chunk_qs.filter(visible_documents_q(user, prefix="document__")).distinct()
 
     chunks = list(chunk_qs.top_similar2(text, top_n=chunk_pool))
     if not chunks:
@@ -481,17 +473,9 @@ def fetch_relevant_chunks(
     # Chunks sin embedding rompen CosineDistance en pgvector y provocan 500
     qs = SmartChunk.objects.filter(document_id__in=doc_ids).exclude(embedding__isnull=True)
     if not user.is_staff:
-        from apps.project.models import ProjectShare
+        from apps.document.services import visible_documents_q
 
-        shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-            "project_id", flat=True
-        )
-        qs = qs.filter(
-            Q(document__owner=user)
-            | Q(document__is_public=True)
-            | Q(document__shares__user=user)
-            | Q(document__projects__id__in=shared_project_ids)
-        ).distinct()
+        qs = qs.filter(visible_documents_q(user, prefix="document__")).distinct()
 
     if topics:
         topic_filter = Q()
@@ -564,17 +548,9 @@ def fetch_relevant_chunks(
 def _scope_qs_for_user(user, doc_ids: list) -> QuerySet[SmartChunk]:
     qs = SmartChunk.objects.filter(document_id__in=doc_ids).exclude(embedding__isnull=True)
     if user is not None and not getattr(user, "is_staff", False):
-        from apps.project.models import ProjectShare
+        from apps.document.services import visible_documents_q
 
-        shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-            "project_id", flat=True
-        )
-        qs = qs.filter(
-            Q(document__owner=user)
-            | Q(document__is_public=True)
-            | Q(document__shares__user=user)
-            | Q(document__projects__id__in=shared_project_ids)
-        ).distinct()
+        qs = qs.filter(visible_documents_q(user, prefix="document__")).distinct()
     return qs
 
 

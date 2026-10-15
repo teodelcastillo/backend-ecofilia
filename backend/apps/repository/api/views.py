@@ -153,7 +153,7 @@ class RepositoryViewSet(viewsets.ModelViewSet):
 
         serializer = RepositoryShareWriteSerializer(
             data=request.data,
-            context={"repository": repo},
+            context={"repository": repo, "request": request},
         )
         serializer.is_valid(raise_exception=True)
         share, _ = RepositoryShare.objects.update_or_create(

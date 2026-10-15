@@ -30,7 +30,6 @@ from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Q
 
 from apps.chat.services.rag_eval_quality import (
     QualityCase,
@@ -144,16 +143,8 @@ class Command(BaseCommand):
     @staticmethod
     def _document_scope(user):
         """Mirror the scope enforced by the chat/RAG endpoints."""
-        from apps.project.models import ProjectShare
+        from apps.document.services import visible_documents_q
 
         if user.is_staff:
             return Document.objects.all()
-        shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-            "project_id", flat=True
-        )
-        return Document.objects.filter(
-            Q(owner=user)
-            | Q(is_public=True)
-            | Q(shares__user=user)
-            | Q(projects__id__in=shared_project_ids)
-        ).distinct()
+        return Document.objects.filter(visible_documents_q(user)).distinct()

@@ -26,7 +26,6 @@ from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Q
 
 from apps.chat.services.rag_evaluation import RagEvalCase, run_eval
 from apps.document.models import Document
@@ -88,20 +87,12 @@ class Command(BaseCommand):
             raise CommandError("No valid cases found in the input file.")
 
         # Document scope mirrors what the chat/RAG endpoints already enforce.
-        from apps.project.models import ProjectShare
+        from apps.document.services import visible_documents_q
 
         if user.is_staff:
             docs_qs = Document.objects.all()
         else:
-            shared_project_ids = ProjectShare.objects.filter(user=user).values_list(
-                "project_id", flat=True
-            )
-            docs_qs = Document.objects.filter(
-                Q(owner=user)
-                | Q(is_public=True)
-                | Q(shares__user=user)
-                | Q(projects__id__in=shared_project_ids)
-            ).distinct()
+            docs_qs = Document.objects.filter(visible_documents_q(user)).distinct()
 
         report = run_eval(cases, user=user, allowed_documents=docs_qs, top_n=top_n)
         self.stdout.write(report.summary())

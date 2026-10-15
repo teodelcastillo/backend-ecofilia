@@ -4,6 +4,8 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from rest_framework import serializers
 
+from apps.user.sharing import resolve_share_target
+
 from apps.document.models import Document
 from apps.document.services import accessible_documents_for
 from apps.repository.models import (
@@ -179,12 +181,7 @@ class RepositoryShareWriteSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         email = attrs.get("user_email")
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({
-                "user_email": f"No existe un usuario con el email: {email}"
-            })
+        user = resolve_share_target(self.context["request"].user, email)
 
         repository = self.context.get("repository")
         if repository and repository.owner_id == user.id:

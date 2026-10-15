@@ -161,10 +161,13 @@ class SkillStepSerializer(serializers.ModelSerializer):
 
 
 def _is_superadmin(serializer) -> bool:
-    from apps.skill.access import user_can_run_assistants
+    # Asignar asistentes a organizaciones y ver qué organización tiene cada
+    # uno es de Ecofilia: el administrador de un cliente no ve a los demás
+    # clientes (ver ``apps/user/access.py``).
+    from apps.user.access import is_ecofilia_admin
 
     request = serializer.context.get("request")
-    return bool(request and user_can_run_assistants(request.user))
+    return bool(request and is_ecofilia_admin(request.user))
 
 
 class SkillSerializer(serializers.ModelSerializer):

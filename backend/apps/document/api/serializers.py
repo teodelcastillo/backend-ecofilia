@@ -1,6 +1,9 @@
 import json
 
 from rest_framework import serializers
+
+from apps.user.access import is_ecofilia_admin
+from apps.user.sharing import resolve_share_target
 from django.contrib.auth import get_user_model
 from django.utils.text import slugify
 from apps.document.models import (
@@ -12,7 +15,6 @@ from apps.document.models import (
     EvidenceTag,
 )
 from apps.document.category_utils import category_ancestor_path, resolve_write_category
-from apps.user.models import UserRole
 
 User = get_user_model()
 
@@ -125,9 +127,9 @@ def _normalize_topics(raw_topics) -> list[str]:
 
 
 def _can_manage_public_documents(user) -> bool:
-    if not user:
-        return False
-    return bool(user.is_superuser or getattr(user, "role", None) == UserRole.ADMIN)
+    # La biblioteca pública es de toda la plataforma: la cura Ecofilia, no el
+    # administrador de una organización (ver ``apps/user/access.py``).
+    return bool(user) and is_ecofilia_admin(user)
 
 class SmartChunkSerializer(serializers.ModelSerializer):
     class Meta:
@@ -675,12 +677,7 @@ class DocumentShareWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Valida el email y obtiene el usuario"""
         email = attrs.get('user_email')
-        try:
-            user = User.objects.get(email=email)
-        except User.DoesNotExist:
-            raise serializers.ValidationError({
-                'user_email': f"No existe un usuario con el email: {email}"
-            })
+        user = resolve_share_target(self.context["request"].user, email)
         
         document = self.context.get("document")
         if document and document.owner == user:

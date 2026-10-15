@@ -151,7 +151,38 @@ class User(AbstractUser):
     class Meta(AbstractUser.Meta):
         swappable = "AUTH_USER_MODEL"
 
+    def clean(self):
+        super().clean()
+        # Una persona de una organización sólo tiene acceso a su organización
+        # (ver ``apps/user/access.py``). ``is_staff`` e ``is_superuser`` abren
+        # la plataforma entera, así que no pueden convivir con una
+        # organización: o es del equipo de Ecofilia, o es de un cliente.
+        if self.organization_id and (self.is_staff or self.is_superuser):
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(
+                _(
+                    "Un usuario de una organización no puede ser staff ni "
+                    "superusuario: tendría acceso a todas las organizaciones. "
+                    "Quitale la organización o los permisos de staff."
+                )
+            )
+
     def save(self, *args, **kwargs):
+        # La API pudo haberle quitado en memoria el alcance global a un
+        # miembro de una organización (``scope_to_organization``). Eso no se
+        # persiste: se guardan los valores reales.
+        unscoped = getattr(self, "_unscoped_flags", None)
+        if unscoped is not None:
+            scoped = (self.is_staff, self.is_superuser)
+            self.is_staff, self.is_superuser = unscoped
+            try:
+                return self._save(*args, **kwargs)
+            finally:
+                self.is_staff, self.is_superuser = scoped
+        return self._save(*args, **kwargs)
+
+    def _save(self, *args, **kwargs):
         if self.email:
             self.username = self.email
         if self.email_verified and self.email_verified_at is None:

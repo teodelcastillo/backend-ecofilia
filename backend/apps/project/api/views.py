@@ -106,6 +106,16 @@ class ProjectViewSet(viewsets.ModelViewSet):
             .distinct()
         )
 
+    def get_permissions(self):
+        # Las conversaciones son de cada persona, no de la operación: quien la
+        # ve —también un lector— abre las suyas. Sin esto, el POST caía en la
+        # regla general de escritura (``can_edit``) y un lector recibía 403 al
+        # chatear. ``get_object`` sigue filtrando por ``for_user``, así que
+        # quien no tiene acceso recibe 404.
+        if getattr(self, "action", None) == "chat_sessions":
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
         if self.action in {"create", "update", "partial_update"}:
             return ProjectWriteSerializer
@@ -121,8 +131,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         serializer.save()
 
     def perform_destroy(self, instance):
-        if not instance.can_edit(self.request.user):
-            raise PermissionDenied("No tienes permisos para eliminar este proyecto.")
+        if not instance.can_delete(self.request.user):
+            raise PermissionDenied("Sólo quien creó la operación puede eliminarla.")
         instance.delete()
 
     @action(
@@ -251,7 +261,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         serializer = ProjectShareWriteSerializer(
             data=request.data,
-            context={"project": project},
+            context={"project": project, "request": request},
         )
         serializer.is_valid(raise_exception=True)
         share, _ = ProjectShare.objects.update_or_create(
@@ -340,6 +350,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
     )
     def chat_sessions(self, request, slug=None):
         project = self.get_object()
+        if not project.can_view(request.user):
+            raise PermissionDenied("No tienes permisos para ver este proyecto.")
 
         if request.method == "GET":
             qs = (
