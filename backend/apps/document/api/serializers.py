@@ -489,6 +489,8 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
     )
     category_slug = serializers.SerializerMethodField()
     category_path = serializers.SerializerMethodField()
+    # Si quien mira puede clasificarlo o editarlo: la UI no lo deduce.
+    can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -499,6 +501,7 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
             'category',
             'category_slug',
             'category_path',
+            'can_edit',
             'description',
             'content_summary',
             'file',
@@ -527,6 +530,10 @@ class DocumentDetailSerializer(serializers.ModelSerializer):
         if obj.category_ref_id and obj.category_ref:
             return obj.category_ref.slug
         return None
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        return bool(request and obj.can_write(request.user))
 
     def get_category_path(self, obj):
         if not obj.category_ref_id:

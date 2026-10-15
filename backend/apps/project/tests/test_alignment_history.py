@@ -90,7 +90,12 @@ class BackfillAlignmentSnapshotsMigrationTestCase(TransactionTestCase):
     def test_one_backfill_snapshot_per_operation_with_determination(self):
         snaps = list(ProjectAlignmentSnapshot.objects.all())
         self.assertEqual(len(snaps), 1)
-        self.assertEqual(snaps[0].project.slug, "con")
+        # Sólo el slug: la base quedó en 0014 y el modelo actual de Project
+        # tiene columnas posteriores.
+        slug = ProjectAlignmentSnapshot.objects.filter(pk=snaps[0].pk).values_list(
+            "project__slug", flat=True
+        ).get()
+        self.assertEqual(slug, "con")
         self.assertEqual(snaps[0].source, "backfill")
         self.assertEqual(snaps[0].estado, "dec")
         self.assertEqual(snaps[0].alineacion, {"objetivo_2": "Con brechas"})

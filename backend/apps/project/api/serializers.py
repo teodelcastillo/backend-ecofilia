@@ -152,6 +152,11 @@ class ProjectSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    organization_slug = serializers.SlugField(
+        source="organization.slug",
+        read_only=True,
+        allow_null=True,
+    )
     can_edit = serializers.SerializerMethodField()
     can_manage_shares = serializers.SerializerMethodField()
     can_delete = serializers.SerializerMethodField()
@@ -173,6 +178,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "context_notes",
             "copilot_enabled",
             "structure_template_slug",
+            "organization_slug",
             "can_edit",
             "can_manage_shares",
             "can_delete",
@@ -189,6 +195,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "enabled_skill_slugs",
             "blueprint_document_slug",
             "structure_template_slug",
+            "organization_slug",
             "can_edit",
             "can_manage_shares",
             "can_delete",
@@ -228,6 +235,10 @@ class ProjectWriteSerializer(ProjectSerializer):
         allow_blank=False,
         write_only=True,
     )
+    # Desde qué portal se crea la operación (p. ej. "caf"). Sólo cuenta para
+    # el equipo de Ecofilia: quien pertenece a una organización crea siempre
+    # en la suya. No se cambia después de creada.
+    organization = serializers.SlugField(required=False, write_only=True)
     context_notes = serializers.JSONField(required=False)
     copilot_enabled = serializers.BooleanField(required=False)
     structure_template_slug = serializers.SlugField(
@@ -237,7 +248,33 @@ class ProjectWriteSerializer(ProjectSerializer):
     )
 
     class Meta(ProjectSerializer.Meta):
-        fields = ProjectSerializer.Meta.fields + ("document_slugs",)
+        fields = ProjectSerializer.Meta.fields + ("document_slugs", "organization")
+
+    def validate_organization(self, slug):
+        from apps.user.models import Organization
+
+        request = self.context["request"]
+        user = request.user
+        if self.instance is not None:
+            raise serializers.ValidationError(
+                "La institución de una operación no se cambia después de creada."
+            )
+        if user.organization_id:
+            if user.organization.slug != slug:
+                raise serializers.ValidationError(
+                    "Sólo podés crear operaciones en tu propia institución."
+                )
+            return user.organization
+        from apps.user.access import is_ecofilia_admin
+
+        if not (user.is_staff or is_ecofilia_admin(user)):
+            raise serializers.ValidationError(
+                "Sólo el equipo de Ecofilia crea operaciones para una institución."
+            )
+        try:
+            return Organization.objects.get(slug=slug)
+        except Organization.DoesNotExist:
+            raise serializers.ValidationError("Institución inexistente.")
 
     def validate_document_slugs(self, slugs):
         if not slugs:
@@ -301,6 +338,12 @@ class ProjectWriteSerializer(ProjectSerializer):
         sent_skills = "enabled_skill_slugs" in validated_data
         validated_data.pop("enabled_skill_slugs", None)
         blueprint_slug = validated_data.pop("blueprint_document_slug", None)
+        # La institución de la operación: la del dueño siempre que tenga una;
+        # si no, la del portal desde el que la arma el equipo de Ecofilia.
+        owner = validated_data["owner"]
+        validated_data["organization"] = (
+            owner.organization if owner.organization_id else validated_data.get("organization")
+        )
         project = Project.objects.create(**validated_data)
         self._sync_documents(project, document_slugs)
         self._sync_blueprint(project, blueprint_slug)
@@ -438,9 +481,13 @@ class ProjectShareWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         """Valida el email y obtiene el usuario"""
         email = attrs.get('user_email')
-        user = resolve_share_target(self.context["request"].user, email)
-        
         project = self.context.get("project")
+        user = resolve_share_target(
+            self.context["request"].user,
+            email,
+            organization_id=getattr(project, "organization_id", None),
+        )
+
         if project and user == project.owner:
             raise serializers.ValidationError({
                 'user_email': "No puedes compartir el proyecto contigo mismo."

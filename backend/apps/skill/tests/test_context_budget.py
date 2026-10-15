@@ -348,7 +348,7 @@ class BlueprintRoleTests(SimpleTestCase):
 
         self.assertEqual(plan.blueprint.mode, cb.PARTIAL)
         self.assertTrue(plan.diagnostics()["blueprint_degraded"])
-        self.assertIn("ni siendo el documento principal", plan.blueprint.reason)
+        self.assertIn("ni solo en la ventana del modelo", plan.blueprint.reason)
 
     def test_inventory_shouts_when_the_subject_is_incomplete(self):
         huge = [
@@ -359,3 +359,60 @@ class BlueprintRoleTests(SimpleTestCase):
 
         self.assertIn("sólo fragmentos", cb.render_inventory(plan))
         self.assertIn("limitación del análisis", cb.render_inventory(plan))
+
+
+class BlueprintAlwaysWholeTests(SimpleTestCase):
+    """El documento principal se lee entero. Siempre.
+
+    Sólo se fragmenta si no entra solo en la ventana del modelo. Antes se
+    degradaba en cuanto tres anexos en fragmentos llenaban el presupuesto,
+    aunque hubiera lugar para él: el IET de una DEC de 46k tokens (dec-infotep,
+    30-sep a 3-oct de 2026) se escribió sobre fragmentos de la DEC.
+    """
+
+    WINDOW = 200_000
+
+    def _plan(self, documents, reserved=32_667):
+        return cb.plan_context(
+            documents, reserved_tokens=reserved, blueprint_id=1, context_window=self.WINDOW
+        )
+
+    def test_the_production_case_keeps_the_dec_whole(self):
+        dec = make_document(1, "dec-infotep", 106)  # ~46k tokens
+        annexes = [make_document(i, f"anexo-{i}", 200) for i in range(2, 6)]  # ~87k c/u
+        plan = self._plan([dec, *annexes])
+
+        self.assertEqual(plan.blueprint.mode, cb.FULL)
+        self.assertEqual(plan.blueprint.tokens, plan.blueprint.full_tokens)
+        self.assertTrue(all(d.mode == cb.PARTIAL for d in plan.deliveries if not d.is_blueprint))
+        self.assertLessEqual(plan.corpus_tokens, plan.budget_tokens)
+        self.assertFalse(plan.diagnostics()["blueprint_degraded"])
+
+    def test_annexes_leave_the_step_before_the_blueprint_is_cut(self):
+        big = make_document(1, "dec", 242)  # ~105k: casi todo el presupuesto
+        annexes = [make_document(i, f"anexo-{i}", 50 + i) for i in range(2, 10)]
+        plan = self._plan([big, *annexes])
+
+        self.assertEqual(plan.blueprint.mode, cb.FULL)
+        self.assertTrue(plan.omitted, "algún anexo tiene que haber salido")
+        self.assertLessEqual(plan.corpus_tokens, plan.budget_tokens)
+        diagnostics = plan.diagnostics()
+        self.assertEqual(diagnostics["documents_omitted"], [d.slug for d in plan.omitted])
+        self.assertFalse(diagnostics["scope_complete"])
+        # Salen los más grandes primero.
+        omitted = {d.slug for d in plan.omitted}
+        kept = [d for d in plan.deliveries if not d.is_blueprint and d.slug not in omitted]
+        if kept:
+            self.assertGreaterEqual(
+                min(d.full_tokens for d in plan.omitted), max(d.full_tokens for d in kept)
+            )
+
+    def test_only_physics_cuts_the_blueprint_and_it_gets_all_the_room(self):
+        huge = make_document(1, "dec", 400)  # ~174k: no entra solo
+        annex = make_document(2, "anexo", 50)
+        plan = self._plan([huge, annex])
+
+        self.assertEqual(plan.blueprint.mode, cb.PARTIAL)
+        self.assertEqual(plan.blueprint.tokens, plan.budget_tokens)
+        self.assertEqual([d.slug for d in plan.omitted], ["anexo"])
+        self.assertIn("ni solo en la ventana del modelo", plan.blueprint.reason)

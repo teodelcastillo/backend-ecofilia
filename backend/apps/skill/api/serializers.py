@@ -486,7 +486,6 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         existentes: esas conservan su historial de corridas, y la organización
         igual deja de verlo.
         """
-        from apps.project.models import Project
         from apps.project.services.organization_operations import organization_operations
 
         if "organization_slugs" in availability:
@@ -494,18 +493,14 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             skill.enabled_for_organizations.set(orgs)
             skill.default_for_organizations.set(orgs)
             if orgs and set(skill.allowed_contexts or []) & {"project", "any"}:
-                skill.enabled_projects.add(
-                    *organization_operations(orgs, exclude_skill=skill)
-                )
+                skill.enabled_projects.add(*organization_operations(orgs))
             return
         # Compatibilidad con clientes que todavía mandan los campos separados.
         if "default_organization_slugs" in availability:
             skill.default_for_organizations.set(availability["default_organization_slugs"])
         existing = availability.get("enable_on_existing_operations")
         if existing and set(skill.allowed_contexts or []) & {"project", "any"}:
-            skill.enabled_projects.add(
-                *Project.objects.filter(owner__organization__in=existing)
-            )
+            skill.enabled_projects.add(*organization_operations(existing))
 
     def validate_allowed_contexts(self, value):
         if not value:
@@ -718,6 +713,11 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
     # Para que el frente sepa si ofrecer reanudar, repetir o avanzar a quien
     # no es superadmin, sin pedir la definición del asistente.
     skill_members_can_run = serializers.BooleanField(source="skill.members_can_run", read_only=True)
+    # Si quien mira puede reanudar, repetir o avanzar esta corrida: el
+    # asistente tiene que estar abierto para él y la corrida tiene que ser
+    # suya o de una operación que administra. ``null`` cuando se serializa
+    # sin pedido (respuestas internas); el frente cae a su propia regla.
+    can_continue = serializers.SerializerMethodField()
     context_label = serializers.CharField(read_only=True)
     # Resolve context slugs for the frontend
     repository_slug = serializers.SlugField(source="repository.slug", read_only=True, allow_null=True)
@@ -746,7 +746,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
         model = SkillExecution
         fields = (
             "id", "skill", "skill_name", "skill_type", "skill_members_can_run",
-            "status", "context_label",
+            "can_continue", "status", "context_label",
             "repository_slug", "project_slug", "document_slug",
             "extra_instructions", "input_values", "output_mode",
             "output", "output_structured",
@@ -761,6 +761,15 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
 
     def get_versions_count(self, obj) -> int:
         return obj.versions.count() if obj.pk else 0
+
+    def get_can_continue(self, obj):
+        from apps.skill.access import user_can_mutate_execution, user_can_run_skill
+
+        request = self.context.get("request")
+        if request is None:
+            return None
+        user = request.user
+        return user_can_run_skill(user, obj.skill) and user_can_mutate_execution(user, obj)
 
     def _section_edits(self, obj) -> list:
         # Lee del prefetch cuando el queryset lo trajo; sin él, una consulta

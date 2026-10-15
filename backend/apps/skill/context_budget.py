@@ -123,6 +123,7 @@ def chunks_for_budget(tokens: int) -> int:
 FULL = "full"              # el texto completo del documento viaja al modelo
 PARTIAL = "partial"        # no entra entero: van fragmentos recuperados de él
 UNAVAILABLE = "unavailable"  # no hay texto extraído; no hay nada que mandar
+OMITTED = "omitted"        # tiene texto, pero no hubo lugar: el principal va entero
 
 
 def estimate_tokens(text: str) -> int:
@@ -186,9 +187,13 @@ class ContextPlan:
         return [d for d in self.deliveries if d.mode == UNAVAILABLE]
 
     @property
+    def omitted(self) -> list[DocumentDelivery]:
+        return [d for d in self.deliveries if d.mode == OMITTED]
+
+    @property
     def complete(self) -> bool:
         """Si todo documento con texto viajó entero."""
-        return not self.degraded
+        return not self.degraded and not self.omitted
 
     def diagnostics(self) -> dict:
         """Lo que se persiste por paso para poder explicar la corrida después."""
@@ -207,6 +212,7 @@ class ContextPlan:
             "documents_full": sum(1 for d in self.deliveries if d.mode == FULL),
             "documents_partial": [d.slug for d in self.degraded],
             "documents_unavailable": [d.slug for d in self.unavailable],
+            "documents_omitted": [d.slug for d in self.omitted],
             "scope_complete": self.complete,
             "blueprint": (self.blueprint.slug if self.blueprint else None),
             # Se registra aparte de `documents_partial` porque no es un
@@ -307,37 +313,57 @@ def plan_context(
             budget,
         )
 
-    # Último recurso, y sólo si la física no deja opción: todo lo demás ya se
-    # degradó y el conjunto sigue sin entrar. Se hace ruido a propósito — es la
-    # única situación en la que el informe se escribe sin el documento que
-    # define de qué trata la operación.
-    blueprint = next((d for d in deliveries if d.is_blueprint), None)
-    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
-        blueprint.mode = PARTIAL
-        blueprint.tokens = min(DEGRADED_DOC_TOKENS, blueprint.full_tokens)
-        blueprint.reason = (
-            "no entra ni siendo el documento principal: todo el resto ya está "
-            f"en fragmentos ({blueprint.full_tokens:,} tokens estimados)".replace(",", ".")
-        )
-        logger.error(
-            "El documento principal %s se degradó a fragmentos: %d tokens sobre un "
-            "presupuesto de %d. El informe se va a escribir sin el texto completo de "
-            "la operación que evalúa.",
-            blueprint.slug,
-            blueprint.full_tokens,
-            budget,
-        )
-
-    # Con todo degradado puede seguir sin entrar: son `DEGRADED_DOC_TOKENS` por
-    # documento, y en una ventana de 200k diez anexos ya no caben ni en
-    # fragmentos. Se reparte lo que queda entre los degradados en vez de
-    # mandar un pedido que la API va a rechazar.
+    # Antes de tocar el documento principal se achican los fragmentos de los
+    # anexos: cada uno aporta su cuota, y en una ventana de 200k bastan tres
+    # anexos degradados para no dejar lugar al principal. Hasta octubre de 2026
+    # esto corría después, y el IET de una DEC de 46k tokens se escribió sobre
+    # fragmentos de la DEC con el presupuesto a medio usar.
     partials = [d for d in deliveries if d.mode == PARTIAL]
     if partials and _total() > budget:
         full_tokens = sum(d.tokens for d in deliveries if d.mode == FULL)
         share = max(TOKENS_PER_CHUNK, (budget - full_tokens) // len(partials))
         for delivery in partials:
             delivery.tokens = min(delivery.tokens, share)
+
+    # El documento principal se lee entero. Siempre. Si con los anexos en su
+    # mínimo todavía no entra, los anexos salen del paso —de mayor a menor—
+    # antes que fragmentar el principal.
+    blueprint = next((d for d in deliveries if d.is_blueprint), None)
+    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
+        for delivery in sorted(partials, key=lambda d: -d.full_tokens):
+            if _total() <= budget:
+                break
+            delivery.mode = OMITTED
+            delivery.tokens = 0
+            delivery.reason = (
+                "quedó afuera de este paso: el documento principal va entero y "
+                "no deja lugar"
+            )
+            logger.warning(
+                "Documento %s fuera del paso para que el principal %s entre entero.",
+                delivery.slug,
+                blueprint.slug,
+            )
+
+    # Único caso en que el principal va en fragmentos: no entra solo en la
+    # ventana del modelo. Es física, no prioridad; se le da todo el lugar que
+    # haya y se hace ruido a propósito.
+    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
+        others = sum(d.tokens for d in deliveries if d is not blueprint)
+        blueprint.mode = PARTIAL
+        blueprint.tokens = max(TOKENS_PER_CHUNK, min(blueprint.full_tokens, budget - others))
+        blueprint.reason = (
+            "no entra entero ni solo en la ventana del modelo "
+            f"({blueprint.full_tokens:,} tokens estimados)".replace(",", ".")
+        )
+        logger.error(
+            "El documento principal %s se degradó a fragmentos: %d tokens sobre un "
+            "presupuesto de %d. No entra solo en la ventana del modelo; el informe "
+            "se va a escribir sin el texto completo de la operación que evalúa.",
+            blueprint.slug,
+            blueprint.full_tokens,
+            budget,
+        )
 
     plan = ContextPlan(
         deliveries=deliveries,
@@ -365,6 +391,7 @@ _STATE_LABEL = {
     FULL: "TEXTO COMPLETO",
     PARTIAL: "FRAGMENTOS",
     UNAVAILABLE: "NO DISPONIBLE",
+    OMITTED: "SIN LUGAR",
 }
 
 

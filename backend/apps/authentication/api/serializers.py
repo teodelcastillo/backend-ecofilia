@@ -44,6 +44,12 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 class ProfileSerializer(serializers.ModelSerializer):
     organization = serializers.SerializerMethodField()
+    # Los dos alcances de "admin" (ver ``apps/user/access.py``), resueltos acá
+    # para que el frontend no los deduzca de ``role``/``is_superuser``:
+    # ``is_ecofilia_admin`` toca lo que es de toda la plataforma;
+    # ``is_organization_admin`` manda dentro de su institución.
+    is_ecofilia_admin = serializers.SerializerMethodField()
+    is_organization_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -58,6 +64,8 @@ class ProfileSerializer(serializers.ModelSerializer):
             "approved",
             "mfa_enabled",
             "organization",
+            "is_ecofilia_admin",
+            "is_organization_admin",
         )
         read_only_fields = (
             "id",
@@ -68,7 +76,19 @@ class ProfileSerializer(serializers.ModelSerializer):
             "approved",
             "mfa_enabled",
             "organization",
+            "is_ecofilia_admin",
+            "is_organization_admin",
         )
+
+    def get_is_ecofilia_admin(self, obj) -> bool:
+        from apps.user.access import is_ecofilia_admin
+
+        return is_ecofilia_admin(obj)
+
+    def get_is_organization_admin(self, obj) -> bool:
+        from apps.user.access import is_organization_admin
+
+        return is_organization_admin(obj)
 
     def get_organization(self, obj):
         org = obj.organization

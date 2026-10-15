@@ -6,7 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 
 from apps.document.services import visible_documents_q
-from apps.user.access import is_ecofilia_admin
+from apps.user.access import is_ecofilia_admin, is_ecofilia_superuser, is_organization_admin
 from rest_framework import viewsets, mixins
 from django.shortcuts import get_object_or_404
 
@@ -322,13 +322,18 @@ class DocumentBulkEvidenceTagsAPIView(APIView):
     ignoran y se informan en ``matched``.
 
     Queda para superadmins porque cambia qué lee cada paso de los agentes en
-    todas las operaciones que usan esos documentos.
+    todas las operaciones que usan esos documentos. El administrador de una
+    institución etiqueta los documentos de su institución (los de sus
+    miembros, no los públicos); los demás que mande se ignoran y no cuentan en
+    ``matched``.
     """
 
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        if not request.user.is_superuser:
+        user = request.user
+        ecofilia = is_ecofilia_superuser(user)
+        if not ecofilia and not is_organization_admin(user):
             raise PermissionDenied("Sólo superadmins pueden etiquetar documentos en lote.")
 
         serializer = DocumentBulkEvidenceTagsSerializer(data=request.data)
@@ -338,7 +343,12 @@ class DocumentBulkEvidenceTagsAPIView(APIView):
         add = data.get("add") or []
         remove = data.get("remove") or []
 
-        documents = list(Document.objects.filter(slug__in=slugs))
+        documents = Document.objects.filter(slug__in=slugs)
+        if not ecofilia:
+            documents = documents.filter(
+                owner__organization_id=user.organization_id, is_public=False
+            )
+        documents = list(documents)
         Through = Document.evidence_tags.through
         with transaction.atomic():
             if remove:
@@ -720,7 +730,7 @@ class DocumentAccessPermission(permissions.BasePermission):
     """
     Permission class for document access:
     - Read: owner, staff users, public documents, shared documents, or documents in shared projects
-    - Write/Delete: owner, staff, or editor role in share (for public docs, only superuser)
+    - Write/Delete: ``Document.can_write`` (los públicos, sólo administradores de Ecofilia)
     """
     
     def has_object_permission(self, request, view, obj):
@@ -732,17 +742,9 @@ class DocumentAccessPermission(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return obj.can_view(request.user)
         
-        # For write/delete methods
-        # - If document is public, only superuser can modify/delete
-        if obj.is_public:
-            return request.user.is_superuser
-        
-        # Owner can always modify/delete
-        if obj.owner == request.user:
-            return True
-        
-        # Check if user has editor role in share
-        return obj.can_edit(request.user)
+        # Escritura: los públicos son de Ecofilia; el resto, de quien puede
+        # editarlos (ver ``Document.can_write``).
+        return obj.can_write(request.user)
 
 
 class DocumentViewSet(

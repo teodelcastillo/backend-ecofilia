@@ -14,7 +14,9 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     Qué documentos ve un usuario que no es staff, como condición de filtro.
 
     Los propios, los públicos, los compartidos con él y los de cualquier
-    operación en la que participa, sea como dueño o como colaborador. Antes
+    operación que ve (como dueño, colaborador o administrador de la
+    institución); el administrador de una institución, además, los de sus
+    miembros. Antes
     sólo contaban las operaciones compartidas con él: el dueño de una
     operación no veía los documentos que un colaborador había subido a su
     propia operación (404 al abrirlos, 400 al chatear con ellos, y el RAG los
@@ -28,16 +30,22 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     llamador, porque ve todo.
     """
     from apps.project.models import Project
+    from apps.user.access import is_organization_admin
 
-    project_ids = Project.objects.filter(
-        Q(owner=user) | Q(shares__user=user)
-    ).values("pk")
-    return (
+    # Las operaciones que el usuario ve: las suyas, las compartidas con él y,
+    # si administra una institución, todas las de ella.
+    project_ids = Project.objects.for_user(user).values("pk")
+    visible = (
         Q(**{f"{prefix}owner": user})
         | Q(**{f"{prefix}is_public": True})
         | Q(**{f"{prefix}shares__user": user})
         | Q(**{f"{prefix}projects__id__in": project_ids})
     )
+    # El administrador de una institución ve también los documentos de sus
+    # miembros.
+    if is_organization_admin(user):
+        visible |= Q(**{f"{prefix}owner__organization_id": user.organization_id})
+    return visible
 
 
 def accessible_documents_for(user, slugs: Iterable[str]) -> QuerySet[Document]:

@@ -107,6 +107,7 @@ class Command(BaseCommand):
                         context_budget.FULL: "",
                         context_budget.PARTIAL: " (fragmentos)",
                         context_budget.UNAVAILABLE: " (SIN TEXTO)",
+                        context_budget.OMITTED: " (SIN LUGAR)",
                     }[d.mode]
                     for d in step.documents
                 )

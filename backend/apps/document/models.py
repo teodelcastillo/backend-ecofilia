@@ -127,8 +127,10 @@ class Document(models.Model):
             counter = 1
             while Document.objects.filter(slug=slug).exists():
                 s_counter = str(counter)
-                slug = base_slug[:49-len(s_counter)]
-                slug = f"{base_slug}-"+ s_counter
+                # El sufijo entra en los 50 caracteres del campo: antes se
+                # recortaba la base y después se descartaba el recorte, así que
+                # volver a subir un documento de nombre largo daba 500.
+                slug = f"{base_slug[:49 - len(s_counter)]}-{s_counter}"
                 counter += 1
             self.slug = slug
         # Si hay name pero no slug, generar slug desde el name proporcionado
@@ -138,8 +140,10 @@ class Document(models.Model):
             counter = 1
             while Document.objects.filter(slug=slug).exists():
                 s_counter = str(counter)
-                slug = base_slug[:49-len(s_counter)]
-                slug = f"{base_slug}-"+ s_counter
+                # El sufijo entra en los 50 caracteres del campo: antes se
+                # recortaba la base y después se descartaba el recorte, así que
+                # volver a subir un documento de nombre largo daba 500.
+                slug = f"{base_slug[:49 - len(s_counter)]}-{s_counter}"
                 counter += 1
             self.slug = slug
         # Si hay slug pero no name, y hay archivo, generar name desde el archivo
@@ -164,28 +168,61 @@ class Document(models.Model):
 
     def can_view(self, user) -> bool:
         """Verifica si el usuario puede ver el documento"""
+        from apps.user.access import administers_member
+
         if user.is_staff or self.owner_id == user.id:
             return True
         if self.is_public:
             return True
+        if administers_member(user, self.owner):
+            return True
         if self.shares.filter(user=user).exists():
             return True
         # Misma regla que listado/detalle/RAG (``visible_documents_q``): los
-        # documentos de cualquier operación en la que participa, como dueño o
-        # como colaborador.
-        return self.projects.filter(Q(owner=user) | Q(shares__user=user)).exists()
+        # documentos de cualquier operación que el usuario ve.
+        from apps.project.models import Project
+
+        return self.projects.filter(
+            pk__in=Project.objects.for_user(user).values("pk")
+        ).exists()
 
     def can_edit(self, user) -> bool:
         """Verifica si el usuario puede editar el documento"""
+        from apps.user.access import administers_member
+
         if user.is_staff or self.owner_id == user.id:
+            return True
+        # El administrador de una institución trabaja los documentos de sus
+        # miembros (clasificar, etiquetar). Los públicos no: son de Ecofilia.
+        if not self.is_public and administers_member(user, self.owner):
             return True
         return self.shares.filter(
             user=user, role=DocumentShareRole.EDITOR
         ).exists()
 
+    def can_write(self, user) -> bool:
+        """Si ``user`` puede modificar o borrar el documento.
+
+        Es la regla de ``DocumentAccessPermission`` para escritura, en un solo
+        lugar: los públicos son de Ecofilia; el resto, de quien puede editarlos.
+        """
+        from apps.user.access import is_ecofilia_admin
+
+        if user.is_staff:
+            return True
+        if self.is_public:
+            return is_ecofilia_admin(user)
+        return self.can_edit(user)
+
     def can_manage_shares(self, user) -> bool:
         """Verifica si el usuario puede gestionar los shares del documento"""
-        return user.is_staff or self.owner_id == user.id
+        from apps.user.access import administers_member
+
+        return (
+            user.is_staff
+            or self.owner_id == user.id
+            or (not self.is_public and administers_member(user, self.owner))
+        )
 
     def __str__(self):
         return f'{self.id}-{self.name}'

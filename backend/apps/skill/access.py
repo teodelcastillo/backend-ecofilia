@@ -33,7 +33,11 @@ def user_can_view_execution(user, execution: SkillExecution) -> bool:
 
 
 def user_can_mutate_execution(user, execution: SkillExecution) -> bool:
-    return user.is_staff or execution.owner_id == user.id
+    """Relanzar, reanudar o borrar una corrida: quien la lanzó, el staff, o
+    quien administra la institución de la operación."""
+    if user.is_staff or execution.owner_id == user.id:
+        return True
+    return bool(execution.project_id and execution.project.is_administered_by(user))
 
 
 def user_can_edit_execution_report(user, execution: SkillExecution) -> bool:

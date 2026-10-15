@@ -200,12 +200,16 @@ class AssignToOrganizationTestCase(APITestCase):
 
     def test_operations_created_by_staff_count_as_the_organizations(self):
         """Una operación CAF que armó alguien de Ecofilia no tiene dueño de CAF,
-        pero tiene el IET: es de CAF, y un workflow asignado a CAF le llega."""
+        pero es de CAF (``Project.organization``), y un workflow asignado a CAF
+        le llega. Tener un asistente de CAF ya no alcanza: eso mezclaría
+        instituciones que comparten asistentes."""
         iet = Skill.objects.create(
             owner=None, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
         )
         self.org.enabled_skills.add(iet)
-        by_staff = Project.objects.create(owner=self.admin, name="Operación armada por staff")
+        by_staff = Project.objects.create(
+            owner=self.admin, name="Operación armada por staff", organization=self.org
+        )
         by_staff.enabled_skills.add(iet)
         unrelated = Project.objects.create(owner=self.admin, name="Proyecto de otra cosa")
 
@@ -225,7 +229,7 @@ class AssignToOrganizationTestCase(APITestCase):
 
         response = self.client.post(
             reverse("project-list"),
-            {"name": "Operación nueva", "enabled_skill_slugs": [iet.slug]},
+            {"name": "Operación nueva", "enabled_skill_slugs": [iet.slug], "organization": "caf"},
             format="json",
         )
 

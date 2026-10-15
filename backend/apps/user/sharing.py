@@ -49,19 +49,35 @@ def _is_ecofilia_team(user) -> bool:
     return bool(getattr(user, "is_staff", False) and not getattr(user, "organization_id", None))
 
 
-def can_share_with(sharer, target) -> bool:
-    """Si ``sharer`` puede compartir un recurso con ``target`` hoy."""
-    return target.is_active and within_organization_boundary(sharer, target)
+def belongs_to_resource_organization(target, organization_id) -> bool:
+    """Si ``target`` puede tener acceso a un recurso de esa institución.
+
+    Una operación de CAF sólo se comparte con gente de CAF (o del equipo de
+    Ecofilia), la comparta quien la comparta: también si la comparte el staff.
+    """
+    if organization_id is None:
+        return True
+    return _is_ecofilia_team(target) or getattr(target, "organization_id", None) == organization_id
 
 
-def resolve_share_target(sharer, email: str):
-    """El usuario con ese email, si ``sharer`` puede compartir con él.
+def can_share_with(sharer, target, organization_id=None) -> bool:
+    """Si ``sharer`` puede compartir con ``target`` un recurso de esa institución."""
+    return (
+        target.is_active
+        and within_organization_boundary(sharer, target)
+        and belongs_to_resource_organization(target, organization_id)
+    )
+
+
+def resolve_share_target(sharer, email: str, organization_id=None):
+    """El usuario con ese email, si ``sharer`` puede compartir con él un
+    recurso de la institución ``organization_id`` (``None``: sin institución).
 
     Levanta ``ValidationError`` sobre ``user_email`` con el mismo mensaje en
     todos los casos de rechazo (regla 2).
     """
     User = get_user_model()
     target = User.objects.filter(email=email).first()
-    if target is None or not can_share_with(sharer, target):
+    if target is None or not can_share_with(sharer, target, organization_id):
         raise serializers.ValidationError({"user_email": SHARE_TARGET_UNAVAILABLE})
     return target

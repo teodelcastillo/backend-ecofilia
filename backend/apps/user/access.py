@@ -25,6 +25,32 @@ def belongs_to_organization(user) -> bool:
     return bool(getattr(user, "organization_id", None))
 
 
+def is_organization_admin(user) -> bool:
+    """Administrador de una institución: ``role=admin`` con organización.
+
+    Dentro de su institución tiene sobre operaciones y documentos lo mismo que
+    sus dueños —ver, editar, compartir, asignar, ejecutar, borrar—. Fuera de
+    ella, nada; y lo que es de toda la plataforma (biblioteca pública,
+    asignar asistentes a organizaciones) tampoco: eso es ``is_ecofilia_admin``.
+    """
+    from apps.user.models import UserRole
+
+    return bool(
+        getattr(user, "is_authenticated", False)
+        and belongs_to_organization(user)
+        and getattr(user, "role", None) == UserRole.ADMIN
+    )
+
+
+def administers_member(admin, member) -> bool:
+    """Si ``admin`` administra la institución a la que pertenece ``member``."""
+    return bool(
+        member is not None
+        and is_organization_admin(admin)
+        and getattr(member, "organization_id", None) == admin.organization_id
+    )
+
+
 def is_ecofilia_admin(user) -> bool:
     """Superadmin de la plataforma: superusuario o ``role=admin``, sin organización.
 

@@ -184,3 +184,26 @@ class DocumentCreateWithProjectSlugTest(APITestCase):
             response.status_code,
             (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
         )
+
+
+class ReuploadLongNameTestCase(APITestCase):
+    """Volver a subir un documento de nombre largo no da 500.
+
+    El slug se recortaba para dejarle lugar al sufijo y después se descartaba
+    el recorte: con un nombre de 50 caracteres o más que ya existía, el slug
+    quedaba en 52 y la base lo rechazaba (cuatro subidas fallidas el
+    1-oct-2026).
+    """
+
+    def test_same_long_name_twice(self):
+        user = get_user_model().objects.create_user(email="sube@example.com", password="x")
+        self.client.force_authenticate(user)
+        name = "Informe de diagnóstico de la operación Colombia agua potable 2026"
+        slugs = []
+        for _ in range(3):
+            upload = SimpleUploadedFile("ido.pdf", b"%PDF-1.4 test", content_type="application/pdf")
+            response = self.client.post("/api/document/create/", {"file": upload, "name": name}, format="multipart")
+            self.assertEqual(response.status_code, 201, response.data)
+            slugs.append(response.data["slug"])
+        self.assertEqual(len(set(slugs)), 3)
+        self.assertTrue(all(len(slug) <= Document._meta.get_field("slug").max_length for slug in slugs))

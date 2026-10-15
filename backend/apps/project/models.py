@@ -16,11 +16,21 @@ class ProjectSectionStatus(models.TextChoices):
     COMPLETED = "completed", _("Completed")
 
 
+def _is_organization_admin(user) -> bool:
+    from apps.user.access import is_organization_admin
+
+    return is_organization_admin(user)
+
+
 class ProjectQuerySet(models.QuerySet):
     def for_user(self, user):
         if user.is_staff:
             return self
-        return self.filter(Q(owner=user) | Q(shares__user=user)).distinct()
+        visible = Q(owner=user) | Q(shares__user=user)
+        # El administrador de una institución ve todas sus operaciones.
+        if _is_organization_admin(user):
+            visible |= Q(organization_id=user.organization_id)
+        return self.filter(visible).distinct()
 
 
 class Project(models.Model):
@@ -28,6 +38,18 @@ class Project(models.Model):
         settings.AUTH_USER_MODEL,
         related_name="projects",
         on_delete=models.CASCADE,
+    )
+    organization = models.ForeignKey(
+        "user.Organization",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="projects",
+        help_text=(
+            "Institución a la que pertenece la operación. Define qué portal la "
+            "muestra y qué administrador la ve entera. Se fija al crearla: la "
+            "del dueño o, si la arma el equipo de Ecofilia, la del portal."
+        ),
     )
     name = models.CharField(max_length=255)
     slug = models.SlugField(unique=True, blank=True, max_length=255)
@@ -91,6 +113,13 @@ class Project(models.Model):
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = self._generate_unique_slug()
+        # La operación de alguien de una institución es de esa institución,
+        # se cree por donde se cree (API, admin, comandos).
+        if self._state.adding and self.organization_id is None and self.owner_id:
+            self.organization_id = (
+                type(self.owner).objects.filter(pk=self.owner_id)
+                .values_list("organization_id", flat=True).first()
+            )
         super().save(*args, **kwargs)
 
     def _generate_unique_slug(self) -> str:
@@ -104,29 +133,50 @@ class Project(models.Model):
             counter += 1
         return slug
 
+    def is_administered_by(self, user) -> bool:
+        """Si ``user`` administra la institución de esta operación.
+
+        El administrador de una institución (``role=admin`` con organización)
+        tiene sobre todas sus operaciones lo mismo que el dueño: verlas,
+        editarlas, compartirlas, ejecutar asistentes y borrarlas. Fuera de su
+        institución, nada.
+        """
+        return bool(
+            self.organization_id
+            and _is_organization_admin(user)
+            and self.organization_id == user.organization_id
+        )
+
+    def _owns(self, user) -> bool:
+        return (
+            user.is_staff
+            or self.owner_id == user.id
+            or self.is_administered_by(user)
+        )
+
     def can_view(self, user) -> bool:
-        if user.is_staff or self.owner_id == user.id:
+        if self._owns(user):
             return True
         return self.shares.filter(user=user).exists()
 
     def can_edit(self, user) -> bool:
-        if user.is_staff or self.owner_id == user.id:
+        if self._owns(user):
             return True
         return self.shares.filter(
             user=user, role=ProjectShareRole.EDITOR
         ).exists()
 
     def can_manage_shares(self, user) -> bool:
-        return user.is_staff or self.owner_id == user.id
+        return self._owns(user)
 
     def can_delete(self, user) -> bool:
-        """Borrar la operación es del dueño (o del staff), no de quien la edita.
+        """Borrar la operación es del dueño (o de quien administra), no de quien la edita.
 
         Un editor compartido trabaja la operación pero no decide que deje de
         existir: borrarla se lleva documentos vinculados, corridas e informe
         de todos los que participan.
         """
-        return user.is_staff or self.owner_id == user.id
+        return self._owns(user)
 
 
 class ProjectDocument(models.Model):

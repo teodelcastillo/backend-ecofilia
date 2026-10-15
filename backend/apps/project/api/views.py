@@ -82,9 +82,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        qs = Project.objects.for_user(user)
+        # Cada portal muestra sólo lo de su institución: ``?organization=caf``.
+        # Le importa sobre todo al equipo de Ecofilia, que ve todas.
+        if self.action == "list" and (org := self.request.query_params.get("organization")):
+            qs = qs.filter(organization__slug=org)
         return (
-            Project.objects.for_user(user)
-            .select_related("owner", "blueprint_document", "structure_template")
+            qs
+            .select_related("owner", "blueprint_document", "structure_template", "organization")
             .prefetch_related(
                 Prefetch(
                     "project_documents",
@@ -901,7 +906,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         """
         Fotos de la determinación de alineación de las operaciones visibles.
 
-        GET /projects/alignment-history/
+        GET /projects/alignment-history/[?organization=caf]
 
         Una por cada vez que cambió la determinación o la etapa de una
         operación (ver ``ProjectAlignmentSnapshot``), ordenadas por fecha. Es
@@ -911,9 +916,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
         from apps.project.api.serializers import ProjectAlignmentSnapshotSerializer
         from apps.project.models import ProjectAlignmentSnapshot
 
-        visibles = Project.objects.for_user(request.user).values("id")
+        visibles = Project.objects.for_user(request.user)
+        if org := request.query_params.get("organization"):
+            visibles = visibles.filter(organization__slug=org)
         snapshots = (
-            ProjectAlignmentSnapshot.objects.filter(project_id__in=visibles)
+            ProjectAlignmentSnapshot.objects.filter(project_id__in=visibles.values("id"))
             .select_related("project")
             .order_by("captured_at", "id")
         )

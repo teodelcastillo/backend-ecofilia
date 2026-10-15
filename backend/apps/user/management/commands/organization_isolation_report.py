@@ -11,7 +11,11 @@ existen. Este comando los lista:
    organización de prueba, o alguien del cliente con permisos de más—. Se
    corrigen desde el admin.
 2. Accesos compartidos que cruzan organizaciones (operaciones, documentos,
-   repositorios, evaluaciones). Con ``--revoke-shares`` se borran.
+   repositorios, evaluaciones): entre dueño e invitado, o entre la
+   institución de la operación y el invitado. Con ``--revoke-shares`` se
+   borran.
+3. Operaciones sin institución que alguna institución reclama (dueño sin
+   organización pero con asistentes de más de una): se asignan desde el admin.
 
     python manage.py organization_isolation_report
     python manage.py organization_isolation_report --revoke-shares
@@ -22,9 +26,10 @@ from django.db.models import Q
 
 from apps.document.models import DocumentShare
 from apps.evaluation.models import EvaluationShare
-from apps.project.models import ProjectShare
+from apps.project.models import Project, ProjectShare
 from apps.repository.models import RepositoryShare
-from apps.user.sharing import within_organization_boundary
+from apps.user.models import Organization
+from apps.user.sharing import belongs_to_resource_organization, within_organization_boundary
 
 SHARE_SOURCES = (
     ("operación", ProjectShare, "project"),
@@ -68,9 +73,15 @@ class Command(BaseCommand):
             shares = model.objects.select_related(
                 "user__organization", f"{field}__owner__organization"
             )
+            if model is ProjectShare:
+                shares = shares.select_related("project__organization")
             for share in shares:
                 resource = getattr(share, field)
-                if not within_organization_boundary(resource.owner, share.user):
+                if not within_organization_boundary(
+                    resource.owner, share.user
+                ) or not belongs_to_resource_organization(
+                    share.user, getattr(resource, "organization_id", None)
+                ):
                     crossing.append((label, share, resource))
 
         self.stdout.write("\nAccesos compartidos que cruzan organizaciones:")
@@ -82,6 +93,20 @@ class Command(BaseCommand):
             )
         if not crossing:
             self.stdout.write("  ninguno")
+
+        self.stdout.write("\nOperaciones sin institución que más de una institución reclama:")
+        ambiguous = 0
+        for project in Project.objects.filter(organization__isnull=True).prefetch_related("enabled_skills"):
+            orgs = sorted(
+                Organization.objects.filter(enabled_skills__in=project.enabled_skills.all())
+                .values_list("slug", flat=True)
+                .distinct()
+            )
+            if len(orgs) > 1:
+                ambiguous += 1
+                self.stdout.write(f"  - «{project.name}» ({project.slug}): {', '.join(orgs)}")
+        if not ambiguous:
+            self.stdout.write("  ninguna")
 
         if options["revoke_shares"] and crossing:
             for _, share, _ in crossing:
