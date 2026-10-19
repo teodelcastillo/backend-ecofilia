@@ -188,6 +188,7 @@ class SkillSerializer(serializers.ModelSerializer):
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
+            "max_document_tokens",
             "default_output_mode", "default_format_instructions", "table_schema",
             "members_can_run", "organization_slugs", "default_organization_slugs",
             "pinned_document_slugs",
@@ -424,6 +425,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             "comparative_mode_enabled", "strict_missing_evidence",
             "retrieval_query_template",
             "retrieval_strategy", "k_per_doc", "total_limit", "max_per_doc_after_rerank",
+            "max_document_tokens",
             "default_output_mode", "default_format_instructions", "table_schema",
             "pinned_document_slugs",
             # Sprint 1 + 2
@@ -571,6 +573,11 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         if k_per_doc < 1 or k_per_doc > 10:
             raise serializers.ValidationError(
                 {"k_per_doc": "k_per_doc must be between 1 and 10."}
+            )
+        max_document_tokens = attrs.get("max_document_tokens")
+        if max_document_tokens is not None and max_document_tokens < 20_000:
+            raise serializers.ValidationError(
+                {"max_document_tokens": "El tope de documentos por paso tiene que ser de al menos 20.000 tokens."}
             )
         if total_limit < 1 or total_limit > 50:
             raise serializers.ValidationError(

@@ -1579,6 +1579,7 @@ def build_step_corpus(
     strategy: str | None = None,
     retrieve_partials: bool = True,
     context_window: int | None = None,
+    max_document_tokens: int | None = None,
 ) -> "StepCorpus":
     """La base documental de un paso, tal como la va a ver el modelo.
 
@@ -1600,6 +1601,7 @@ def build_step_corpus(
         blueprint_id=blueprint_id,
         texts=document_texts,
         context_window=context_window,
+        max_document_tokens=max_document_tokens,
     )
     if retrieve_partials:
         partial_blocks, chunks, failures = _retrieve_partial_blocks(
@@ -2093,6 +2095,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                         document_texts=document_texts,
                         strategy=effective_retrieval_strategy,
                         context_window=window,
+                        max_document_tokens=skill.max_document_tokens,
                     )
                     chunks = corpus.chunks
                     plan = corpus.plan

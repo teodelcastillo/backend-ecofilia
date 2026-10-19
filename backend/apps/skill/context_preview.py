@@ -295,6 +295,7 @@ def build_preview(
             document_texts=document_texts,
             retrieve_partials=measure_fragments,
             context_window=window,
+            max_document_tokens=getattr(skill, "max_document_tokens", None),
         )
         plan = corpus.plan
         stable = "\n\n".join([corpus.inventory] + [d.text for d in corpus.documents])

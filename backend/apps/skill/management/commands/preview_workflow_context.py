@@ -207,6 +207,7 @@ class Command(BaseCommand):
             document_texts={},
             retrieve_partials=not options["no_retrieval"],
             context_window=context_budget.context_window_for(model),
+            max_document_tokens=skill.max_document_tokens,
         )
         parts = [corpus.inventory] + [d.text for d in corpus.documents]
         if corpus.volatile:

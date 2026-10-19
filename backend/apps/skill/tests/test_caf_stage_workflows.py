@@ -86,6 +86,19 @@ class SeededWorkflowsTestCase(TestCase):
         values = step.table_schema["columns"][1]["allowed_values"]
         self.assertIn("No determinable con la información disponible", values)
 
+    def test_caf_runs_have_a_document_cap_and_synthesis_reads_previous_sections(self):
+        for slug in (INSUMO_SLUG, IET_SLUG, GUIADO_SLUG):
+            self.assertEqual(Skill.objects.get(slug=slug).max_document_tokens, 150_000, slug)
+        iet = Skill.objects.get(slug=IET_SLUG)
+        sintesis = [
+            s for s in iet.steps.all()
+            if "Determinación y recomendaciones" in s.title or s.title.startswith(("E.1.", "E.3."))
+        ]
+        self.assertEqual(len(sintesis), 4)
+        self.assertTrue(all(s.evidence_mode == "previous_steps" for s in sintesis))
+        # Los análisis por criterio siguen leyendo documentos.
+        self.assertEqual(iet.steps.get(title__startswith="D.2. CT A1").evidence_mode, "both")
+
     def test_the_guided_report_rewrites_only_greening_and_alignment(self):
         guided = Skill.objects.get(slug=GUIADO_SLUG)
         iet_titles = [t for t in self._titles(IET_SLUG) if t.startswith(("C.", "D.", "E."))]

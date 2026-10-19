@@ -416,3 +416,29 @@ class BlueprintAlwaysWholeTests(SimpleTestCase):
         self.assertEqual(plan.blueprint.tokens, plan.budget_tokens)
         self.assertEqual([d.slug for d in plan.omitted], ["anexo"])
         self.assertIn("ni solo en la ventana del modelo", plan.blueprint.reason)
+
+
+class DocumentCapTests(SimpleTestCase):
+    """El tope de documentos por paso del workflow (``Skill.max_document_tokens``)."""
+
+    def test_annexes_beyond_the_cap_are_read_by_fragments(self):
+        documents = [
+            make_document(1, "ndc", 230),  # ~100k tokens
+            make_document(2, "metodologia", 460),  # ~200k tokens
+            make_document(3, "ido", 115),  # ~50k tokens, el principal
+        ]
+        sin_tope = cb.plan_context(documents, reserved_tokens=50_000, blueprint_id=3)
+        self.assertTrue(all(d.mode == cb.FULL for d in sin_tope.deliveries))
+
+        con_tope = cb.plan_context(
+            documents, reserved_tokens=50_000, blueprint_id=3, max_document_tokens=150_000
+        )
+        modes = {d.slug: d.mode for d in con_tope.deliveries}
+        self.assertEqual(modes["ido"], cb.FULL)
+        self.assertEqual(modes["metodologia"], cb.PARTIAL)
+        self.assertLessEqual(sum(d.tokens for d in con_tope.deliveries), 150_000)
+
+    def test_the_principal_document_is_whole_even_above_the_cap(self):
+        documents = [make_document(1, "ido", 460), make_document(2, "ndc", 50)]
+        plan = cb.plan_context(documents, reserved_tokens=0, blueprint_id=1, max_document_tokens=100_000)
+        self.assertEqual({d.slug: d.mode for d in plan.deliveries}["ido"], cb.FULL)

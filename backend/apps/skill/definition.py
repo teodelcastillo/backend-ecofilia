@@ -78,6 +78,7 @@ SKILL_FIELDS = (
     "k_per_doc",
     "total_limit",
     "max_per_doc_after_rerank",
+    "max_document_tokens",
     "default_output_mode",
     "default_format_instructions",
     "table_schema",

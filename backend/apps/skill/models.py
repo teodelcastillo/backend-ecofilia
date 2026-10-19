@@ -162,6 +162,19 @@ class Skill(models.Model):
         default=4,
         help_text="Max chunks kept per document after global reranking.",
     )
+    # Cuántos tokens de documentos puede leer cada paso. Sin tope, un paso
+    # llena la ventana del modelo (un millón en Sonnet 5): caro, y además por
+    # encima de 200k tokens el proveedor cobra precio de contexto largo. Con
+    # tope, el documento principal va entero igual y los anexos que no entran
+    # se leen por fragmentos (ver ``context_budget.plan_context``).
+    max_document_tokens = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Tope de tokens de documentos por paso. Vacío: lo que entre en la "
+            "ventana del modelo. El documento principal siempre va entero."
+        ),
+    )
 
     # Quién puede ejecutarlo. Por defecto sólo superadmins: cada corrida
     # cuesta dinero y cambia el informe de la operación. Encendido, también lo

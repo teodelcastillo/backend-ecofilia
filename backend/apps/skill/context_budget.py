@@ -266,6 +266,7 @@ def plan_context(
     blueprint_id: int | None = None,
     texts: dict | None = None,
     context_window: int | None = None,
+    max_document_tokens: int | None = None,
 ) -> ContextPlan:
     """Decide, documento por documento, qué entra entero y qué se degrada.
 
@@ -283,9 +284,20 @@ def plan_context(
 
     ``context_window`` es la ventana del modelo que va a atender el paso (ver
     ``context_window_for``); sin él se asume la larga.
+
+    ``max_document_tokens`` es el tope del workflow (``Skill.max_document_tokens``):
+    los documentos no pasan de ahí aunque la ventana dé para más. Es lo que
+    separa "cabe" de "conviene": leer un millón de tokens en cada paso cabe,
+    pero cuesta varias veces más que leer el principal entero y fragmentos de
+    los anexos.
     """
     window = context_window or CONTEXT_WINDOW
-    budget = max(0, window - CONTEXT_SAFETY_MARGIN - max(0, reserved_tokens))
+    # Dos presupuestos: lo que entra en la ventana (física) y lo que conviene
+    # (el tope del workflow). Los anexos se degradan contra el segundo; el
+    # principal sólo se fragmenta, y los anexos sólo salen del paso, contra el
+    # primero. Un principal más grande que el tope va entero igual.
+    window_budget = max(0, window - CONTEXT_SAFETY_MARGIN - max(0, reserved_tokens))
+    budget = min(window_budget, max_document_tokens) if max_document_tokens else window_budget
 
     deliveries: list[DocumentDelivery] = []
     for document in documents:
@@ -362,9 +374,9 @@ def plan_context(
     # mínimo todavía no entra, los anexos salen del paso —de mayor a menor—
     # antes que fragmentar el principal.
     blueprint = next((d for d in deliveries if d.is_blueprint), None)
-    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
+    if blueprint is not None and blueprint.mode == FULL and _total() > window_budget:
         for delivery in sorted(partials, key=lambda d: -d.full_tokens):
-            if _total() <= budget:
+            if _total() <= window_budget:
                 break
             delivery.mode = OMITTED
             delivery.tokens = 0
@@ -381,10 +393,10 @@ def plan_context(
     # Único caso en que el principal va en fragmentos: no entra solo en la
     # ventana del modelo. Es física, no prioridad; se le da todo el lugar que
     # haya y se hace ruido a propósito.
-    if blueprint is not None and blueprint.mode == FULL and _total() > budget:
+    if blueprint is not None and blueprint.mode == FULL and _total() > window_budget:
         others = sum(d.tokens for d in deliveries if d is not blueprint)
         blueprint.mode = PARTIAL
-        blueprint.tokens = max(TOKENS_PER_CHUNK, min(blueprint.full_tokens, budget - others))
+        blueprint.tokens = max(TOKENS_PER_CHUNK, min(blueprint.full_tokens, window_budget - others))
         blueprint.reason = (
             "no entra entero ni solo en la ventana del modelo "
             f"({blueprint.full_tokens:,} tokens estimados)".replace(",", ".")
@@ -395,7 +407,7 @@ def plan_context(
             "se va a escribir sin el texto completo de la operación que evalúa.",
             blueprint.slug,
             blueprint.full_tokens,
-            budget,
+            window_budget,
         )
 
     plan = ContextPlan(
@@ -404,14 +416,14 @@ def plan_context(
         corpus_tokens=_total(),
         reserved_tokens=max(0, reserved_tokens),
     )
-    if _total() > budget:
+    if _total() > window_budget:
         # Todo degradado y todavía no entra. Puede pasar con muchísimos
         # documentos: cada uno aporta su cuota de fragmentos. Se registra y se
         # sigue; el pedido es más chico que la ventana por el colchón.
         logger.warning(
             "El alcance del paso no entra ni degradado: %d tokens sobre %d.",
             _total(),
-            budget,
+            window_budget,
         )
     return plan
 
