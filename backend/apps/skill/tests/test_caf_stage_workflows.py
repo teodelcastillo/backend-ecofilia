@@ -87,8 +87,10 @@ class SeededWorkflowsTestCase(TestCase):
         self.assertIn("No determinable con la información disponible", values)
 
     def test_caf_runs_have_a_document_cap_and_synthesis_reads_previous_sections(self):
-        for slug in (INSUMO_SLUG, IET_SLUG, GUIADO_SLUG):
-            self.assertEqual(Skill.objects.get(slug=slug).max_document_tokens, 150_000, slug)
+        # El insumo tiene tope; el informe (IET y guiado) no, por calidad.
+        self.assertEqual(Skill.objects.get(slug=INSUMO_SLUG).max_document_tokens, 300_000)
+        for slug in (IET_SLUG, GUIADO_SLUG):
+            self.assertIsNone(Skill.objects.get(slug=slug).max_document_tokens, slug)
         iet = Skill.objects.get(slug=IET_SLUG)
         sintesis = [
             s for s in iet.steps.all()

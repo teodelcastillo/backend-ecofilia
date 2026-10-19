@@ -6,10 +6,11 @@ millón de tokens, con un conjunto distinto por paso (según sus etiquetas), as�
 que la caché casi no se reutilizaba. Era caro —por encima de 200k tokens se
 cobra precio de contexto largo— y una IET llegó a exceder la ventana.
 
-- **Tope de documentos por paso** (``Skill.max_document_tokens``): 150.000
-  tokens para la IET, el insumo y el guiado. El documento principal sigue
-  entero; los anexos que no entran se leen por fragmentos. Se ajusta por
-  workflow desde el admin o el Studio.
+- **Tope de documentos por paso** (``Skill.max_document_tokens``): 300.000
+  tokens para el insumo, que es el análisis rápido. La IET y el guiado quedan
+  sin tope: son el informe, y su calidad manda. El documento principal sigue
+  entero siempre; los anexos que no entran se leen por fragmentos. Se ajusta
+  por workflow desde el admin o el Studio, después de medir corridas reales.
 - **Pasos de síntesis sin documentos**: las determinaciones de cada objetivo
   (D.2 y D.3) y la Sección E de la IET integran lo que ya analizaron los pasos
   anteriores, igual que la síntesis ``S.1.``. Leen esas secciones, no el
@@ -18,8 +19,8 @@ cobra precio de contexto largo— y una IET llegó a exceder la ventana.
 from django.db import migrations, models
 
 IET_SLUG = "caf-iet-datbc-evaluacion-tecnica"
-CAPPED_SLUGS = (IET_SLUG, "caf-insumo-ejecutivo", "caf-iet-guiado-ejecutivo")
-MAX_DOCUMENT_TOKENS = 150_000
+CAPPED_SLUGS = ("caf-insumo-ejecutivo",)
+MAX_DOCUMENT_TOKENS = 300_000
 
 
 def _es_sintesis(title: str) -> bool:
