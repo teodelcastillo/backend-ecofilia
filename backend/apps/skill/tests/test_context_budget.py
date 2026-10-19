@@ -442,3 +442,61 @@ class DocumentCapTests(SimpleTestCase):
         documents = [make_document(1, "ido", 460), make_document(2, "ndc", 50)]
         plan = cb.plan_context(documents, reserved_tokens=0, blueprint_id=1, max_document_tokens=100_000)
         self.assertEqual({d.slug: d.mode for d in plan.deliveries}["ido"], cb.FULL)
+
+
+class LayeredCacheTests(SimpleTestCase):
+    """Caché por capas: el documento principal, compartido por todos los pasos,
+    va primero con su propio punto de caché; lo propio de cada paso después."""
+
+    def setUp(self):
+        self.ido = FakeDocument(1, "ido", "IDO", 2, paged(["Alfa.", "Beta."]))
+        self.nap = FakeDocument(2, "nap", "NAP", 2, paged(["Metas.", "Fin."]))
+        self.ndc = FakeDocument(3, "ndc", "NDC", 2, paged(["Compromisos.", "Fin."]))
+
+    def _content(self, documents):
+        texts = {d.id: d.extracted_text for d in documents}
+        plan = cb.plan_context(documents, reserved_tokens=10_000, blueprint_id=1, texts=texts)
+        payloads = cb.build_document_payloads(plan, texts=texts)
+        with mock.patch.object(cb, "cache_control", return_value={"type": "ephemeral"}):
+            return cb.build_messages(
+                system_prompt="SYS",
+                inventory=cb.render_inventory(plan),
+                documents=payloads,
+                corpus_volatile="",
+                step_prompt="INSTR",
+                model="claude-sonnet-5",
+            )[1]["content"]
+
+    def test_the_principal_goes_first_with_its_own_cache_point(self):
+        content = self._content([self.nap, self.ido])
+        kinds = [(b["type"], b.get("title", b.get("text", ""))[:5], "cache_control" in b) for b in content]
+        self.assertEqual(
+            kinds,
+            [
+                ("document", "[ido]", True),
+                ("text", "## Ba", False),
+                ("document", "[nap]", True),
+                ("text", "INSTR", False),
+            ],
+        )
+
+    def test_the_shared_layer_is_identical_across_steps_with_different_documents(self):
+        con_nap = self._content([self.ido, self.nap])
+        con_ndc = self._content([self.ndc, self.ido])
+        self.assertEqual(repr(con_nap[0]), repr(con_ndc[0]))
+        self.assertNotEqual(repr(con_nap[:3]), repr(con_ndc[:3]))
+
+    def test_citation_indexes_follow_the_block_order(self):
+        """``document_index`` cuenta bloques ``document``: los payloads tienen
+        que venir en el mismo orden en que se arman."""
+        texts = {d.id: d.extracted_text for d in (self.nap, self.ido)}
+        plan = cb.plan_context([self.nap, self.ido], reserved_tokens=10_000, blueprint_id=1, texts=texts)
+        payloads = cb.build_document_payloads(plan, texts=texts)
+        content = self._content([self.nap, self.ido])
+        blocks = [b["title"] for b in content if b["type"] == "document"]
+        self.assertEqual(blocks, [f"[{p.slug}] {p.name}" for p in payloads])
+
+    def test_a_principal_alone_has_a_single_cache_point(self):
+        content = self._content([self.ido])
+        self.assertEqual(sum("cache_control" in b for b in content), 1)
+        self.assertIn("cache_control", content[-2])

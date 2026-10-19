@@ -629,6 +629,9 @@ class DocumentPayload:
     name: str
     text: str
     page_map: object  # apps.document.page_map.PageMap
+    # El documento principal viaja primero y con su propio punto de caché: es
+    # el único que está en todos los pasos (ver ``build_messages``).
+    is_blueprint: bool = False
 
     @property
     def has_pages(self) -> bool:
@@ -646,9 +649,13 @@ def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentP
     from apps.document.page_map import build_page_map
 
     payloads: list[DocumentPayload] = []
-    for delivery in plan.deliveries:
-        if delivery.mode != FULL:
-            continue
+    # El principal primero: es la capa compartida por todos los pasos. El orden
+    # de los bloques es también el de ``document_index`` en las citas, así que
+    # se decide acá una sola vez.
+    full = sorted(
+        (d for d in plan.deliveries if d.mode == FULL), key=lambda d: not d.is_blueprint
+    )
+    for delivery in full:
         raw = texts.get(delivery.document.id) or ""
         page_map = build_page_map(raw)
         payloads.append(
@@ -657,6 +664,7 @@ def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentP
                 name=delivery.name,
                 text=page_map.text,
                 page_map=page_map,
+                is_blueprint=delivery.is_blueprint,
             )
         )
     return payloads
@@ -788,16 +796,31 @@ def build_messages(
         return messages
 
     citations = are_citations_enabled()
+    control = cache_control()
     content: list[dict] = []
+
+    # Caché por capas. Cada paso lee sus propios documentos (según sus
+    # etiquetas), así que el corpus completo casi nunca se repite entre pasos;
+    # lo único que está en todos es el documento principal. Va primero, antes
+    # del inventario —que lista los documentos del paso y por eso cambia—, con
+    # su propio punto de caché: así se cobra entero una vez por corrida y en el
+    # resto de los pasos como lectura de caché. El segundo punto queda, como
+    # antes, sobre el último documento: lo aprovechan los pasos seguidos que
+    # leen el mismo conjunto.
+    rest = list(documents)
+    if rest and rest[0].is_blueprint:
+        principal = _document_block(rest.pop(0), citations=citations)
+        if control and rest:
+            principal["cache_control"] = control
+        content.append(principal)
     if inventory:
         content.append({"type": "text", "text": inventory})
-    for payload in documents:
+    for payload in rest:
         content.append(_document_block(payload, citations=citations))
 
-    # El punto de caché va sobre el último bloque estable, sea el último
-    # documento o el inventario cuando no hay ninguno completo.
-    control = cache_control()
-    if control and content:
+    # El punto de caché del último bloque estable: el último documento, o el
+    # principal si es el único, o el inventario cuando no hay ninguno completo.
+    if control and content and "cache_control" not in content[-1]:
         content[-1]["cache_control"] = control
 
     if corpus_volatile:

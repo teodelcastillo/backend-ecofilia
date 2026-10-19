@@ -587,6 +587,16 @@ def build_table_system_prompt(base_system_prompt: str, table_schema: dict) -> st
     Build the system prompt that forces the model to emit JSON matching the
     expected table schema, including per-column hints when provided.
     """
+    return f"{base_system_prompt}\n\n{table_output_instructions(table_schema)}"
+
+
+def table_output_instructions(table_schema: dict) -> str:
+    """Las instrucciones de salida tabular: JSON con estas columnas.
+
+    En los workflows van en el mensaje del paso y no en el system prompt: el
+    system prompt es parte del prefijo cacheado, y si cambiara entre pasos de
+    tabla y de texto la caché se rompería en cada cambio.
+    """
     columns = table_schema.get("columns") or []
     columns_json = json.dumps(columns, ensure_ascii=False)
     column_instructions = []
@@ -601,7 +611,6 @@ def build_table_system_prompt(base_system_prompt: str, table_schema: dict) -> st
         "\n".join(column_instructions) or "- No extra per-column hints."
     )
     return (
-        f"{base_system_prompt}\n\n"
         "Debes responder EXCLUSIVAMENTE en JSON válido (sin markdown, sin texto adicional) "
         "con este schema:\n"
         '{"type":"table","columns":[string],"rows":[object]}\n'
@@ -2059,11 +2068,11 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                 # citable: su resumen sobra y puede contradecirlo.
                 include_blueprint_summary=not use_context_first,
             )
-            system_prompt = (
-                build_table_system_prompt(step_system_prompt, step_table_schema)
-                if is_table_step
-                else step_system_prompt
-            )
+            # Igual para todos los pasos: es el prefijo de la caché. La forma de
+            # la salida tabular viaja con el paso (ver `table_output_instructions`).
+            system_prompt = step_system_prompt
+            if is_table_step:
+                prompt = f"{prompt}\n\n{table_output_instructions(step_table_schema)}"
 
             tier_used = resolve_tier(skill, step)
             model_for_step = _resolve_model(skill, tier_used)
