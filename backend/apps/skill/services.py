@@ -623,6 +623,36 @@ class TableContractError(ValueError):
     """
 
 
+def _json_payload(output_text: str) -> str:
+    """El objeto JSON de una respuesta tabular, aunque venga envuelto.
+
+    Se pide JSON solo, pero el modelo a veces lo envuelve: un bloque ```json,
+    un `**` de markdown, una frase antes o una nota después. Eso tiraba el paso
+    entero aunque la tabla estuviera completa (pasó con el insumo en
+    producción). Se toma el primer objeto con ``rows`` que parsea; si no hay
+    ninguno, se devuelve el texto tal cual y el error de siempre lo reporta.
+    """
+    text = (output_text or "").strip()
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    start = text.find("{")
+    attempts = 0
+    while start != -1 and attempts < 50:
+        attempts += 1
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except json.JSONDecodeError:
+            obj, end = None, start
+        if isinstance(obj, dict) and "rows" in obj:
+            return text[start:end]
+        start = text.find("{", start + 1)
+    return text
+
+
 def coerce_table_output(
     *, output_text: str, table_schema: dict, strict: bool = False
 ) -> dict:
@@ -650,7 +680,7 @@ def coerce_table_output(
         raise TableContractError("Missing required columns for table output.")
 
     try:
-        parsed = json.loads((output_text or "").strip())
+        parsed = json.loads(_json_payload(output_text))
     except json.JSONDecodeError as exc:
         raise TableContractError("Model returned invalid JSON for table output.") from exc
     if not isinstance(parsed, dict):
@@ -1738,10 +1768,12 @@ def _coerce_with_retry(
         # salir del bloque, y abajo hace falta para decirle al modelo qué falló.
         motivo = str(exc)
         logger.warning(
-            "Paso %s de la ejecución %s no cumplió el contrato de tabla (%s). Reintento.",
+            "Paso %s de la ejecución %s no cumplió el contrato de tabla (%s). "
+            "Reintento. Comienzo de la respuesta: %r",
             step.id,
             execution.id,
             motivo,
+            (content or "")[:300],
         )
 
     correccion = (

@@ -194,6 +194,23 @@ class StrictPolicyTests(SimpleTestCase):
                         strict=True,
                     )
 
+    def test_json_wrapped_by_the_model_is_still_read(self):
+        """Un bloque ```json, un `**`, una frase antes o una nota después no
+        rompen una tabla completa (falló así el insumo en producción)."""
+        filas = [{"criterio": "A", "resultado": "Alineado"}]
+        cuerpo = salida(filas)
+        for envuelta in (
+            f"```json\n{cuerpo}\n```",
+            f"**{cuerpo}**",
+            f"Acá está la tabla:\n\n{cuerpo}",
+            f"{cuerpo}\n\nNota: el documento no desagrega montos.",
+        ):
+            with self.subTest(salida=envuelta[:20]):
+                table = coerce_table_output(
+                    output_text=envuelta, table_schema=DETERMINACION, strict=True
+                )
+                self.assertEqual(table["rows"], filas)
+
     def test_error_message_names_the_row(self):
         """Un esquema con veinte filas necesita decir cuál falló."""
         with self.assertRaises(TableContractError) as ctx:
