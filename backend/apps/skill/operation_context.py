@@ -69,6 +69,10 @@ _SKIP_KEYS = {
     "alineacion_fundamentos",
     "alineacion_insumo",
     "consideraciones_adicionales",
+    # Su mirada sobre el financiamiento verde, y el registro de que leyó los
+    # elementos clave del insumo.
+    "enverdecimiento",
+    "elementos_clave_leidos",
 }
 
 _MAX_SUMMARY_CHARS = 4000

@@ -4,8 +4,12 @@ El informe del ejecutivo de cada etapa.
 - Editado: es el reporte de Ecofilia con las ediciones del ejecutivo.
 - Subido: el documento del ejecutivo no entra al expediente; se lee apenas se
   puede leer.
-- Guiado: Ecofilia redacta con el criterio del ejecutivo, que viaja como
-  parámetro. Hasta tres generaciones por etapa, salvo el staff.
+- Guiado: Ecofilia reescribe, con el criterio del ejecutivo (que viaja como
+  parámetro, con el de Ecofilia al lado), sólo las secciones C, D y E donde
+  difieren. Lo reescrito entra como borradores sobre su reporte, con las fuentes
+  al pie. Hasta tres generaciones por etapa, salvo el staff.
+- Las fotos de la mirada del ejecutivo (alineación y enverdecimiento) y los
+  documentos del expediente forman la historia de la operación.
 - Emitido, no cambia más: ni la vía, ni el documento. Anularlo es del staff.
 - La carpeta institucional muestra los emitidos a toda la organización.
 """
@@ -23,9 +27,16 @@ from apps.project.models import (
     ProjectShareRole,
     ProjectStageReport,
 )
+from apps.project.models import ProjectAlignmentSnapshot
 from apps.project.services.stage_reports import GUIADO_MAX_PER_STAGE, run_followups_for_document
-from apps.project.services.stages import GUIADO_SLUG, IET_SLUG, LECTURA_SLUG
-from apps.skill.models import ExecutionStatus, Skill, SkillExecution
+from apps.project.services.stages import (
+    GUIADO_SLUG,
+    IET_SLUG,
+    INSUMO_SLUG,
+    LECTURA_SLUG,
+    on_execution_finished,
+)
+from apps.skill.models import ExecutionSectionEdit, ExecutionStatus, Skill, SkillExecution
 from apps.user.models import Organization
 
 User = get_user_model()
@@ -55,7 +66,22 @@ class _ReportBase(APITestCase):
         self.iet_run = SkillExecution.objects.create(
             skill=Skill.objects.get(slug=IET_SLUG), owner=self.owner, project=self.project,
             status=ExecutionStatus.COMPLETED, stage="ido_cci", finished_at=timezone.now(),
-            output_structured={"steps": []},
+            output_structured={"steps": [
+                {"step_id": 101, "title": "C.1. Actividades elegibles para financiamiento verde y co-beneficios",
+                 "content": "Texto de Ecofilia sobre C."},
+                {"step_id": 102, "title": "D.2. CT A1 — Análisis de riesgos climáticos",
+                 "content": "Texto de Ecofilia sobre A1."},
+                {"step_id": 103, "title": "D.2. CT A2 — Análisis de medidas",
+                 "content": "Texto de Ecofilia sobre A2."},
+                {"step_id": 105, "title": "E.1. Análisis preliminar de alineación",
+                 "content": "Texto de Ecofilia sobre E."},
+                {"step_id": 104, "title": "S.1. Síntesis por criterio", "content": "", "table": {"rows": [
+                    {"criterio": "CT A1 — Análisis de riesgos climáticos",
+                     "determinacion": "Riesgo bajo", "fundamento": "El APRC no muestra amenazas altas."},
+                    {"criterio": "Objetivo 1 — Desarrollo resiliente al clima",
+                     "determinacion": "Con brechas por CT A2", "fundamento": "Faltan medidas."},
+                ]}},
+            ]},
         )
 
     def _post(self, user, path, payload=None):
@@ -145,15 +171,62 @@ class GuiadoTestCase(_ReportBase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         report = self._active()
-        run = report.execution
-        self.assertEqual((report.origin, run.skill.slug, run.stage), ("guiado", GUIADO_SLUG, "ido_cci"))
+        run = report.guided_execution
+        # El informe es el reporte de Ecofilia: el guiado escribe borradores sobre él.
+        self.assertEqual((report.origin, report.execution), ("guiado", self.iet_run))
+        self.assertEqual((run.skill.slug, run.stage), (GUIADO_SLUG, "ido_cci"))
         criterio = run.input_values["criterio_ejecutivo"]
         self.assertIn("CT A1 — Análisis de riesgos climáticos: Riesgo medio.", criterio)
         self.assertIn("El APRC de CESAS lo califica medio.", criterio)
         self.assertIn("lo tuvo en cuenta", criterio)
         self.assertIn("Capacidad del ejecutor.", criterio)
+        # Al lado, lo que concluyó Ecofilia y si coinciden.
+        self.assertIn("Ecofilia concluyó: Riesgo bajo (El APRC no muestra amenazas altas.). → DIFIERE.", criterio)
+        self.assertIn("Ecofilia concluyó: Con brechas por CT A2 (Faltan medidas.). → coincide.", criterio)
         delay.assert_called_once_with(run.id)
         self.assertEqual(response.data["guiado_runs"], {"used": 1, "max": GUIADO_MAX_PER_STAGE})
+        self.assertEqual(response.data["stage_reports"][0]["guided_execution_id"], run.id)
+
+    def test_the_guided_report_needs_ecofilia_report(self):
+        self._determine()
+        self.iet_run.delete()
+        response, delay = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        delay.assert_not_called()
+
+    def test_the_greening_alone_is_enough_and_is_compared_with_the_insumo(self):
+        SkillExecution.objects.create(
+            skill=Skill.objects.get(slug=INSUMO_SLUG), owner=self.owner, project=self.project,
+            status=ExecutionStatus.COMPLETED, stage="ido_cci",
+            output_structured={"steps": [
+                {"step_id": 1, "title": "4. Componentes con potencial de financiamiento verde", "content": "",
+                 "table": {"rows": [
+                     {"componente": "Planta potabilizadora", "objetivo": "Adaptación", "monto_usd": 12000000},
+                     {"componente": "Caminos rurales", "objetivo": "Adaptación", "monto_usd": 5000000},
+                 ]}},
+            ]},
+        )
+        self.project.context_notes = {
+            **self.project.context_notes,
+            "enverdecimiento": {
+                "componentes": [
+                    {"componente": "Planta potabilizadora", "objetivo": "Adaptación",
+                     "monto_usd": 12000000, "origen": "insumo", "estado": "incluido"},
+                    {"componente": "Caminos rurales", "origen": "insumo", "estado": "descartado",
+                     "fundamento": "No tienen diseño resiliente."},
+                ],
+                "oportunidades": [],
+                "actualizado_en": "2026-10-19T10:00:00Z",
+            },
+        }
+        self.project.save(update_fields=["context_notes"])
+
+        response, _ = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        criterio = self._active().guided_execution.input_values["criterio_ejecutivo"]
+        self.assertIn("Enverdecimiento según el ejecutivo (→ DIFIERE del insumo)", criterio)
+        self.assertIn("Descartado por el ejecutivo: Caminos rurales. Por qué: No tienen diseño resiliente.", criterio)
+        self.assertIn("Lo que sugería el insumo de Ecofilia: Planta potabilizadora (Adaptación, USD 12,000,000)", criterio)
 
     def test_without_determinations_there_is_nothing_to_guide(self):
         response, delay = self._post(self.editor, "stage-report/guiado/")
@@ -182,6 +255,124 @@ class GuiadoTestCase(_ReportBase):
         self.project.save(update_fields=["context_notes"])
         response, _ = self._post(self.editor, "stage-report/guiado/")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class GuidedDraftsTestCase(_ReportBase):
+    """Al terminar el guiado, lo que cambió entra como borrador sobre el reporte
+    de Ecofilia; lo que no, queda como estaba."""
+
+    def _generate(self):
+        self._determine()
+        response, _ = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        return self._active().guided_execution
+
+    def _finish(self, run, steps):
+        run.status = ExecutionStatus.COMPLETED
+        run.output_structured = {"steps": steps}
+        run.save(update_fields=["status", "output_structured"])
+        on_execution_finished(run)
+
+    def test_only_what_changed_becomes_a_draft_with_its_sources(self):
+        run = self._generate()
+        self._finish(run, [
+            {"step_id": 1, "title": "C.1. Actividades elegibles para financiamiento verde y co-beneficios",
+             "content": "SIN CAMBIOS"},
+            {"step_id": 2, "title": "D.2. CT A1 — Análisis de riesgos climáticos",
+             "content": "## D.2. CT A1 — Análisis de riesgos climáticos\nEl riesgo es medio según el APRC.",
+             "citations": [
+                 {"document_name": "Documento de la operación", "page_start": 4, "page_end": 4},
+                 {"document_name": "Documento de la operación", "page_start": 7, "page_end": 8},
+             ]},
+            {"step_id": 3, "title": "D.2. CT A2 — Análisis de medidas", "content": "«Sin cambios»."},
+            # Título distinto del de la IET y código repetido: no se adivina.
+            {"step_id": 4, "title": "D.2. CT A3 — Consistencia", "content": "Texto nuevo de A3."},
+            # Título distinto, pero código único: se ubica por código.
+            {"step_id": 5, "title": "E.1. Análisis de alineación", "content": "Texto nuevo de E."},
+        ])
+
+        edits = ExecutionSectionEdit.objects.filter(execution=self.iet_run).order_by("step_id")
+        self.assertEqual(list(edits.values_list("step_id", flat=True)), [102, 105])
+        edit = edits.get(step_id=102)
+        self.assertEqual(
+            edit.draft,
+            "El riesgo es medio según el APRC.\n\n**Fuentes:** Documento de la operación (p. 4, 7–8)",
+        )
+        # No se publica solo: el ejecutivo lo revisa en el Editor.
+        self.assertEqual(edit.published, "")
+        result = self._active().guided_result
+        self.assertEqual(
+            result["cambiadas"],
+            [
+                {"titulo": "D.2. CT A1 — Análisis de riesgos climáticos", "step_id": 102},
+                {"titulo": "E.1. Análisis preliminar de alineación", "step_id": 105},
+            ],
+        )
+        self.assertEqual(len(result["sin_cambios"]), 2)
+        self.assertEqual(result["sin_destino"], ["D.2. CT A3 — Consistencia"])
+        self.assertTrue(result["aplicado_en"])
+
+    def test_when_everything_coincides_nothing_is_touched(self):
+        run = self._generate()
+        self._finish(run, [
+            {"step_id": 1, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "SIN CAMBIOS"},
+        ])
+        self.assertFalse(ExecutionSectionEdit.objects.filter(execution=self.iet_run).exists())
+        self.assertEqual(self._active().guided_result["cambiadas"], [])
+
+    def test_an_emitted_report_is_not_touched(self):
+        run = self._generate()
+        self._post(self.editor, "stage-report/emitir/", {"markdown": "# IET"})
+        self._finish(run, [
+            {"step_id": 2, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "Otro texto."},
+        ])
+        self.assertFalse(ExecutionSectionEdit.objects.filter(execution=self.iet_run).exists())
+
+
+class HistoryTestCase(_ReportBase):
+    def _patch_notes(self, notes):
+        self.client.force_authenticate(self.editor)
+        response = self.client.patch(
+            f"/api/projects/{self.project.slug}/",
+            {"context_notes": {**self.project.context_notes, **notes}},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.project.refresh_from_db()
+
+    def test_a_change_in_the_greening_is_a_snapshot(self):
+        green = {
+            "componentes": [{"componente": "Planta", "objetivo": "Adaptación", "monto_usd": 1, "estado": "incluido"}],
+            "oportunidades": [],
+        }
+        self._patch_notes({"enverdecimiento": {**green, "actualizado_en": "2026-10-19T10:00:00Z"}})
+        # Volver a guardar lo mismo, con otra fecha, no es un cambio.
+        self._patch_notes({"enverdecimiento": {**green, "actualizado_en": "2026-10-19T11:00:00Z"}})
+
+        snapshot = ProjectAlignmentSnapshot.objects.get(project=self.project)
+        self.assertEqual(snapshot.enverdecimiento, green)
+        self.assertEqual(snapshot.alineacion, {})
+        # Sin determinación no cuenta para la evolución de la alineación.
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(self.client.get("/api/projects/alignment-history/").data, [])
+
+    def test_the_history_of_the_operation(self):
+        self._patch_notes({"alineacion_paris": {"ct_a1": "Riesgo medio"}})
+        self.client.force_authenticate(self.editor)
+        data = self.client.get(f"/api/projects/{self.project.slug}/history/").data
+
+        self.assertEqual([s["alineacion"] for s in data["snapshots"]], [{"ct_a1": "Riesgo medio"}])
+        self.assertEqual(data["snapshots"][0]["captured_by_email"], "editor@caf.com")
+        self.assertEqual(data["snapshots"][0]["estado"], "ido_cci")
+        self.assertEqual([d["slug"] for d in data["documents"]], ["doc-op"])
+        self.assertTrue(data["documents"][0]["is_blueprint"])
+
+        outsider = User.objects.create_user(email="x@otro.com", password="x")
+        self.client.force_authenticate(outsider)
+        self.assertEqual(
+            self.client.get(f"/api/projects/{self.project.slug}/history/").status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
 
 
 class EmitTestCase(_ReportBase):
@@ -287,6 +478,10 @@ class GuiadoDispatchFailureTestCase(APITransactionTestCase):
             key="criterio_ejecutivo",
             defaults={"label": "Criterio del ejecutivo", "param_type": "text", "required": True},
         )
+        iet, _ = Skill.objects.get_or_create(
+            slug=IET_SLUG,
+            defaults={"name": "IET", "skill_type": "copilot", "allowed_contexts": ["project"]},
+        )
         caf = Organization.objects.create(name="CAF", slug="caf")
         owner = User.objects.create_user(email="owner@caf.com", password="x", organization=caf)
         project = Project.objects.create(
@@ -303,6 +498,10 @@ class GuiadoDispatchFailureTestCase(APITransactionTestCase):
         ProjectDocument.objects.create(project=project, document=doc, is_primary=True)
         project.blueprint_document = doc
         project.save(update_fields=["blueprint_document"])
+        SkillExecution.objects.create(
+            skill=iet, owner=owner, project=project, status=ExecutionStatus.COMPLETED,
+            stage="ido_cci", finished_at=timezone.now(), output_structured={"steps": []},
+        )
 
         self.client.force_authenticate(owner)
         with patch(DELAY, side_effect=RuntimeError("SQS caído")):

@@ -1,6 +1,15 @@
 """
-Agrega a la IET un último paso: la síntesis estructurada por criterio.
+Agrega a la IET la Sección C (enverdecimiento) y, al final, la síntesis
+estructurada por criterio.
 
+**C.1.** La IET no redactaba la Sección C: la completaba el ejecutivo. Ahora la
+redacta Ecofilia tomando como guía el insumo (componentes que podrían calificar
+a financiamiento verde y oportunidades), así su informe y sus sugerencias de
+enverdecimiento no se contradicen, y el informe guiado puede reescribir C igual
+que D y E. Se inserta después del último paso B; los siguientes se corren una
+posición.
+
+**S.1.**
 La IET evalúa cada criterio técnico en prosa ("D.2. CT A1 — …"), y cada paso
 cierra con una conclusión textual. Para comparar la mirada de Ecofilia con la
 del ejecutivo hace falta esa conclusión en el mismo vocabulario que usa el
@@ -136,17 +145,76 @@ INSTRUCTIONS = (
 )
 
 
-def add_sintesis(apps, schema_editor):
+C_TITLE = "C.1. Actividades elegibles para financiamiento verde y co-beneficios"
+C_INSTRUCTIONS = (
+    "Redactá la evaluación preliminar de los co-beneficios ambientales, climáticos y "
+    "de biodiversidad de la operación, en línea con los Criterios y Actividades "
+    "Elegibles de Financiamiento Verde de CAF.\n\n"
+    "Tomá como guía el insumo de Ecofilia que acompaña esta corrida (componentes con "
+    "potencial de financiamiento verde y oportunidades de enverdecimiento): "
+    "presentá los componentes que califican o podrían calificar, con su objetivo "
+    "(adaptación, mitigación, o biodiversidad y otros objetivos ambientales), su "
+    "categoría y su monto cuando el expediente lo permite, y cerrá con las "
+    "recomendaciones para aumentar los co-beneficios.\n\n"
+    "Si los documentos llevan a una conclusión distinta de la del insumo, decilo y "
+    "explicá por qué. Citá el documento de cada dato."
+)
+
+
+def _shift_after(SkillStep, skill, after_position: int, delta: int) -> None:
+    """Corre una posición los pasos después de ``after_position`` y sus referencias.
+
+    `position` es única por skill: se mueve de a uno, en el orden que no choca.
+    Los pasos que eligen a mano qué pasos previos ven (`history_positions`)
+    siguen apuntando a los mismos pasos.
+    """
+    steps = list(SkillStep.objects.filter(skill=skill, position__gt=after_position))
+    steps.sort(key=lambda s: s.position, reverse=delta > 0)
+    for step in steps:
+        step.position += delta
+        step.save(update_fields=["position"])
+    for step in SkillStep.objects.filter(skill=skill):
+        positions = step.history_positions or []
+        moved = [p + delta if p > after_position else p for p in positions]
+        if moved != positions:
+            step.history_positions = moved
+            step.save(update_fields=["history_positions"])
+
+
+def add_c_and_sintesis(apps, schema_editor):
     Skill = apps.get_model("skill", "Skill")
     SkillStep = apps.get_model("skill", "SkillStep")
 
     skill = Skill.objects.filter(slug=IET_SLUG).first()
     if skill is None:
         return
+
     steps = list(SkillStep.objects.filter(skill=skill).order_by("position"))
+    # ── Sección C: después del último paso B ──
+    if not any((step.title or "").strip().startswith("C.") for step in steps):
+        b_positions = [s.position for s in steps if (s.title or "").strip().startswith("B.")]
+        after = max(b_positions) if b_positions else 0
+        _shift_after(SkillStep, skill, after, +1)
+        SkillStep.objects.create(
+            skill=skill,
+            title=C_TITLE,
+            instructions=C_INSTRUCTIONS,
+            format_instructions="",
+            position=after + 1,
+            step_type="instruction",
+            output_mode="text",
+            output_validation="lenient",
+            evidence_selection="tagged",
+            evidence_tags=["documento-operacion", "metodologia-caf"],
+            evidence_mode="both",
+            approval_required=False,
+            comparative_enabled=False,
+        )
+        steps = list(SkillStep.objects.filter(skill=skill).order_by("position"))
+
+    # ── Síntesis por criterio: al final, leyendo sólo los pasos D ──
     if any((step.title or "").strip().startswith("S.1.") for step in steps):
         return
-    # Sólo los pasos D: los que concluyen cada criterio y cada objetivo.
     d_positions = [step.position for step in steps if (step.title or "").strip().startswith("D.")]
     SkillStep.objects.create(
         skill=skill,
@@ -170,13 +238,18 @@ def add_sintesis(apps, schema_editor):
     )
 
 
-def remove_sintesis(apps, schema_editor):
+def remove_c_and_sintesis(apps, schema_editor):
     Skill = apps.get_model("skill", "Skill")
     SkillStep = apps.get_model("skill", "SkillStep")
     skill = Skill.objects.filter(slug=IET_SLUG).first()
     if skill is None:
         return
     SkillStep.objects.filter(skill=skill, title=TITLE).delete()
+    c_step = SkillStep.objects.filter(skill=skill, title=C_TITLE).first()
+    if c_step is not None:
+        position = c_step.position
+        c_step.delete()
+        _shift_after(SkillStep, skill, position, -1)
 
 
 class Migration(migrations.Migration):
@@ -185,5 +258,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunPython(add_sintesis, remove_sintesis),
+        migrations.RunPython(add_c_and_sintesis, remove_c_and_sintesis),
     ]

@@ -91,8 +91,14 @@ def stage_workflow_slugs(project: Project, stage: str) -> list[str]:
     a partir de los datos de la operación.
     """
     if stage == "ido_cci":
-        return [IET_SLUG, INSUMO_SLUG]
+        return [INSUMO_SLUG, IET_SLUG]
     return []
+
+
+# Un workflow que espera a otro: la IET de Ecofilia corre después del insumo,
+# que es su guía (ver ``apps.skill.insumo_guide``). Mientras el insumo no
+# terminó, la IET queda "waiting"; la lanza ``on_execution_finished``.
+DEPENDS_ON: dict[str, str] = {IET_SLUG: INSUMO_SLUG}
 
 
 def runs_for_stage(project: Project, skill, stage: str):
@@ -147,6 +153,18 @@ def launch_stage_workflows(
                  "reason": "La corrida anterior falló: la retoma un superadmin desde Corridas."}
             )
             continue
+
+        upstream = DEPENDS_ON.get(slug)
+        if upstream:
+            upstream_skill = Skill.objects.filter(slug=upstream).first()
+            if upstream_skill is not None and not runs_for_stage(
+                project, upstream_skill, stage
+            ).filter(status=ExecutionStatus.COMPLETED).exists():
+                results.append(
+                    {"skill_slug": slug, "status": "waiting", "execution_id": None,
+                     "reason": "Se genera cuando termine el insumo de Ecofilia, que es su guía."}
+                )
+                continue
 
         if not project.blueprint_document_id:
             results.append(
@@ -264,6 +282,42 @@ def record_launches(project: Project, stage: str, launches: list[dict]) -> None:
     merged.extend(by_slug.values())
     record.launches = merged
     record.save(update_fields=["launches"])
+
+
+def on_execution_finished(execution) -> None:
+    """Lo que dispara una corrida de la operación al terminar.
+
+    - El insumo completado lanza lo que lo esperaba en su etapa (la IET).
+    - El guiado completado vuelca sus secciones como borradores sobre la IET.
+
+    Se llama al final de cada corrida y nunca levanta: un problema acá no puede
+    dejar fallida una corrida que terminó bien.
+    """
+    from apps.skill.models import ExecutionStatus
+
+    try:
+        if execution.project_id is None or execution.status != ExecutionStatus.COMPLETED:
+            return
+        project = Project.objects.get(pk=execution.project_id)
+        slug = execution.skill.slug
+        stage = execution.stage or "ido_cci"
+
+        dependents = [down for down, up in DEPENDS_ON.items() if up == slug]
+        if dependents and current_stage(project) == stage:
+            owner = execution.owner or project.owner
+            launches = launch_stage_workflows(project, stage, owner, slugs=dependents)
+            # Lo que ya corría queda anotado como se lanzó: un insumo que se
+            # vuelve a correr no pisa ese registro con un "ya existía".
+            record_launches(
+                project, stage, [entry for entry in launches if entry["status"] != "exists"]
+            )
+
+        if slug == GUIADO_SLUG:
+            from apps.project.services.stage_reports import apply_guided_result
+
+            apply_guided_result(execution)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falló el seguimiento de la corrida %s", getattr(execution, "id", None))
 
 
 def stage_history(project: Project) -> list[dict]:

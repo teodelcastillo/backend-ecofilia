@@ -246,6 +246,11 @@ class ProjectAlignmentSnapshot(models.Model):
     )
     estado = models.CharField(max_length=40, blank=True)
     alineacion = models.JSONField(default=dict, blank=True)
+    # La mirada del ejecutivo sobre el financiamiento verde de la operación
+    # (``context_notes["enverdecimiento"]``): componentes que califican, con
+    # sus montos, y oportunidades. Con esto el Resumen muestra cuán verde era
+    # la operación en cada etapa, no sólo hoy.
+    enverdecimiento = models.JSONField(default=dict, blank=True)
     monto = models.CharField(max_length=80, blank=True)
     captured_at = models.DateTimeField(db_index=True)
     captured_by = models.ForeignKey(
@@ -333,7 +338,8 @@ class ProjectStageReport(models.Model):
     origin = models.CharField(max_length=20, choices=ProjectStageReportOrigin.choices)
 
     # Editado o guiado: la corrida cuyo informe (con sus ediciones) es el del
-    # ejecutivo.
+    # ejecutivo. En los dos casos es la IET de Ecofilia: el guiado escribe
+    # sobre ella como borradores.
     execution = models.ForeignKey(
         "skill.SkillExecution",
         null=True,
@@ -351,6 +357,18 @@ class ProjectStageReport(models.Model):
         related_name="+",
         on_delete=models.SET_NULL,
     )
+    # Guiado: la corrida que redactó, con el criterio del ejecutivo, las
+    # secciones que cambian (C, D y E). Su resultado no es un informe aparte:
+    # se vuelca como borradores sobre ``execution`` (la IET de Ecofilia).
+    guided_execution = models.ForeignKey(
+        "skill.SkillExecution",
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+    # Qué hizo el guiado al volcarse: secciones reescritas y sin cambios.
+    guided_result = models.JSONField(default=dict, blank=True)
     # La lectura estructurada del documento subido (determinaciones,
     # recomendaciones, consideraciones), para compararlo con Ecofilia.
     reader_execution = models.ForeignKey(

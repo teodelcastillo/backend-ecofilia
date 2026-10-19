@@ -108,15 +108,17 @@ class BackfillAlignmentSnapshotsMigrationTestCase(TransactionTestCase):
         executor.migrate(executor.loader.graph.leaf_nodes())
 
     def test_one_backfill_snapshot_per_operation_with_determination(self):
-        snaps = list(ProjectAlignmentSnapshot.objects.all())
+        # Sólo las columnas que existen en 0014: los modelos actuales de Project
+        # y de la foto tienen columnas posteriores.
+        snaps = list(
+            ProjectAlignmentSnapshot.objects.values(
+                "project__slug", "source", "estado", "alineacion", "captured_at"
+            )
+        )
         self.assertEqual(len(snaps), 1)
-        # Sólo el slug: la base quedó en 0014 y el modelo actual de Project
-        # tiene columnas posteriores.
-        slug = ProjectAlignmentSnapshot.objects.filter(pk=snaps[0].pk).values_list(
-            "project__slug", flat=True
-        ).get()
-        self.assertEqual(slug, "con")
-        self.assertEqual(snaps[0].source, "backfill")
-        self.assertEqual(snaps[0].estado, "dec")
-        self.assertEqual(snaps[0].alineacion, {"objetivo_2": "Con brechas"})
-        self.assertEqual(snaps[0].captured_at.isoformat()[:10], "2026-03-15")
+        snap = snaps[0]
+        self.assertEqual(snap["project__slug"], "con")
+        self.assertEqual(snap["source"], "backfill")
+        self.assertEqual(snap["estado"], "dec")
+        self.assertEqual(snap["alineacion"], {"objetivo_2": "Con brechas"})
+        self.assertEqual(snap["captured_at"].isoformat()[:10], "2026-03-15")

@@ -1,16 +1,18 @@
 """
-Historial de la determinación de alineación con París.
+Historial de la mirada del ejecutivo: alineación con París y enverdecimiento.
 
-Cada vez que una edición de la operación cambia su determinación o su etapa,
-se guarda una foto (``ProjectAlignmentSnapshot``). Es lo que permite al
-tablero mostrar la evolución mes a mes y comparar cómo estaba cada operación en
-IDO con cómo quedó en DEC, con datos reales en vez de ejemplos.
+Cada vez que una edición de la operación cambia su determinación, su
+enverdecimiento o su etapa, se guarda una foto (``ProjectAlignmentSnapshot``).
+Es lo que permite al tablero mostrar la evolución mes a mes, comparar cómo
+estaba cada operación en IDO con cómo quedó en DEC, y al Resumen de una
+operación mostrarla en un momento anterior.
 """
 from __future__ import annotations
 
 from django.utils import timezone
 
 from apps.project.models import Project, ProjectAlignmentSnapshot
+from apps.project.services.caf_criteria import executive_enverdecimiento
 
 ALINEACION_KEY = "alineacion_paris"
 # Metadatos de la edición: cambian en cada guardado aunque la determinación
@@ -39,23 +41,29 @@ def _estado(notes: dict) -> str:
 
 
 def record_if_changed(project: Project, previous_notes, user=None) -> ProjectAlignmentSnapshot | None:
-    """Guarda una foto si la determinación o la etapa cambiaron.
+    """Guarda una foto si la determinación, el enverdecimiento o la etapa cambiaron.
 
-    Una operación sin determinación no genera fotos: cambiarle la etapa antes
-    de determinar nada no es historia de alineación.
+    Una operación sin determinación ni enverdecimiento no genera fotos:
+    cambiarle la etapa antes de mirar nada no es historia.
     """
     before = _notes(previous_notes)
     after = _notes(project.context_notes)
     det_after = _determinacion(after)
-    if not det_after:
+    green_after = executive_enverdecimiento(after)
+    if not det_after and not green_after:
         return None
-    if det_after == _determinacion(before) and _estado(after) == _estado(before):
+    if (
+        det_after == _determinacion(before)
+        and green_after == executive_enverdecimiento(before)
+        and _estado(after) == _estado(before)
+    ):
         return None
     monto = after.get("monto")
     return ProjectAlignmentSnapshot.objects.create(
         project=project,
         estado=_estado(after),
         alineacion=det_after,
+        enverdecimiento=green_after,
         monto=str(monto).strip() if monto is not None else "",
         captured_at=timezone.now(),
         captured_by=user if getattr(user, "is_authenticated", False) else None,

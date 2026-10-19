@@ -958,6 +958,45 @@ class ProjectViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["get"], url_path="history", url_name="history")
+    def history(self, request, slug=None):
+        """
+        La historia de la operación, para su Resumen y su Trazabilidad.
+
+        GET /projects/{slug}/history/
+
+        - ``snapshots``: las fotos de la mirada del ejecutivo (etapa,
+          alineación, enverdecimiento, monto), en orden. Con ellas el Resumen
+          muestra la operación en un momento anterior y lo que cambió.
+        - ``documents``: los documentos del expediente, con cuándo se sumaron.
+
+        Las transiciones de etapa, los informes y las corridas ya vienen en el
+        detalle de la operación y en el listado de corridas.
+        """
+        from apps.project.api.serializers import (
+            ProjectHistoryDocumentSerializer,
+            ProjectHistorySnapshotSerializer,
+        )
+        from apps.project.models import ProjectAlignmentSnapshot, ProjectDocument
+
+        project = self.get_object()
+        snapshots = (
+            ProjectAlignmentSnapshot.objects.filter(project=project)
+            .select_related("project", "captured_by")
+            .order_by("captured_at", "id")
+        )
+        documents = (
+            ProjectDocument.objects.filter(project=project)
+            .select_related("project", "document", "document__owner", "added_by")
+            .order_by("created_at", "id")
+        )
+        return Response(
+            {
+                "snapshots": ProjectHistorySnapshotSerializer(snapshots, many=True).data,
+                "documents": ProjectHistoryDocumentSerializer(documents, many=True).data,
+            }
+        )
+
     # ── Ciclo de la operación: el informe del ejecutivo ──────────────────
 
     def _stage_report_response(self, project, fn):
@@ -1138,8 +1177,11 @@ class ProjectViewSet(viewsets.ModelViewSet):
         visibles = Project.objects.for_user(request.user)
         if org := request.query_params.get("organization"):
             visibles = visibles.filter(organization__slug=org)
+        # Las fotos que sólo registran un cambio de enverdecimiento no tienen
+        # determinación: no cuentan para la evolución de la alineación.
         snapshots = (
             ProjectAlignmentSnapshot.objects.filter(project_id__in=visibles.values("id"))
+            .exclude(alineacion={})
             .select_related("project")
             .order_by("captured_at", "id")
         )

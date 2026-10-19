@@ -235,6 +235,8 @@ class ProjectStageReportSerializer(serializers.ModelSerializer):
     execution_status = serializers.CharField(source="execution.status", read_only=True, default=None)
     execution_skill_slug = serializers.CharField(source="execution.skill.slug", read_only=True, default=None)
     document = serializers.SerializerMethodField()
+    guided_execution_id = serializers.IntegerField(read_only=True, allow_null=True)
+    guided_status = serializers.CharField(source="guided_execution.status", read_only=True, default=None)
     reader_execution_id = serializers.IntegerField(read_only=True, allow_null=True)
     reader_status = serializers.CharField(source="reader_execution.status", read_only=True, default=None)
     reading = serializers.SerializerMethodField()
@@ -252,6 +254,9 @@ class ProjectStageReportSerializer(serializers.ModelSerializer):
             "execution_id",
             "execution_status",
             "execution_skill_slug",
+            "guided_execution_id",
+            "guided_status",
+            "guided_result",
             "document",
             "reader_execution_id",
             "reader_status",
@@ -314,7 +319,7 @@ class ProjectDetailSerializer(ProjectSerializer):
     def get_stage_reports(self, obj):
         reports = (
             obj.stage_reports.select_related(
-                "execution__skill", "document", "reader_execution",
+                "execution__skill", "guided_execution", "document", "reader_execution",
                 "created_by", "emitted_by", "voided_by",
             )
             .order_by("created_at", "id")
@@ -973,6 +978,31 @@ class ProjectAlignmentSnapshotSerializer(serializers.Serializer):
     project_slug = serializers.CharField(source="project.slug")
     estado = serializers.CharField()
     alineacion = serializers.JSONField()
+    enverdecimiento = serializers.JSONField()
     monto = serializers.CharField()
     captured_at = serializers.DateTimeField()
     source = serializers.CharField()
+
+
+class ProjectHistorySnapshotSerializer(ProjectAlignmentSnapshotSerializer):
+    """Una foto de la operación, para su Resumen y su Trazabilidad."""
+
+    id = serializers.IntegerField()
+    captured_by_email = serializers.EmailField(source="captured_by.email", default=None)
+
+
+class ProjectHistoryDocumentSerializer(serializers.Serializer):
+    """Un documento del expediente, con cuándo se sumó y quién lo sumó."""
+
+    slug = serializers.CharField(source="document.slug")
+    name = serializers.CharField(source="document.name")
+    is_blueprint = serializers.SerializerMethodField()
+    added_at = serializers.DateTimeField(source="created_at")
+    added_by_email = serializers.SerializerMethodField()
+
+    def get_is_blueprint(self, obj) -> bool:
+        return obj.project.blueprint_document_id == obj.document_id
+
+    def get_added_by_email(self, obj):
+        user = getattr(obj, "added_by", None) or getattr(obj.document, "owner", None)
+        return getattr(user, "email", None)
