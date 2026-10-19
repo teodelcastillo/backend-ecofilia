@@ -141,6 +141,17 @@ class StageTransitionTestCase(_StageBase):
         delay.assert_not_called()
         self.assertFalse(SkillExecution.objects.filter(project=self.project, skill=self.iet).exists())
 
+    def test_an_insumo_run_by_hand_outside_ido_launches_nothing(self):
+        self._set_stage("dec")
+        insumo = SkillExecution.objects.create(
+            skill=self.insumo, owner=self.owner, project=self.project,
+            status=ExecutionStatus.COMPLETED, stage="dec",
+        )
+        with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
+            on_execution_finished(insumo)
+        delay.assert_not_called()
+        self.assertFalse(SkillExecution.objects.filter(project=self.project, skill=self.iet).exists())
+
     def test_the_launcher_cannot_relaunch_what_the_stage_launched(self):
         self._move(self.editor, "ido_cci")
         run = SkillExecution.objects.filter(project=self.project, skill=self.insumo).get()

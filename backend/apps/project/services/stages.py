@@ -302,7 +302,13 @@ def on_execution_finished(execution) -> None:
         slug = execution.skill.slug
         stage = execution.stage or "ido_cci"
 
-        dependents = [down for down, up in DEPENDS_ON.items() if up == slug]
+        # Sólo lo que la etapa lanza: un insumo corrido a mano en DEC no pone
+        # a correr un reporte de IDO.
+        dependents = [
+            down
+            for down, up in DEPENDS_ON.items()
+            if up == slug and down in stage_workflow_slugs(project, stage)
+        ]
         if dependents and current_stage(project) == stage:
             owner = execution.owner or project.owner
             launches = launch_stage_workflows(project, stage, owner, slugs=dependents)
