@@ -29,7 +29,7 @@ from apps.document.utils.llm import (
 from apps.skill import context_budget
 from apps.skill import prompt_text
 from apps.skill import definition as definition_module
-from apps.skill.citations import citation_stats, resolve_citations
+from apps.skill.citations import citation_stats, resolve_cell_citations, resolve_citations
 from apps.skill.models import (
     ExecutionOutputMode,
     OutputValidation,
@@ -2065,57 +2065,83 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
 
             tier_used = resolve_tier(skill, step)
             model_for_step = _resolve_model(skill, tier_used)
-            corpus = None
-            if use_context_first:
-                # El presupuesto documental es lo que queda de la ventana una
-                # vez descontado todo lo que ya está comprometido. Se mide con
-                # el prompt real del paso, no con un promedio: un paso con
-                # secciones previas largas tiene menos lugar para documentos
-                # que uno del principio, y esa diferencia es la que decide.
-                reserved = (
-                    context_budget.estimate_tokens(system_prompt)
-                    + context_budget.estimate_tokens(prompt)
-                    + context_budget.output_reserve(model_for_step)
+            # La ventana contra la que se presupuesta. Si la API igual rechaza
+            # el pedido por largo (el estimador es por caracteres y puede
+            # quedarse corto), se achica en lo que sobró y se arma de nuevo una
+            # vez: degradar un anexo es mejor que perder la corrida.
+            window = context_budget.context_window_for(model_for_step)
+            context_retry: dict | None = None
+            for attempt in (1, 2):
+                corpus = None
+                if use_context_first:
+                    # El presupuesto documental es lo que queda de la ventana una
+                    # vez descontado todo lo que ya está comprometido. Se mide con
+                    # el prompt real del paso, no con un promedio: un paso con
+                    # secciones previas largas tiene menos lugar para documentos
+                    # que uno del principio, y esa diferencia es la que decide.
+                    reserved = (
+                        context_budget.estimate_tokens(system_prompt)
+                        + context_budget.estimate_tokens(prompt)
+                        + context_budget.output_reserve(model_for_step)
+                    )
+                    corpus = build_step_corpus(
+                        execution=execution,
+                        step_documents=step_documents,
+                        query_text=query_text,
+                        reserved_tokens=reserved,
+                        blueprint_id=blueprint_id,
+                        document_texts=document_texts,
+                        strategy=effective_retrieval_strategy,
+                        context_window=window,
+                    )
+                    chunks = corpus.chunks
+                    plan = corpus.plan
+
+                messages = context_budget.build_messages(
+                    system_prompt=system_prompt,
+                    inventory=corpus.inventory if corpus else "",
+                    documents=corpus.documents if corpus else [],
+                    corpus_volatile=corpus.volatile if corpus else "",
+                    step_prompt=prompt,
+                    model=model_for_step,
                 )
-                corpus = build_step_corpus(
-                    execution=execution,
-                    step_documents=step_documents,
-                    query_text=query_text,
-                    reserved_tokens=reserved,
-                    blueprint_id=blueprint_id,
-                    document_texts=document_texts,
-                    strategy=effective_retrieval_strategy,
-                    context_window=context_budget.context_window_for(model_for_step),
-                )
-                chunks = corpus.chunks
-                plan = corpus.plan
+
+                tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
+                # Las citas nativas vuelven por un parámetro de salida: el resto de
+                # los llamadores de `generate_chat_completion` espera una tupla de
+                # dos y no tiene por qué enterarse de esto.
+                raw_citations: list[dict] = []
+                try:
+                    content, usage, model_used = _call_model(
+                        messages,
+                        skill=skill,
+                        tier=tier_used,
+                        tool_ctx=tool_ctx,
+                        citations_out=raw_citations,
+                        # Vacío: el default del modelo. Ver SkillStep.reasoning_effort.
+                        effort=step.reasoning_effort or None,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001 — se vuelve a levantar si no es esto
+                    overflow = context_budget.context_overflow(exc)
+                    if attempt == 2 or corpus is None or overflow is None:
+                        raise
+                    sent, maximum = overflow
+                    shrunk = context_budget.shrink_window(window, sent, maximum)
+                    logger.warning(
+                        "Paso %s de la ejecución %s: el pedido excedió la ventana "
+                        "(%d > %d tokens). Se reintenta con una ventana de %d.",
+                        step.id, execution.id, sent, maximum, shrunk,
+                    )
+                    context_retry = {"sent_tokens": sent, "maximum": maximum, "window": shrunk}
+                    window = shrunk
+
+            if corpus is not None:
                 seen_chunk_ids.update(c.id for c in chunks)
                 all_step_chunks.extend(chunks)
                 step_diagnostics = plan.diagnostics()
-
-            messages = context_budget.build_messages(
-                system_prompt=system_prompt,
-                inventory=corpus.inventory if corpus else "",
-                documents=corpus.documents if corpus else [],
-                corpus_volatile=corpus.volatile if corpus else "",
-                step_prompt=prompt,
-                model=model_for_step,
-            )
-
-            tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)
-            # Las citas nativas vuelven por un parámetro de salida: el resto de
-            # los llamadores de `generate_chat_completion` espera una tupla de
-            # dos y no tiene por qué enterarse de esto.
-            raw_citations: list[dict] = []
-            content, usage, model_used = _call_model(
-                messages,
-                skill=skill,
-                tier=tier_used,
-                tool_ctx=tool_ctx,
-                citations_out=raw_citations,
-                # Vacío: el default del modelo. Ver SkillStep.reasoning_effort.
-                effort=step.reasoning_effort or None,
-            )
+                if context_retry:
+                    step_diagnostics = {**step_diagnostics, "context_retry": context_retry}
             all_step_chunks.extend(tool_ctx.additional_chunks)
 
             step_sources = chunks + tool_ctx.additional_chunks
@@ -2195,6 +2221,17 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             step_citations: list[dict] = []
             if corpus is not None and raw_citations:
                 step_citations = resolve_citations(raw_citations, corpus.documents)
+            # En una tabla las citas no vuelven de la API: el modelo las escribe
+            # dentro de las celdas. Se resuelven acá y se suman a las del paso
+            # (ver `resolve_cell_citations`).
+            if isinstance(step_entry.get("table"), dict):
+                step_entry["table"], cell_citations = resolve_cell_citations(
+                    step_entry["table"],
+                    corpus.documents if corpus is not None else [],
+                    len(step_citations),
+                )
+                step_citations.extend(cell_citations)
+            if step_citations:
                 step_entry["retrieval"] = {
                     **step_entry.get("retrieval", {}),
                     **citation_stats(step_citations),

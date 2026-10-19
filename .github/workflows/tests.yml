@@ -146,7 +146,9 @@ jobs:
             apps.document.tests.test_document_create.ReuploadLongNameTestCase \
             apps.project.tests.test_stages \
             apps.project.tests.test_stage_reports \
-            apps.skill.tests.test_caf_stage_workflows
+            apps.skill.tests.test_caf_stage_workflows \
+            apps.skill.tests.test_cell_citations \
+            apps.skill.tests.test_context_overflow
 
       - name: Verificar que las migraciones están al día
         working-directory: backend

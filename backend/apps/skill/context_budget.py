@@ -100,6 +100,39 @@ DEGRADED_DOC_TOKENS = int(os.environ.get("SKILL_DEGRADED_DOC_TOKENS", "20000"))
 SKILL_MAX_OUTPUT_TOKENS = int(os.environ.get("SKILL_MAX_OUTPUT_TOKENS", "64000"))
 
 
+# Lo que se resta además del exceso cuando la API rechaza un pedido por largo:
+# el error del estimador no es parejo entre documentos, y achicar justo lo que
+# sobró deja el reintento al borde.
+CONTEXT_OVERFLOW_EXTRA = int(os.environ.get("SKILL_CONTEXT_OVERFLOW_EXTRA", "50000"))
+
+_OVERFLOW = None
+
+
+def context_overflow(exc: Exception) -> tuple[int, int] | None:
+    """``(enviados, máximo)`` si ``exc`` es el rechazo de la API por pedido largo.
+
+    El presupuesto se mide antes de llamar (ver arriba), pero se mide con un
+    estimador por caracteres: si se queda corto, la API devuelve
+    ``prompt is too long: 1000517 tokens > 1000000 maximum``. Eso pasó en
+    producción con una IET, y la corrida entera se perdía por 517 tokens.
+    """
+    import re
+
+    global _OVERFLOW
+    if _OVERFLOW is None:
+        _OVERFLOW = re.compile(r"prompt is too long:\s*(\d+)\s*tokens\s*>\s*(\d+)")
+    match = _OVERFLOW.search(str(exc))
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def shrink_window(window: int, sent: int, maximum: int) -> int:
+    """La ventana para el reintento: la actual, menos lo que sobró y un colchón."""
+    excess = max(0, sent - maximum)
+    return max(SHORT_CONTEXT_WINDOW // 2, window - excess - CONTEXT_OVERFLOW_EXTRA)
+
+
 def output_reserve(model: str | None = None) -> int:
     try:
         base = int(os.environ.get("LLM_MAX_TOKENS", "4096"))

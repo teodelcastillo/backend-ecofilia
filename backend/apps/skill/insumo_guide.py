@@ -69,9 +69,16 @@ def _text(step: dict | None) -> str:
 
 
 def _rows(step: dict | None) -> list[dict]:
+    """Las filas de una tabla del insumo, sin las marcas de cita de sus celdas."""
+    from apps.skill.citations import strip_cell_citations
+
     table = (step or {}).get("table") or {}
     rows = table.get("rows") if isinstance(table, dict) else None
-    return [row for row in rows or [] if isinstance(row, dict)]
+    return [
+        {k: strip_cell_citations(v) if isinstance(v, str) else v for k, v in row.items()}
+        for row in rows or []
+        if isinstance(row, dict)
+    ]
 
 
 def insumo_components(execution) -> list[dict]:
