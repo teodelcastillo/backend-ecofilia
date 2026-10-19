@@ -36,6 +36,7 @@ from apps.project.services.caf_criteria import (
     build_criterio_ejecutivo,
     ecofilia_determinations,
     executive_assessment,
+    guided_basis,
 )
 from apps.project.services.stages import (
     GUIADO_SLUG,
@@ -207,7 +208,9 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
     report.origin = Origin.GUIADO
     report.execution = base
     report.guided_execution = outcome.execution
-    report.guided_result = {}
+    # Con qué criterio se generó: si el ejecutivo lo cambia después, los
+    # borradores ya no lo reflejan y la interfaz lo avisa.
+    report.guided_result = {"base": guided_basis(project.context_notes)}
     report.document = None
     report.reader_execution = None
     report.save()
@@ -330,6 +333,7 @@ def apply_guided_result(run) -> dict | None:
         cambiadas.append({"titulo": target.get("title") or title, "step_id": target["step_id"]})
 
     report.guided_result = {
+        **({"base": report.guided_result["base"]} if report.guided_result.get("base") else {}),
         "cambiadas": cambiadas,
         "sin_cambios": sin_cambios,
         "sin_destino": sin_destino,

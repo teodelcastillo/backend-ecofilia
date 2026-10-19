@@ -186,6 +186,10 @@ class GuiadoTestCase(_ReportBase):
         delay.assert_called_once_with(run.id)
         self.assertEqual(response.data["guiado_runs"], {"used": 1, "max": GUIADO_MAX_PER_STAGE})
         self.assertEqual(response.data["stage_reports"][0]["guided_execution_id"], run.id)
+        # Queda el criterio con el que se generó, para detectar si cambia después.
+        base = self._active().guided_result["base"]
+        self.assertEqual(base["determinaciones"]["ct_a1"], "Riesgo medio")
+        self.assertEqual(base["consideraciones_adicionales"], "Capacidad del ejecutor.")
 
     def test_the_guided_report_needs_ecofilia_report(self):
         self._determine()
@@ -310,6 +314,8 @@ class GuidedDraftsTestCase(_ReportBase):
         )
         self.assertEqual(len(result["sin_cambios"]), 2)
         self.assertEqual(result["sin_destino"], ["D.2. CT A3 — Consistencia"])
+        # Aplicar los borradores no pierde el criterio con que se generaron.
+        self.assertEqual(result["base"]["determinaciones"]["ct_a1"], "Riesgo medio")
         self.assertTrue(result["aplicado_en"])
 
     def test_when_everything_coincides_nothing_is_touched(self):

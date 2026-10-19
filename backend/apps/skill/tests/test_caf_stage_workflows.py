@@ -138,6 +138,12 @@ class SeededWorkflowsTestCase(TestCase):
             for position in step.history_positions or []:
                 self.assertTrue(guided.steps.filter(position=position).exists(), step.title)
 
+    def test_the_guided_summary_is_rewritten_whenever_something_differs(self):
+        guided = Skill.objects.get(slug=GUIADO_SLUG)
+        for step in guided.steps.all():
+            resumen = step.title.startswith(("E.1.", "E.3."))
+            self.assertEqual("no respondas «SIN CAMBIOS»" in step.instructions, resumen, step.title)
+
     def test_the_reading_runs_on_a_document(self):
         lectura = Skill.objects.get(slug=LECTURA_SLUG)
         self.assertEqual(lectura.allowed_contexts, ["document"])

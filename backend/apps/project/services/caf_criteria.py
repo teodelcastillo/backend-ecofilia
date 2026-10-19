@@ -101,6 +101,22 @@ def _insumo_respuesta(value) -> tuple[str, str]:
     return _text(value), ""
 
 
+def guided_basis(notes) -> dict:
+    """El criterio con el que se genera un informe guiado, para detectar después
+    si el ejecutivo lo cambió (y los borradores quedaron desactualizados).
+
+    Es lo que el guiado efectivamente usa: determinaciones, fundamentos,
+    consideraciones y enverdecimiento. La interfaz lo compara con lo actual.
+    """
+    assessment = executive_assessment(notes)
+    return {
+        "determinaciones": assessment["determinaciones"],
+        "fundamentos": assessment["fundamentos"],
+        "consideraciones_adicionales": assessment["consideraciones_adicionales"],
+        "enverdecimiento": assessment["enverdecimiento"],
+    }
+
+
 def ecofilia_determinations(execution) -> dict[str, dict]:
     """La conclusión de Ecofilia por criterio, de la síntesis (``S.1.``) de su IET.
 
