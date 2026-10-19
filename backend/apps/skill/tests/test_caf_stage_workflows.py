@@ -20,9 +20,10 @@ from rest_framework.test import APITestCase
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument
 from apps.project.services.stages import GUIADO_SLUG, IET_SLUG, INSUMO_SLUG, LECTURA_SLUG
-from apps.skill.insumo_guide import build_insumo_guide_block
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution
+from apps.skill.services import _with_operation_context
 from apps.skill.table_schema import normalize_table_schema
+from apps.user.models import Organization
 
 User = get_user_model()
 
@@ -74,17 +75,78 @@ class SeededWorkflowsTestCase(TestCase):
         self.assertTrue(all(p == "B" for p in prefixes[:c_index]))
         self.assertEqual(prefixes[c_index + 1], "D")
 
-    def test_the_iet_ends_with_one_synthesis_that_reads_the_d_steps(self):
+    def test_section_c_no_longer_points_to_the_insumo(self):
+        c1 = Skill.objects.get(slug=IET_SLUG).steps.get(title__startswith="C.1.")
+        self.assertNotIn("insumo", c1.instructions.lower())
+        self.assertIn("componentes que califican o podrían calificar", c1.instructions)
+        self.assertIn("recomendaciones para aumentar los co-beneficios", c1.instructions)
+        self.assertIn("Citá el documento de cada dato.", c1.instructions)
+
+    def test_the_iet_ends_with_two_hidden_syntheses(self):
         iet = Skill.objects.get(slug=IET_SLUG)
-        synthesis = iet.steps.filter(title__startswith="S.")
-        self.assertEqual(synthesis.count(), 1)
-        step = synthesis.get()
-        self.assertEqual(step.position, iet.steps.order_by("-position").first().position)
-        self.assertEqual(step.evidence_mode, "previous_steps")
-        d_positions = list(iet.steps.filter(title__startswith="D.").values_list("position", flat=True))
-        self.assertEqual(sorted(step.history_positions), sorted(d_positions))
-        values = step.table_schema["columns"][1]["allowed_values"]
+        steps = list(iet.steps.order_by("position"))
+        s1, s2 = [s for s in steps if s.title.startswith("S.")]
+        self.assertEqual([s.title[:4] for s in steps[-2:]], ["S.1.", "S.2."])
+
+        # S.1: las conclusiones por criterio, leyendo los pasos D.
+        self.assertEqual(s1.evidence_mode, "previous_steps")
+        d_positions = [s.position for s in steps if s.title.startswith("D.")]
+        self.assertEqual(sorted(s1.history_positions), sorted(d_positions))
+        keys = [c["key"] for c in s1.table_schema["columns"]]
+        self.assertEqual(keys, ["criterio", "determinacion", "fundamento", "informacion_faltante"])
+        values = s1.table_schema["columns"][1]["allowed_values"]
         self.assertIn("No determinable con la información disponible", values)
+        self.assertIn("Inconsistente", values)
+        self.assertIn("Reglas del Objetivo 1", s1.instructions)
+        self.assertIn("Consistencia / Potencialmente inconsistente / Inconsistente", s1.instructions)
+
+        # S.2: los componentes verdes, leyendo sólo C.1.
+        c1 = next(s for s in steps if s.title.startswith("C.1."))
+        self.assertEqual(s2.title, "S.2. Componentes con potencial de financiamiento verde")
+        self.assertEqual((s2.evidence_mode, s2.history_mode), ("previous_steps", "selected"))
+        self.assertEqual(s2.history_positions, [c1.position])
+        self.assertEqual((s2.evidence_selection, s2.output_validation), ("blueprint_only", "strict"))
+        self.assertEqual(
+            [c["key"] for c in s2.table_schema["columns"]],
+            ["componente", "objetivo", "categoria", "monto_usd", "fundamento"],
+        )
+        self.assertEqual(
+            s2.table_schema["columns"][1]["allowed_values"],
+            ["Adaptación", "Mitigación", "Biodiversidad y otros objetivos ambientales"],
+        )
+
+    def test_the_iet_reads_the_operation_document_tags(self):
+        """Las etiquetas finas de los documentos de la operación llegan a los
+        pasos que leían «Documento de la operación» y «Salvaguardas / CESAS»;
+        el guiado, que copia la evidencia de la IET, también."""
+        for slug in (IET_SLUG, GUIADO_SLUG):
+            skill = Skill.objects.get(slug=slug)
+            c1 = skill.steps.get(title__startswith="C.1.")
+            for tag in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto"):
+                self.assertIn(tag, c1.evidence_tags, slug)
+            a1 = skill.steps.get(title__startswith="D.2. CT A1")
+            self.assertIn("salvaguardas-cesas", a1.evidence_tags)
+            self.assertIn("ias", a1.evidence_tags)
+            self.assertIn("analisis-riesgos", a1.evidence_tags)
+            # Lo que no leía documentos de la operación no cambia.
+            a3 = skill.steps.get(title__startswith="D.2. CT A3")
+            self.assertNotIn("ias", a3.evidence_tags)
+            self.assertNotIn("matriz-resultados", a3.evidence_tags)
+
+    def test_the_0040_migration_reverses_to_the_0034_state(self):
+        migration = _migration("0040_iet_sin_insumo_y_componentes_verdes")
+        iet = Skill.objects.get(slug=IET_SLUG)
+        count = iet.steps.count()
+        migration.revertir(django_apps, None)
+        self.assertEqual(iet.steps.count(), count - 1)
+        self.assertFalse(iet.steps.filter(title__startswith="S.2.").exists())
+        s1 = iet.steps.get(title__startswith="S.1.")
+        self.assertEqual([c["key"] for c in s1.table_schema["columns"]], ["criterio", "determinacion", "fundamento"])
+        self.assertNotIn("Inconsistente", s1.table_schema["columns"][1]["allowed_values"])
+        self.assertNotIn("Reglas del Objetivo 1", s1.instructions)
+        self.assertIn("Tomá como guía el insumo de Ecofilia", iet.steps.get(title__startswith="C.1.").instructions)
+        migration.aplicar(django_apps, None)
+        self.assertEqual(iet.steps.count(), count)
 
     def test_caf_runs_have_a_document_cap_and_synthesis_reads_previous_sections(self):
         # El insumo tiene tope; el informe (IET y guiado) no, por calidad.
@@ -151,13 +213,69 @@ class SeededWorkflowsTestCase(TestCase):
 
     def test_running_the_seeds_again_duplicates_nothing(self):
         counts = {slug: Skill.objects.get(slug=slug).steps.count() for slug in (INSUMO_SLUG, IET_SLUG, GUIADO_SLUG, LECTURA_SLUG)}
+        before = {
+            s.title: (s.instructions, s.table_schema, s.evidence_tags)
+            for s in Skill.objects.get(slug=IET_SLUG).steps.all()
+        }
         _migration("0033_seed_caf_insumo_workflow").create_insumo_workflow(django_apps, None)
         _migration("0034_iet_sintesis_por_criterio").add_c_and_sintesis(django_apps, None)
         _migration("0035_seed_caf_iet_guiado_workflow").create_guiado_workflow(django_apps, None)
         _migration("0036_seed_caf_lectura_informe_workflow").create_lectura_workflow(django_apps, None)
+        _migration("0040_iet_sin_insumo_y_componentes_verdes").aplicar(django_apps, None)
+        _migration("0042_iet_lee_etiquetas_de_operacion").aplicar(django_apps, None)
         for slug, count in counts.items():
             self.assertEqual(Skill.objects.filter(slug=slug).count(), 1)
             self.assertEqual(Skill.objects.get(slug=slug).steps.count(), count, slug)
+        after = {
+            s.title: (s.instructions, s.table_schema, s.evidence_tags)
+            for s in Skill.objects.get(slug=IET_SLUG).steps.all()
+        }
+        self.assertEqual(after, before)
+
+
+class InsumoIsNoLongerAnAgentTestCase(TestCase):
+    """El insumo (``0033``) queda como historial: nadie lo corre ni lo recibe
+    una operación nueva, y la IET no lo lee."""
+
+    def test_the_insumo_is_retired_from_defaults_and_cannot_be_run(self):
+        insumo = Skill.objects.get(slug=INSUMO_SLUG)
+        self.assertFalse(insumo.members_can_run)
+        caf = Organization.objects.create(name="CAF", slug="caf")
+        owner = User.objects.create_user(email="owner@caf.com", password="x", organization=caf)
+        iet = Skill.objects.get(slug=IET_SLUG)
+        caf.enabled_skills.add(iet, insumo)
+        caf.default_project_skills.add(iet, insumo)
+        project = Project.objects.create(owner=owner, organization=caf, name="Vieja")
+        project.enabled_skills.add(iet, insumo)
+
+        _migration("0041_insumo_deja_de_ser_agente").retirar(django_apps, None)
+
+        self.assertTrue(Skill.objects.filter(slug=INSUMO_SLUG).exists())
+        self.assertEqual(list(caf.default_project_skills.values_list("slug", flat=True)), [IET_SLUG])
+        self.assertEqual(list(project.enabled_skills.values_list("slug", flat=True)), [IET_SLUG])
+
+        _migration("0041_insumo_deja_de_ser_agente").reponer(django_apps, None)
+        self.assertIn(INSUMO_SLUG, caf.default_project_skills.values_list("slug", flat=True))
+        self.assertIn(INSUMO_SLUG, project.enabled_skills.values_list("slug", flat=True))
+
+    def test_the_report_prompt_carries_no_insumo_block(self):
+        owner = User.objects.create_user(email="owner@example.com", password="x")
+        project = Project.objects.create(
+            owner=owner, name="Operación", context_notes={"estado": "ido_cci", "pais": "Perú"}
+        )
+        SkillExecution.objects.create(
+            skill=Skill.objects.get(slug=INSUMO_SLUG), owner=owner, project=project,
+            status=ExecutionStatus.COMPLETED, stage="ido_cci",
+            output_structured={"steps": [
+                {"step_id": 1, "title": "8. Lo primero a mirar", "content": "Mirá el APRC."},
+            ]},
+        )
+        for slug in (IET_SLUG, GUIADO_SLUG):
+            run = SkillExecution(skill=Skill.objects.get(slug=slug), owner=owner, project=project, stage="ido_cci")
+            prompt = _with_operation_context("Sos Ecofilia.", run)
+            self.assertTrue(prompt.startswith("Sos Ecofilia."))
+            self.assertNotIn("Insumo de Ecofilia", prompt)
+            self.assertNotIn("Mirá el APRC.", prompt)
 
 
 class RunCarriesTheStageTestCase(APITestCase):
@@ -199,55 +317,3 @@ class SummaryCountsTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         rows = response.data["results"] if isinstance(response.data, dict) else response.data
         self.assertEqual(rows[0]["sections_count"], 2)
-
-
-class InsumoGuidesTheReportTestCase(TestCase):
-    """El insumo completado de la etapa va como guía a la IET y al guiado, y a
-    ningún otro agente."""
-
-    def setUp(self):
-        self.owner = User.objects.create_user(email="owner@example.com", password="x")
-        self.project = Project.objects.create(
-            owner=self.owner, name="Operación", context_notes={"estado": "ido_cci"}
-        )
-        SkillExecution.objects.create(
-            skill=Skill.objects.get(slug=INSUMO_SLUG), owner=self.owner, project=self.project,
-            status=ExecutionStatus.COMPLETED, stage="ido_cci",
-            output_structured={"steps": [
-                {"step_id": 1, "title": "3. Elementos clave para el análisis de la operación",
-                 "content": "### 3. Elementos clave\nLa NDC prioriza agua potable."},
-                {"step_id": 2, "title": "4. Componentes con potencial de financiamiento verde",
-                 "content": "", "table": {"rows": [
-                     {"componente": "Planta potabilizadora", "objetivo": "Adaptación",
-                      "monto_usd": 12000000, "confianza": "Alta", "justificacion": "Reduce riesgo hídrico."},
-                 ]}},
-                {"step_id": 3, "title": "6. Objetivo 1 — puntos clave por criterio", "content": "",
-                 "table": {"rows": [
-                     {"criterio": "CT A1 — Análisis de riesgos climáticos", "puntos_clave": "Hay APRC.",
-                      "informacion_faltante": "Nada relevante", "alerta": "Sin alertas"},
-                 ]}},
-                {"step_id": 4, "title": "8. Lo primero a mirar", "content": "Mirá el APRC."},
-            ]},
-        )
-
-    def _block(self, slug, stage="ido_cci"):
-        run = SkillExecution(
-            skill=Skill.objects.get(slug=slug), owner=self.owner, project=self.project, stage=stage
-        )
-        return build_insumo_guide_block(run)
-
-    def test_the_report_and_the_guided_report_read_the_insumo(self):
-        for slug in (IET_SLUG, GUIADO_SLUG):
-            block = self._block(slug)
-            self.assertIn("Insumo de Ecofilia", block, slug)
-            self.assertIn("La NDC prioriza agua potable.", block)
-            self.assertIn("Planta potabilizadora", block)
-            self.assertIn("[Sin alertas]", block)
-            self.assertIn("Mirá el APRC.", block)
-            # El encabezado del paso no se repite.
-            self.assertNotIn("### 3. Elementos clave\n", block)
-
-    def test_no_other_agent_and_no_other_stage(self):
-        self.assertEqual(self._block(INSUMO_SLUG), "")
-        self.assertEqual(self._block(LECTURA_SLUG), "")
-        self.assertEqual(self._block(IET_SLUG, stage="dec"), "")

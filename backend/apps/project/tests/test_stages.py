@@ -3,9 +3,9 @@ Las etapas de una operación: quién las mueve y qué lanzan.
 
 - Avanzar es de quien edita; volver atrás, del staff o de quien administra la
   institución.
-- Entrar a IDO lanza el insumo, una vez por etapa. El reporte de Ecofilia (IET)
-  lo espera: se lanza cuando el insumo termina, porque es su guía. Una IET
-  anterior a las etapas cuenta como de IDO.
+- Entrar a IDO lanza el reporte de Ecofilia (la IET), una vez por etapa. No hay
+  nada que esperar antes: el insumo que ve el ejecutivo es la ficha de esa
+  misma corrida. Una IET anterior a las etapas cuenta como de IDO.
 - Lo que no se pudo lanzar queda bloqueado y se reintenta solo cuando la
   operación está lista.
 - La edición de la operación no cambia la etapa: sólo la acción.
@@ -24,6 +24,7 @@ from apps.project.services.stages import (
     INSUMO_SLUG,
     on_execution_finished,
     retry_pending_stage_launches,
+    stage_workflow_slugs,
 )
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution
 
@@ -52,7 +53,6 @@ class _StageBase(APITestCase):
         self.project.blueprint_document = self.blueprint
         self.project.save(update_fields=["blueprint_document"])
         self.iet = Skill.objects.get(slug=IET_SLUG)
-        self.insumo = Skill.objects.get(slug=INSUMO_SLUG)
 
     def _post(self, user, path, payload=None):
         self.client.force_authenticate(user)
@@ -74,19 +74,23 @@ class _StageBase(APITestCase):
 
 
 class StageTransitionTestCase(_StageBase):
-    def test_entering_ido_launches_the_insumo_and_the_report_waits_for_it(self):
+    def test_ido_launches_only_the_report(self):
+        self.assertEqual(stage_workflow_slugs(self.project, "ido_cci"), [IET_SLUG])
+        self.assertEqual(stage_workflow_slugs(self.project, "dec"), [])
+
+    def test_entering_ido_launches_the_report_at_once(self):
         response, delay = self._move(self.editor, "ido_cci")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.assertEqual(response.data["project"]["context_notes"]["estado"], "ido_cci")
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "waiting", INSUMO_SLUG: "launched"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "launched"})
         run = SkillExecution.objects.get(project=self.project)
-        self.assertEqual((run.skill.slug, run.stage), (INSUMO_SLUG, "ido_cci"))
+        self.assertEqual((run.skill.slug, run.stage), (IET_SLUG, "ido_cci"))
         self.assertEqual(run.metadata.get("launched_by"), "stage")
-        self.assertEqual(delay.call_count, 1)
+        delay.assert_called_once_with(run.id)
+        # Nada queda esperando a otro agente.
+        self.assertNotIn("waiting", self._statuses(response.data["launches"]).values())
+        self.assertFalse(SkillExecution.objects.filter(skill__slug=INSUMO_SLUG).exists())
 
         transition = ProjectStageTransition.objects.get(project=self.project)
         self.assertEqual((transition.from_stage, transition.to_stage), ("pre_originacion", "ido_cci"))
@@ -98,63 +102,27 @@ class StageTransitionTestCase(_StageBase):
             skill=self.iet, owner=self.owner, project=self.project,
             status=ExecutionStatus.COMPLETED, stage="",
         )
-        response, _ = self._move(self.editor, "ido_cci")
+        response, delay = self._move(self.editor, "ido_cci")
 
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "exists", INSUMO_SLUG: "launched"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "exists"})
+        delay.assert_not_called()
         self.assertEqual(
             SkillExecution.objects.filter(project=self.project, skill=self.iet).get(), legacy
         )
 
-    def test_the_finished_insumo_launches_the_report_once(self):
+    def test_a_finished_report_launches_nothing_else(self):
         self._move(self.editor, "ido_cci")
-        insumo = SkillExecution.objects.get(project=self.project, skill=self.insumo)
-
-        insumo.status = ExecutionStatus.FAILED
-        with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
-            on_execution_finished(insumo)
-        delay.assert_not_called()
-
-        insumo.status = ExecutionStatus.COMPLETED
-        insumo.save(update_fields=["status"])
-        with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
-            on_execution_finished(insumo)
-            on_execution_finished(insumo)
         report = SkillExecution.objects.get(project=self.project, skill=self.iet)
-        self.assertEqual((report.stage, report.metadata.get("launched_by")), ("ido_cci", "stage"))
-        delay.assert_called_once_with(report.id)
-        transition = ProjectStageTransition.objects.get(project=self.project)
-        self.assertEqual(
-            self._statuses(transition.launches), {IET_SLUG: "launched", INSUMO_SLUG: "launched"}
-        )
-
-    def test_an_insumo_from_a_stage_already_left_launches_nothing(self):
-        self._move(self.editor, "ido_cci")
-        insumo = SkillExecution.objects.get(project=self.project, skill=self.insumo)
-        self._move(self.editor, "dec")
-        SkillExecution.objects.filter(pk=insumo.pk).update(status=ExecutionStatus.COMPLETED)
-        insumo.refresh_from_db()
+        report.status = ExecutionStatus.COMPLETED
+        report.save(update_fields=["status"])
         with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
-            on_execution_finished(insumo)
+            on_execution_finished(report)
         delay.assert_not_called()
-        self.assertFalse(SkillExecution.objects.filter(project=self.project, skill=self.iet).exists())
-
-    def test_an_insumo_run_by_hand_outside_ido_launches_nothing(self):
-        self._set_stage("dec")
-        insumo = SkillExecution.objects.create(
-            skill=self.insumo, owner=self.owner, project=self.project,
-            status=ExecutionStatus.COMPLETED, stage="dec",
-        )
-        with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
-            on_execution_finished(insumo)
-        delay.assert_not_called()
-        self.assertFalse(SkillExecution.objects.filter(project=self.project, skill=self.iet).exists())
+        self.assertEqual(SkillExecution.objects.filter(project=self.project).count(), 1)
 
     def test_the_launcher_cannot_relaunch_what_the_stage_launched(self):
         self._move(self.editor, "ido_cci")
-        run = SkillExecution.objects.filter(project=self.project, skill=self.insumo).get()
+        run = SkillExecution.objects.filter(project=self.project, skill=self.iet).get()
         self.client.force_authenticate(self.editor)
         response = self.client.post(f"/api/skills/executions/{run.id}/rerun/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
@@ -220,10 +188,7 @@ class BlockedLaunchTestCase(_StageBase):
 
         response, delay = self._move(self.editor, "ido_cci")
 
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "waiting", INSUMO_SLUG: "blocked"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "blocked"})
         delay.assert_not_called()
         self.assertFalse(SkillExecution.objects.filter(project=self.project).exists())
 
@@ -233,14 +198,12 @@ class BlockedLaunchTestCase(_StageBase):
         self.project.save(update_fields=["blueprint_document"])
         with patch(DELAY), self.captureOnCommitCallbacks(execute=True):
             retried = retry_pending_stage_launches(self.project)
-        self.assertEqual(self._statuses(retried), {INSUMO_SLUG: "launched"})
+        self.assertEqual(self._statuses(retried), {IET_SLUG: "launched"})
         self.assertIsNone(retry_pending_stage_launches(self.project))
         self.assertEqual(SkillExecution.objects.filter(project=self.project).count(), 1)
 
         transition = ProjectStageTransition.objects.get(project=self.project)
-        self.assertEqual(
-            self._statuses(transition.launches), {IET_SLUG: "waiting", INSUMO_SLUG: "launched"}
-        )
+        self.assertEqual(self._statuses(transition.launches), {IET_SLUG: "launched"})
 
     def test_a_document_still_processing_blocks_until_it_finishes(self):
         annex = Document.objects.create(
@@ -250,7 +213,7 @@ class BlockedLaunchTestCase(_StageBase):
 
         response, _ = self._move(self.editor, "ido_cci")
         launches = response.data["launches"]
-        self.assertEqual(self._statuses(launches), {IET_SLUG: "waiting", INSUMO_SLUG: "blocked"})
+        self.assertEqual(self._statuses(launches), {IET_SLUG: "blocked"})
         self.assertIn("Anexo", launches[0]["reason"])
 
         Document.objects.filter(pk=annex.pk).update(chunking_status="done")
@@ -281,29 +244,20 @@ class StageLaunchEndpointTestCase(_StageBase):
         self._set_stage("ido_cci")
         response, _ = self._post(self.editor, "stage/launch/")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "waiting", INSUMO_SLUG: "launched"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "launched"})
 
         response, delay = self._post(self.editor, "stage/launch/")
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "waiting", INSUMO_SLUG: "exists"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "exists"})
         delay.assert_not_called()
 
     def test_a_failed_run_is_left_for_a_superadmin(self):
         self._set_stage("ido_cci")
         SkillExecution.objects.create(
-            skill=self.insumo, owner=self.owner, project=self.project,
+            skill=self.iet, owner=self.owner, project=self.project,
             status=ExecutionStatus.FAILED, stage="ido_cci",
         )
         response, _ = self._post(self.editor, "stage/launch/")
-        self.assertEqual(
-            self._statuses(response.data["launches"]),
-            {IET_SLUG: "waiting", INSUMO_SLUG: "failed_before"},
-        )
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "failed_before"})
 
     def test_a_stage_without_workflows_launches_nothing(self):
         self._set_stage("dec")

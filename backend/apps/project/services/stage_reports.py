@@ -7,7 +7,7 @@ el oficial, por una de tres vías:
 - **editado**: trabaja sobre el reporte de Ecofilia. Sus ediciones son capas
   sobre la corrida (``ExecutionSectionEdit``), así que el original no se pierde.
 - **guiado**: completa paso a paso sus determinaciones, fundamentos y
-  enverdecimiento —con el insumo de Ecofilia como referencia— y Ecofilia
+  enverdecimiento —con la ficha de la IET de Ecofilia como referencia— y Ecofilia
   reescribe con ese criterio sólo las secciones de enverdecimiento y alineación
   (C, D y E) donde difiere de la suya. Lo reescrito entra como borradores sobre
   el reporte de Ecofilia, que el ejecutivo revisa y publica en el Editor.
@@ -35,6 +35,7 @@ from apps.project.models import (
 from apps.project.services.caf_criteria import (
     build_criterio_ejecutivo,
     ecofilia_determinations,
+    ecofilia_green_components,
     executive_assessment,
     guided_basis,
 )
@@ -152,7 +153,6 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
     guiada. Cuando ésta termina, ``apply_guided_result`` vuelca como borradores
     las secciones que cambiaron.
     """
-    from apps.skill.insumo_guide import insumo_components, insumo_opportunities, latest_insumo
     from apps.skill.launch import launch_institutional
     from apps.skill.models import Skill
 
@@ -169,12 +169,10 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
             "guiado se escribe sobre él."
         )
 
-    insumo = latest_insumo(project, stage)
     criterio = build_criterio_ejecutivo(
         project.context_notes,
         ecofilia=ecofilia_determinations(base),
-        insumo_componentes=insumo_components(insumo),
-        insumo_oportunidades=insumo_opportunities(insumo),
+        componentes_ecofilia=ecofilia_green_components(base),
     )
     if not criterio:
         raise StageReportError(

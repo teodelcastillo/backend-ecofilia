@@ -749,9 +749,14 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
         return super().update(instance, validated_data)
 
 class EvidenceTagSerializer(serializers.ModelSerializer):
-    """Etiqueta del catálogo con el que los pasos piden su evidencia."""
+    """Etiqueta del catálogo con el que los pasos piden su evidencia.
+
+    ``group`` (principal / operacion / contexto / otro) sale del slug, para que
+    el portal filtre sin listas duras (ver ``apps.document.evidence_tag_groups``).
+    """
 
     document_count = serializers.IntegerField(read_only=True, required=False)
+    group = serializers.SerializerMethodField()
 
     class Meta:
         model = EvidenceTag
@@ -763,9 +768,15 @@ class EvidenceTagSerializer(serializers.ModelSerializer):
             "source_topics",
             "is_seed",
             "position",
+            "group",
             "document_count",
         )
-        read_only_fields = ("id", "slug", "is_seed", "document_count")
+        read_only_fields = ("id", "slug", "is_seed", "group", "document_count")
+
+    def get_group(self, obj) -> str:
+        from apps.document.evidence_tag_groups import evidence_tag_group
+
+        return evidence_tag_group(obj.slug)
 
 
 class EvidenceTagWriteSerializer(serializers.ModelSerializer):

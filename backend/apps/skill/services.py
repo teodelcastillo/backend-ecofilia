@@ -874,13 +874,6 @@ def _with_operation_context(
         cached = build_operation_context_block(
             execution.project, include_blueprint_summary=include_blueprint_summary
         )
-        # El informe de Ecofilia (y el guiado) parten del insumo: va como guía,
-        # junto al contexto de la operación (ver ``apps.skill.insumo_guide``).
-        from apps.skill.insumo_guide import build_insumo_guide_block
-
-        guide = build_insumo_guide_block(execution)
-        if guide:
-            cached = f"{cached}\n\n{guide}" if cached else guide
         setattr(execution, attr, cached)
 
     if not cached:
@@ -2443,8 +2436,8 @@ class SkillRunner:
                     "finished_at", "current_step_position",
                 ])
 
-        # Lo que la corrida destraba en su operación (por ejemplo, el insumo
-        # completado lanza la IET). Nunca levanta.
+        # Lo que la corrida destraba en su operación (por ejemplo, el guiado
+        # completado deja sus borradores sobre la IET). Nunca levanta.
         if execution.status in (ExecutionStatus.COMPLETED, ExecutionStatus.FAILED):
             from apps.project.services.stages import on_execution_finished
 

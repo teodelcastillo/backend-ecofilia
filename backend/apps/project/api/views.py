@@ -49,7 +49,11 @@ from apps.project.api.serializers import (
     ProjectWriteSerializer,
 )
 from apps.project.services.country_documents import sync_country_instrument_documents
-from apps.project.services.evidence_tags import inherit_tags, override_tags
+from apps.project.services.evidence_tags import (
+    ensure_principal_stage_tag,
+    inherit_tags,
+    override_tags,
+)
 from apps.project.models import (
     Project,
     ProjectDeliverable,
@@ -246,6 +250,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
             inherit_tags(link)
         else:
             override_tags(link, serializer.context["resolved_tags"])
+        # El principal no se queda sin su etiqueta de etapa (IDO / DEC).
+        if project.blueprint_document_id == link.document_id:
+            ensure_principal_stage_tag(project, link)
         return Response(
             ProjectDocumentSerializer(link).data,
             status=status.HTTP_200_OK,
@@ -914,8 +921,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
         POST /projects/{slug}/stage/   {"to": "ido_cci"}
 
         Avanzar es de quien edita; volver atrás, del staff o de quien
-        administra la institución. Entrar a IDO lanza el reporte de Ecofilia y
-        el insumo (una vez por etapa); lo que no se pudo lanzar vuelve con su
+        administra la institución. Entrar a IDO lanza el reporte de Ecofilia
+        (una vez por etapa); lo que no se pudo lanzar vuelve con su
         motivo y se reintenta solo cuando la operación esté lista.
         """
         from apps.project.services.stages import StageError, StagePermissionError, transition

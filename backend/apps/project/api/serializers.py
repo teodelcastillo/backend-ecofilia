@@ -525,7 +525,7 @@ class ProjectWriteSerializer(ProjectSerializer):
         blueprint_slug = validated_data.pop("blueprint_document_slug", None)
         previous_blueprint_id = instance.blueprint_document_id
         # La etapa no se edita como un campo: cambiarla tiene efectos (entrar
-        # a IDO lanza el reporte y el insumo) y pasa sólo por la acción de
+        # a IDO lanza el reporte de Ecofilia) y pasa sólo por la acción de
         # etapa (ver ``apps.project.services.stages``). Se preserva la del
         # servidor: un formulario con datos viejos no la revierte sin querer.
         if "context_notes" in validated_data and isinstance(validated_data["context_notes"], dict):
@@ -616,6 +616,10 @@ class ProjectWriteSerializer(ProjectSerializer):
         # the doc-finder and show the old primary until a full refresh.
         project.project_documents.filter(is_primary=True).exclude(document=doc).update(is_primary=False)
         project.project_documents.filter(document=doc).update(is_primary=True)
+        # El principal lleva la etiqueta de la etapa (IDO / DEC) si no la trae.
+        from apps.project.services.evidence_tags import ensure_principal_stage_tag
+
+        ensure_principal_stage_tag(project)
 
 
 class ProjectDocumentAttachSerializer(serializers.Serializer):

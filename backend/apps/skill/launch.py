@@ -3,7 +3,7 @@ Armar y encolar una corrida de agente.
 
 Hasta ahora la única puerta era el endpoint ``run``: una persona con permiso de
 ejecutar elegía el agente y lo lanzaba. El ciclo de una operación agrega otra —
-entrar a IDO lanza el reporte de Ecofilia y el insumo; subir el informe del
+entrar a IDO lanza el reporte de Ecofilia; subir el informe del
 ejecutivo lanza su lectura; el flujo guiado redacta con el criterio del
 ejecutivo— y esas corridas las dispara el flujo institucional, no alguien con
 permiso de ejecutar asistentes.

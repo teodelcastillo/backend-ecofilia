@@ -71,3 +71,41 @@ def inherit_tags(link: ProjectDocument) -> None:
     if link.tags_overridden:
         link.tags_overridden = False
         link.save(update_fields=["tags_overridden"])
+
+
+def ensure_principal_stage_tag(project, link: ProjectDocument | None = None) -> str:
+    """El documento principal lleva la etiqueta de la etapa en que se cargó.
+
+    Al marcarlo como principal, si no tiene ``ido`` ni ``dec`` se le pone la de
+    la etapa actual de la operación (IDO → ``ido``, DEC → ``dec``), como
+    decisión de la operación y no del documento: el mismo archivo puede ser el
+    IDO de una operación y un anexo en otra. En pre-originación no hay etiqueta
+    de etapa, y un documento que ya trae una (p. ej. marcado IDO en IDO y
+    todavía principal en DEC) no se cambia.
+
+    Devuelve el slug que puso, o vacío si no hizo falta.
+    """
+    from apps.document.evidence_tag_groups import PRINCIPAL_TAG_BY_STAGE, principal_tag_slugs
+    from apps.project.services.stages import current_stage
+
+    if link is None:
+        if not project.blueprint_document_id:
+            return ""
+        link = (
+            ProjectDocument.objects.filter(project=project, document_id=project.blueprint_document_id)
+            .select_related("document")
+            .first()
+        )
+        if link is None:
+            return ""
+    slug = PRINCIPAL_TAG_BY_STAGE.get(current_stage(project), "")
+    if not slug:
+        return ""
+    current = effective_tags(link)
+    if any(tag.slug in principal_tag_slugs() for tag in current):
+        return ""
+    tag = EvidenceTag.objects.filter(slug=slug).first()
+    if tag is None:
+        return ""
+    override_tags(link, [*current, tag])
+    return slug

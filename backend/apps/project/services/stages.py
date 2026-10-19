@@ -3,7 +3,8 @@ Las etapas de una operación: pre-originación → IDO → DEC → aprobada.
 
 La etapa vive en ``context_notes["estado"]``, pero no se edita como un campo
 más: cambiarla tiene efectos. Entrar a IDO lanza el reporte de Ecofilia (la
-IET) y el insumo para el ejecutivo, una vez por etapa. Por eso el único camino
+IET), una vez por etapa; el insumo que ve el ejecutivo es la ficha que el
+portal arma a partir de esa misma corrida. Por eso el único camino
 para cambiarla es :func:`transition` —la edición de la operación preserva la
 etapa que tiene el servidor— y cada cambio queda registrado
 (``ProjectStageTransition``).
@@ -42,6 +43,8 @@ STAGE_LABELS: dict[str, str] = {
 # Workflows del ciclo CAF. Los slugs son el contrato con la interfaz, que lee
 # sus pasos por título; los workflows se ajustan desde el Studio.
 IET_SLUG = "caf-iet-datbc-evaluacion-tecnica"
+# El insumo fue un agente aparte (``0033``); desde ``0041`` es la ficha de la
+# IET. El slug queda para reconocer sus corridas viejas en el historial.
 INSUMO_SLUG = "caf-insumo-ejecutivo"
 GUIADO_SLUG = "caf-iet-guiado-ejecutivo"
 LECTURA_SLUG = "caf-lectura-informe-ejecutivo"
@@ -91,14 +94,8 @@ def stage_workflow_slugs(project: Project, stage: str) -> list[str]:
     a partir de los datos de la operación.
     """
     if stage == "ido_cci":
-        return [INSUMO_SLUG, IET_SLUG]
+        return [IET_SLUG]
     return []
-
-
-# Un workflow que espera a otro: la IET de Ecofilia corre después del insumo,
-# que es su guía (ver ``apps.skill.insumo_guide``). Mientras el insumo no
-# terminó, la IET queda "waiting"; la lanza ``on_execution_finished``.
-DEPENDS_ON: dict[str, str] = {IET_SLUG: INSUMO_SLUG}
 
 
 def runs_for_stage(project: Project, skill, stage: str):
@@ -153,18 +150,6 @@ def launch_stage_workflows(
                  "reason": "La corrida anterior falló: la retoma un superadmin desde Corridas."}
             )
             continue
-
-        upstream = DEPENDS_ON.get(slug)
-        if upstream:
-            upstream_skill = Skill.objects.filter(slug=upstream).first()
-            if upstream_skill is not None and not runs_for_stage(
-                project, upstream_skill, stage
-            ).filter(status=ExecutionStatus.COMPLETED).exists():
-                results.append(
-                    {"skill_slug": slug, "status": "waiting", "execution_id": None,
-                     "reason": "Se genera cuando termine el insumo de Ecofilia, que es su guía."}
-                )
-                continue
 
         if not project.blueprint_document_id:
             results.append(
@@ -287,8 +272,7 @@ def record_launches(project: Project, stage: str, launches: list[dict]) -> None:
 def on_execution_finished(execution) -> None:
     """Lo que dispara una corrida de la operación al terminar.
 
-    - El insumo completado lanza lo que lo esperaba en su etapa (la IET).
-    - El guiado completado vuelca sus secciones como borradores sobre la IET.
+    El guiado completado vuelca sus secciones como borradores sobre la IET.
 
     Se llama al final de cada corrida y nunca levanta: un problema acá no puede
     dejar fallida una corrida que terminó bien.
@@ -298,27 +282,7 @@ def on_execution_finished(execution) -> None:
     try:
         if execution.project_id is None or execution.status != ExecutionStatus.COMPLETED:
             return
-        project = Project.objects.get(pk=execution.project_id)
-        slug = execution.skill.slug
-        stage = execution.stage or "ido_cci"
-
-        # Sólo lo que la etapa lanza: un insumo corrido a mano en DEC no pone
-        # a correr un reporte de IDO.
-        dependents = [
-            down
-            for down, up in DEPENDS_ON.items()
-            if up == slug and down in stage_workflow_slugs(project, stage)
-        ]
-        if dependents and current_stage(project) == stage:
-            owner = execution.owner or project.owner
-            launches = launch_stage_workflows(project, stage, owner, slugs=dependents)
-            # Lo que ya corría queda anotado como se lanzó: un insumo que se
-            # vuelve a correr no pisa ese registro con un "ya existía".
-            record_launches(
-                project, stage, [entry for entry in launches if entry["status"] != "exists"]
-            )
-
-        if slug == GUIADO_SLUG:
+        if execution.skill.slug == GUIADO_SLUG:
             from apps.project.services.stage_reports import apply_guided_result
 
             apply_guided_result(execution)

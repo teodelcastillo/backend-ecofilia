@@ -34,9 +34,136 @@ FUNDAMENTOS_KEY = "alineacion_fundamentos"
 INSUMO_KEY = "alineacion_insumo"
 CONSIDERACIONES_KEY = "consideraciones_adicionales"
 # Su mirada sobre el financiamiento verde: los componentes que cuenta como verdes
-# (los que sugirió el insumo, aceptados o descartados, y los propios) y las
-# oportunidades de enverdecimiento que recomienda o descarta.
+# (los que sugirió Ecofilia en su IET —``S.2.``—, aceptados o descartados, y los
+# propios) y las oportunidades de enverdecimiento propias que recomienda.
 ENVERDECIMIENTO_KEY = "enverdecimiento"
+
+# ── Reglas de determinación ────────────────────────────────────────────
+# Los objetivos no se eligen: se derivan de sus CT con el procedimiento de la
+# DATBC. Es la misma tabla que aplica el portal (``ecofiliaV2/lib/caf-alineacion.ts``)
+# y la que S.1 de la IET recibe en sus instrucciones; cualquier cambio va en los
+# tres. El recorrido termina donde un CT decide: los CT que no se alcanzan
+# quedan en «No aplica».
+A1_SIN_RIESGO = ("Riesgo bajo", "No aplica análisis de riesgos (AR)")
+A1_CON_RIESGO = ("Riesgo medio", "Riesgo alto")
+A1_SIN_ANALISIS = ("Indeterminado", "Sin análisis de riesgos (AR)")
+A2_SUFICIENTES = "Suficientes"
+A2_NO_APLICA = "No aplica"
+A2_CON_BRECHA = ("No suficientes", "Información insuficiente")
+A3_CONSISTENCIA = "Consistencia"
+A3_POTENCIALMENTE_INCONSISTENTE = "Potencialmente inconsistente"
+A3_INCONSISTENTE = "Inconsistente"
+
+OBJETIVO_1_ALINEADA = "Alineada"
+OBJETIVO_1_BRECHAS_A1 = "Con brechas por CT A1"
+OBJETIVO_1_BRECHAS_A2 = "Con brechas por CT A2"
+OBJETIVO_1_BRECHAS_A3 = "Con brechas por CT A3"
+OBJETIVO_1_NO_ALINEADA = "No alineada"
+
+
+def ct_a2_no_aplica(ct_a1) -> bool:
+    """Con riesgo bajo o sin análisis de riesgos aplicable, no hay medidas que evaluar."""
+    return _text(ct_a1) in A1_SIN_RIESGO
+
+
+M1_NO_ALINEADAS = "Contiene actividades no alineadas"
+M1_SIN_NO_ALINEADAS = "Sin actividades no alineadas"
+M2_ALINEADAS = "Contiene actividades alineadas"
+M2_SIN_ALINEADAS = "Sin actividades alineadas"
+M5_SIN_RIESGOS = "No persisten riesgos de transición"
+M5_CON_RIESGOS = "Persisten riesgos de transición"
+
+OBJETIVO_2_ALINEADA_M2 = "Alineada en el CT M2"
+OBJETIVO_2_ALINEADA_M3 = "Alineada en el CT M3"
+OBJETIVO_2_ALINEADA_M5 = "Alineada en el CT M5"
+OBJETIVO_2_BRECHAS = "Con brechas"
+OBJETIVO_2_NO_ALINEADA = "No alineada"
+
+CT_OBJETIVO_2 = ("ct_m1", "ct_m2", "ct_m3", "ct_m4", "ct_m5")
+
+
+def determinar_objetivo_2(ct_m1, ct_m2, ct_m3, ct_m4, ct_m5) -> tuple[str | None, str, tuple[str, ...]]:
+    """La determinación del Objetivo 2 que sale de los CT, por qué, y qué CT no aplican.
+
+    Un recorrido: M1 con actividades no alineadas → No alineada. M2 con
+    actividades alineadas → Alineada en el CT M2. M3 consistente → Alineada en
+    el CT M3; inconsistente → No alineada; potencialmente inconsistente → M4.
+    M4 inconsistente → No alineada; si no → M5. M5 sin riesgos de transición →
+    Alineada en el CT M5; persisten → Con brechas. Devuelve ``(None, motivo, ())``
+    mientras falte el CT que decide.
+    """
+    m1, m2, m3, m4, m5 = (_text(v) for v in (ct_m1, ct_m2, ct_m3, ct_m4, ct_m5))
+
+    def fin(valor, motivo, desde):
+        return valor, motivo, CT_OBJETIVO_2[CT_OBJETIVO_2.index(desde) + 1 :]
+
+    if not m1:
+        return None, "Falta el CT M1.", ()
+    if m1 == M1_NO_ALINEADAS:
+        return fin(OBJETIVO_2_NO_ALINEADA, "CT M1: la operación contiene actividades de la lista de no alineadas.", "ct_m1")
+    if m1 != M1_SIN_NO_ALINEADAS:
+        return None, f"CT M1 «{m1}» no permite determinar el Objetivo 2.", ()
+    if not m2:
+        return None, "Falta el CT M2.", ()
+    if m2 == M2_ALINEADAS:
+        return fin(OBJETIVO_2_ALINEADA_M2, "CT M2: la operación concuerda con la lista de actividades alineadas.", "ct_m2")
+    if m2 != M2_SIN_ALINEADAS:
+        return None, f"CT M2 «{m2}» no permite determinar el Objetivo 2.", ()
+    if not m3:
+        return None, "Falta el CT M3: sin actividades de la lista, se evalúa la consistencia con la NDC.", ()
+    if m3 == A3_CONSISTENCIA:
+        return fin(OBJETIVO_2_ALINEADA_M3, "CT M3: consistente (o al menos no inconsistente) con la NDC.", "ct_m3")
+    if m3 == A3_INCONSISTENTE:
+        return fin(OBJETIVO_2_NO_ALINEADA, "CT M3: inconsistente con la NDC.", "ct_m3")
+    if m3 != A3_POTENCIALMENTE_INCONSISTENTE:
+        return None, f"CT M3 «{m3}» no permite determinar el Objetivo 2.", ()
+    if not m4:
+        return None, "Falta el CT M4: con la NDC potencialmente inconsistente, se evalúa la trayectoria de largo plazo.", ()
+    if m4 == A3_INCONSISTENTE:
+        return fin(OBJETIVO_2_NO_ALINEADA, "CT M4: inconsistente con la estrategia de largo plazo.", "ct_m4")
+    if m4 not in (A3_CONSISTENCIA, A3_POTENCIALMENTE_INCONSISTENTE):
+        return None, f"CT M4 «{m4}» no permite determinar el Objetivo 2.", ()
+    if not m5:
+        return None, "Falta el CT M5: el análisis termina en los riesgos de transición.", ()
+    if m5 == M5_SIN_RIESGOS:
+        return fin(OBJETIVO_2_ALINEADA_M5, f"CT M4 «{m4}» y no persisten riesgos de transición.", "ct_m5")
+    if m5 == M5_CON_RIESGOS:
+        return fin(OBJETIVO_2_BRECHAS, "CT M5: persisten riesgos de transición.", "ct_m5")
+    return None, f"CT M5 «{m5}» no permite determinar el Objetivo 2.", ()
+
+
+def determinar_objetivo_1(ct_a1, ct_a2, ct_a3) -> tuple[str | None, str]:
+    """La determinación del Objetivo 1 que sale de los CT, y por qué.
+
+    Precedencia: CT A3 Inconsistente > CT A3 Potencialmente inconsistente >
+    CT A2 > CT A1 > Alineada. El análisis siempre termina en CT A3: sin CT A3
+    no hay determinación (``(None, motivo)``). Con CT A1 bajo o sin AR
+    aplicable, CT A2 se da por «No aplica», diga lo que diga.
+    """
+    a1, a2, a3 = _text(ct_a1), _text(ct_a2), _text(ct_a3)
+    if not a3:
+        return None, "Falta el CT A3: el análisis del Objetivo 1 termina ahí."
+    if a3 == A3_INCONSISTENTE:
+        return OBJETIVO_1_NO_ALINEADA, "CT A3: inconsistente con los instrumentos nacionales de adaptación."
+    if a3 == A3_POTENCIALMENTE_INCONSISTENTE:
+        return OBJETIVO_1_BRECHAS_A3, "CT A3: potencialmente inconsistente con los instrumentos nacionales."
+    if a3 != A3_CONSISTENCIA:
+        return None, f"CT A3 «{a3}» no permite determinar el Objetivo 1."
+    if ct_a2_no_aplica(a1):
+        return OBJETIVO_1_ALINEADA, f"CT A1 «{a1}»: no hacen falta medidas (CT A2 no aplica) y hay consistencia en CT A3."
+    if a1 in A1_CON_RIESGO:
+        if a2 in A2_CON_BRECHA:
+            return OBJETIVO_1_BRECHAS_A2, f"CT A1 «{a1}» con medidas «{a2}»."
+        if a2 == A2_SUFICIENTES:
+            return OBJETIVO_1_ALINEADA, f"CT A1 «{a1}» con medidas suficientes y consistencia en CT A3."
+        return None, "Falta el CT A2: con riesgo medio o alto hay que evaluar las medidas."
+    if a1 in A1_SIN_ANALISIS:
+        if a2 in A2_CON_BRECHA:
+            return OBJETIVO_1_BRECHAS_A2, f"CT A1 «{a1}» y medidas «{a2}»."
+        return OBJETIVO_1_BRECHAS_A1, f"CT A1 «{a1}»: el riesgo climático no está evaluado."
+    if not a1:
+        return None, "Falta el CT A1."
+    return None, f"CT A1 «{a1}» no permite determinar el Objetivo 1."
 
 _METADATA_KEYS = {"actualizado_en", "actualizado_por"}
 
@@ -76,6 +203,7 @@ def executive_assessment(notes) -> dict:
         for key, value in _dict(notes.get(ALINEACION_KEY)).items()
         if key not in _METADATA_KEYS and _text(value)
     }
+    objetivo_1_motivo, objetivo_2_motivo = _aplicar_reglas(determinaciones)
     fundamentos = {
         key: _text(value)
         for key, value in _dict(notes.get(FUNDAMENTOS_KEY)).items()
@@ -90,9 +218,30 @@ def executive_assessment(notes) -> dict:
         "determinaciones": determinaciones,
         "fundamentos": fundamentos,
         "insumo": insumo,
+        "objetivo_1_motivo": objetivo_1_motivo,
+        "objetivo_2_motivo": objetivo_2_motivo,
         "consideraciones_adicionales": _text(notes.get(CONSIDERACIONES_KEY)),
         "enverdecimiento": executive_enverdecimiento(notes),
     }
+
+
+def _aplicar_reglas(determinaciones: dict[str, str]) -> tuple[str, str]:
+    """Deja en ``determinaciones`` lo que dictan los CT: los que el recorrido no
+    alcanza en «No aplica» y cada objetivo con su valor. Devuelve los motivos
+    (vacío cuando los CT no alcanzan para determinar: queda lo que había)."""
+    if ct_a2_no_aplica(determinaciones.get("ct_a1")):
+        determinaciones["ct_a2"] = A2_NO_APLICA
+    valor_1, motivo_1 = determinar_objetivo_1(
+        determinaciones.get("ct_a1"), determinaciones.get("ct_a2"), determinaciones.get("ct_a3")
+    )
+    if valor_1 is not None:
+        determinaciones["objetivo_1"] = valor_1
+    valor_2, motivo_2, no_aplican = determinar_objetivo_2(*(determinaciones.get(k) for k in CT_OBJETIVO_2))
+    for key in no_aplican:
+        determinaciones[key] = A2_NO_APLICA
+    if valor_2 is not None:
+        determinaciones["objetivo_2"] = valor_2
+    return (motivo_1 if valor_1 is not None else ""), (motivo_2 if valor_2 is not None else "")
 
 
 def _insumo_respuesta(value) -> tuple[str, str]:
@@ -120,27 +269,79 @@ def guided_basis(notes) -> dict:
 def ecofilia_determinations(execution) -> dict[str, dict]:
     """La conclusión de Ecofilia por criterio, de la síntesis (``S.1.``) de su IET.
 
-    Devuelve ``{clave: {"determinacion", "fundamento"}}`` con las claves de
-    ``CRITERIOS``. Vacío si la corrida no tiene síntesis.
+    Devuelve ``{clave: {"determinacion", "fundamento", "informacion_faltante"}}``
+    con las claves de ``CRITERIOS``. Vacío si la corrida no tiene síntesis.
+
+    Los objetivos se recalculan con las reglas a partir de los CT de la misma
+    síntesis: si la prosa decía otra cosa, lo que dijo queda en
+    ``objetivo_1_texto`` / ``objetivo_2_texto`` y el fundamento pasa a ser el
+    motivo de la regla.
     """
     if execution is None:
         return {}
     by_label = {label: key for key, label in CRITERIOS}
-    for step in (execution.output_structured or {}).get("steps") or []:
+    for step in _steps(execution):
         if not str(step.get("title") or "").strip().startswith("S.1"):
             continue
-        table = step.get("table") or {}
-        rows = table.get("rows") if isinstance(table, dict) else None
         out: dict[str, dict] = {}
-        for row in _list_of_dicts(rows):
+        for row in _table_rows(step):
             key = by_label.get(_text(row.get("criterio")))
             if key and _text(row.get("determinacion")):
                 out[key] = {
                     "determinacion": _text(row.get("determinacion")),
                     "fundamento": _text(row.get("fundamento")),
+                    "informacion_faltante": _text(row.get("informacion_faltante")),
                 }
+        _recalcular_objetivos(out)
         return out
     return {}
+
+
+def _recalcular_objetivos(out: dict[str, dict]) -> None:
+    def valor(key):
+        return (out.get(key) or {}).get("determinacion")
+
+    valor_1, motivo_1 = determinar_objetivo_1(valor("ct_a1"), valor("ct_a2"), valor("ct_a3"))
+    valor_2, motivo_2, _ = determinar_objetivo_2(*(valor(k) for k in CT_OBJETIVO_2))
+    for key, valor_regla, motivo in (("objetivo_1", valor_1, motivo_1), ("objetivo_2", valor_2, motivo_2)):
+        if valor_regla is None:
+            continue
+        previo = out.get(key) or {}
+        texto = _text(previo.get("determinacion"))
+        out[key] = {
+            "determinacion": valor_regla,
+            "fundamento": motivo,
+            "informacion_faltante": _text(previo.get("informacion_faltante")),
+            **({f"{key}_texto": texto} if texto and texto != valor_regla else {}),
+        }
+
+
+def _steps(execution) -> list[dict]:
+    return _list_of_dicts((execution.output_structured or {}).get("steps"))
+
+
+def _table_rows(step: dict) -> list[dict]:
+    table = step.get("table") or {}
+    return _list_of_dicts(table.get("rows")) if isinstance(table, dict) else []
+
+
+def ecofilia_green_components(execution) -> list[dict]:
+    """Los componentes con potencial de financiamiento verde según la IET de
+    Ecofilia: la tabla de ``S.2.``, sin las marcas de cita de sus celdas. Vacío
+    si la corrida no la tiene (IET anterior a la 0040)."""
+    from apps.skill.citations import strip_cell_citations
+
+    if execution is None:
+        return []
+    for step in _steps(execution):
+        if not str(step.get("title") or "").strip().startswith("S.2"):
+            continue
+        return [
+            {k: strip_cell_citations(v) if isinstance(v, str) else v for k, v in row.items()}
+            for row in _table_rows(step)
+            if _text(row.get("componente"))
+        ]
+    return []
 
 
 def _name(value) -> str:
@@ -160,12 +361,17 @@ def _usd(value) -> str:
 
 
 def _enverdecimiento_lines(
-    enverdecimiento: dict, insumo_componentes: list[dict], insumo_oportunidades: list[dict]
+    enverdecimiento: dict, sugeridos_ecofilia: list[dict]
 ) -> tuple[list[str], bool]:
-    """Su enverdecimiento contra lo que sugirió el insumo, y si difiere."""
+    """Su enverdecimiento contra lo que sugirió Ecofilia (``S.2.`` de su IET), y si difiere.
+
+    En el texto se sigue hablando del «insumo»: es el nombre que el ejecutivo
+    ve en el portal para la ficha de la IET, y la marca «DIFIERE del insumo» es
+    la que buscan los pasos del guiado (ver ``0039``).
+    """
     componentes = enverdecimiento.get("componentes") or []
     oportunidades = enverdecimiento.get("oportunidades") or []
-    sugeridos = {_name(row.get("componente")): row for row in insumo_componentes}
+    sugeridos = {_name(row.get("componente")): row for row in sugeridos_ecofilia}
     differs = False
     lines: list[str] = []
 
@@ -218,19 +424,13 @@ def _enverdecimiento_lines(
     if descartadas:
         differs = True
 
-    if lines and insumo_componentes:
+    if lines and sugeridos_ecofilia:
         lines.append(
             "Lo que sugería el insumo de Ecofilia: "
             + "; ".join(
                 f"{_text(row.get('componente'))} ({_text(row.get('objetivo'))}, {_usd(row.get('monto_usd'))})"
-                for row in insumo_componentes
+                for row in sugeridos_ecofilia
             )
-            + "."
-        )
-    if lines and insumo_oportunidades:
-        lines.append(
-            "Oportunidades que sugería el insumo: "
-            + "; ".join(_text(row.get("oportunidad")) for row in insumo_oportunidades)
             + "."
         )
     return lines, differs
@@ -240,8 +440,7 @@ def build_criterio_ejecutivo(
     notes,
     *,
     ecofilia: dict[str, dict] | None = None,
-    insumo_componentes: list[dict] | None = None,
-    insumo_oportunidades: list[dict] | None = None,
+    componentes_ecofilia: list[dict] | None = None,
 ) -> str:
     """El criterio del ejecutivo como texto, para el workflow guiado.
 
@@ -251,8 +450,8 @@ def build_criterio_ejecutivo(
 
     Al lado de cada determinación va la de Ecofilia (``ecofilia``, de la síntesis
     de su IET) con la marca «coincide» o «DIFIERE»: el guiado sólo reescribe las
-    secciones donde difieren. El enverdecimiento se compara con lo que sugirió
-    el insumo.
+    secciones donde difieren. El enverdecimiento se compara con los componentes
+    que sugirió Ecofilia (``componentes_ecofilia``, de ``S.2.`` de su IET).
     """
     assessment = executive_assessment(notes)
     determinaciones = assessment["determinaciones"]
@@ -283,7 +482,7 @@ def build_criterio_ejecutivo(
         lines.append(line)
 
     green_lines, green_differs = _enverdecimiento_lines(
-        assessment["enverdecimiento"], insumo_componentes or [], insumo_oportunidades or []
+        assessment["enverdecimiento"], componentes_ecofilia or []
     )
 
     if not lines and not green_lines:

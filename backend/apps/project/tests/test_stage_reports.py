@@ -32,7 +32,6 @@ from apps.project.services.stage_reports import GUIADO_MAX_PER_STAGE, run_follow
 from apps.project.services.stages import (
     GUIADO_SLUG,
     IET_SLUG,
-    INSUMO_SLUG,
     LECTURA_SLUG,
     on_execution_finished,
 )
@@ -198,18 +197,18 @@ class GuiadoTestCase(_ReportBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         delay.assert_not_called()
 
-    def test_the_greening_alone_is_enough_and_is_compared_with_the_insumo(self):
-        SkillExecution.objects.create(
-            skill=Skill.objects.get(slug=INSUMO_SLUG), owner=self.owner, project=self.project,
-            status=ExecutionStatus.COMPLETED, stage="ido_cci",
-            output_structured={"steps": [
-                {"step_id": 1, "title": "4. Componentes con potencial de financiamiento verde", "content": "",
-                 "table": {"rows": [
-                     {"componente": "Planta potabilizadora", "objetivo": "Adaptación", "monto_usd": 12000000},
-                     {"componente": "Caminos rurales", "objetivo": "Adaptación", "monto_usd": 5000000},
-                 ]}},
-            ]},
+    def test_the_greening_alone_is_enough_and_is_compared_with_s2_of_the_iet(self):
+        # Lo que sugiere Ecofilia sale de la síntesis S.2 de su propia IET.
+        self.iet_run.output_structured["steps"].append(
+            {"step_id": 106, "title": "S.2. Componentes con potencial de financiamiento verde", "content": "",
+             "table": {"rows": [
+                 {"componente": "Planta potabilizadora[[c:1]]", "objetivo": "Adaptación", "monto_usd": 12000000,
+                  "fundamento": "Reduce el riesgo hídrico."},
+                 {"componente": "Caminos rurales", "objetivo": "Adaptación", "monto_usd": 5000000,
+                  "fundamento": "Acceso en lluvias."},
+             ]}},
         )
+        self.iet_run.save(update_fields=["output_structured"])
         self.project.context_notes = {
             **self.project.context_notes,
             "enverdecimiento": {
@@ -231,6 +230,32 @@ class GuiadoTestCase(_ReportBase):
         self.assertIn("Enverdecimiento según el ejecutivo (→ DIFIERE del insumo)", criterio)
         self.assertIn("Descartado por el ejecutivo: Caminos rurales. Por qué: No tienen diseño resiliente.", criterio)
         self.assertIn("Lo que sugería el insumo de Ecofilia: Planta potabilizadora (Adaptación, USD 12,000,000)", criterio)
+        self.assertNotIn("[[c:1]]", criterio)
+
+    def test_ecofilia_objetivo_1_follows_the_rules_in_the_criterio(self):
+        """La prosa de S.1 dijo «Alineada», pero sus CT dicen otra cosa: al
+        guiado le llega lo que sale de las reglas."""
+        self.iet_run.output_structured["steps"][-1]["table"]["rows"] = [
+            {"criterio": "CT A1 — Análisis de riesgos climáticos", "determinacion": "Riesgo medio", "fundamento": "x"},
+            {"criterio": "CT A2 — Análisis de medidas", "determinacion": "No suficientes", "fundamento": "x"},
+            {"criterio": "CT A3 — Consistencia con los instrumentos nacionales de adaptación",
+             "determinacion": "Consistencia", "fundamento": "x"},
+            {"criterio": "Objetivo 1 — Desarrollo resiliente al clima", "determinacion": "Alineada", "fundamento": "x"},
+        ]
+        self.iet_run.save(update_fields=["output_structured"])
+        self.project.context_notes = {
+            **self.project.context_notes,
+            "alineacion_paris": {"ct_a1": "Riesgo medio", "ct_a2": "No suficientes", "ct_a3": "Consistencia"},
+        }
+        self.project.save(update_fields=["context_notes"])
+
+        response, _ = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        criterio = self._active().guided_execution.input_values["criterio_ejecutivo"]
+        self.assertIn("Objetivo 1 — Desarrollo resiliente al clima: Con brechas por CT A2.", criterio)
+        self.assertIn("Ecofilia concluyó: Con brechas por CT A2", criterio)
+        self.assertIn("→ coincide.", criterio)
+        self.assertNotIn("Ecofilia concluyó: Alineada", criterio)
 
     def test_without_determinations_there_is_nothing_to_guide(self):
         response, delay = self._post(self.editor, "stage-report/guiado/")
@@ -394,6 +419,22 @@ class EmitTestCase(_ReportBase):
         self.assertEqual(report.emitted_markdown, "# IET\n\nContenido")
         self.assertEqual(report.emitted_by, self.editor)
         self.assertEqual(report.emitted_assessment["determinaciones"]["ct_a1"], "Riesgo medio")
+
+    def test_emitting_records_the_objetivo_1_that_follows_from_the_cts(self):
+        self.project.context_notes = {
+            **self.project.context_notes,
+            "alineacion_paris": {
+                "ct_a1": "Riesgo bajo", "ct_a2": "No suficientes", "ct_a3": "Consistencia",
+                "objetivo_1": "Con brechas por CT A2",
+            },
+        }
+        self.project.save(update_fields=["context_notes"])
+        response, _ = self._post(self.editor, "stage-report/emitir/", {"markdown": "# IET"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        assessment = self._active().emitted_assessment
+        self.assertEqual(assessment["determinaciones"]["objetivo_1"], "Alineada")
+        self.assertEqual(assessment["determinaciones"]["ct_a2"], "No aplica")
+        self.assertTrue(assessment["objetivo_1_motivo"])
 
         response, _ = self._post(self.editor, "stage-report/emitir/", {"markdown": "otro"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
