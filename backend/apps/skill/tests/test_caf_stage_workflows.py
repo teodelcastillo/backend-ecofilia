@@ -101,6 +101,32 @@ class SeededWorkflowsTestCase(TestCase):
         # Los análisis por criterio siguen leyendo documentos.
         self.assertEqual(iet.steps.get(title__startswith="D.2. CT A1").evidence_mode, "both")
 
+    def test_each_synthesis_step_sees_in_full_the_sections_it_integrates(self):
+        """Con historia automática verían completas sólo las dos secciones
+        anteriores y el resto resumido: sin documentos, eso es perder análisis."""
+        iet = Skill.objects.get(slug=IET_SLUG)
+        steps = list(iet.steps.order_by("position"))
+
+        def positions(predicate):
+            return [s.position for s in steps if predicate(s.title)]
+
+        def step(predicate):
+            return next(s for s in steps if predicate(s.title))
+
+        det_1 = step(lambda t: t.startswith("D.2. Determinación"))
+        det_2 = step(lambda t: t.startswith("D.3. Determinación"))
+        e1 = step(lambda t: t.startswith("E.1."))
+        e3 = step(lambda t: t.startswith("E.3."))
+        for synthesis in (det_1, det_2, e1, e3):
+            self.assertEqual(synthesis.history_mode, "selected", synthesis.title)
+        self.assertEqual(det_1.history_positions, positions(lambda t: t.startswith("D.2. CT")))
+        self.assertEqual(det_2.history_positions, positions(lambda t: t.startswith("D.3. CT")))
+        self.assertEqual(e1.history_positions, positions(lambda t: t.startswith("D.")))
+        self.assertEqual(
+            e3.history_positions,
+            positions(lambda t: t.startswith(("B.5.", "C.1.", "E.1.")) or "Determinación" in t),
+        )
+
     def test_the_guided_report_rewrites_only_greening_and_alignment(self):
         guided = Skill.objects.get(slug=GUIADO_SLUG)
         iet_titles = [t for t in self._titles(IET_SLUG) if t.startswith(("C.", "D.", "E."))]
