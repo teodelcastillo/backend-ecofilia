@@ -108,10 +108,11 @@ class SeededWorkflowsTestCase(TestCase):
         self.assertEqual((s2.evidence_selection, s2.output_validation), ("blueprint_only", "strict"))
         self.assertEqual(
             [c["key"] for c in s2.table_schema["columns"]],
-            ["componente", "objetivo", "categoria", "monto_usd", "fundamento"],
+            ["componente", "actividad_elegible", "objetivo", "categoria", "monto_usd", "fundamento"],
         )
+        self.assertIn("actividad_elegible", s2.instructions)
         self.assertEqual(
-            s2.table_schema["columns"][1]["allowed_values"],
+            s2.table_schema["columns"][2]["allowed_values"],
             ["Adaptación", "Mitigación", "Biodiversidad y otros objetivos ambientales"],
         )
 
