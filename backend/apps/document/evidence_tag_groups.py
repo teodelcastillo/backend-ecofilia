@@ -24,6 +24,7 @@ _GROUPS: dict[str, tuple[str, ...]] = {
         "analisis-riesgos",
         "matriz-resultados",
         "disenos-proyecto",
+        "ibat",
         "documento-operacion",
     ),
     GROUP_CONTEXTO: (

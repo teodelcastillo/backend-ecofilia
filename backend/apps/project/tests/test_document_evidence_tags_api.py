@@ -128,7 +128,7 @@ class DocumentEvidenceTagsApiTestCase(APITestCase):
         groups = {r["slug"]: r["group"] for r in rows}
         self.assertEqual(groups["ido"], "principal")
         self.assertEqual(groups["dec"], "principal")
-        for slug in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto", "documento-operacion"):
+        for slug in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto", "ibat", "documento-operacion"):
             self.assertEqual(groups[slug], "operacion", slug)
         for slug in ("ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap", "pancd", "inventario-gei"):
             self.assertEqual(groups[slug], "contexto", slug)

@@ -123,7 +123,7 @@ class SeededWorkflowsTestCase(TestCase):
         for slug in (IET_SLUG, GUIADO_SLUG):
             skill = Skill.objects.get(slug=slug)
             c1 = skill.steps.get(title__startswith="C.1.")
-            for tag in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto"):
+            for tag in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto", "ibat"):
                 self.assertIn(tag, c1.evidence_tags, slug)
             a1 = skill.steps.get(title__startswith="D.2. CT A1")
             self.assertIn("salvaguardas-cesas", a1.evidence_tags)
