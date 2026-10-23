@@ -73,6 +73,9 @@ _SKIP_KEYS = {
     # elementos clave del insumo.
     "enverdecimiento",
     "elementos_clave_leidos",
+    # Por qué el ejecutivo difiere de Ecofilia en un criterio: es para que el
+    # staff mejore el análisis, no para el informe.
+    "motivos_diferencia",
 }
 
 _MAX_SUMMARY_CHARS = 4000
