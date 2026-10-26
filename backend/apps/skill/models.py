@@ -721,6 +721,10 @@ class SkillExecution(models.Model):
     # Optional user-provided instructions that override / extend the skill
     extra_instructions = models.TextField(blank=True)
 
+    # Instrucciones adicionales por paso, de un superadmin: {"<step_id>": "texto"}.
+    # Se agregan al final del prompt de ese paso; el prompt del workflow no cambia.
+    step_instructions = models.JSONField(default=dict, blank=True)
+
     # Typed parameter values supplied at run time, keyed by SkillParameter.key.
     input_values = models.JSONField(
         default=dict,

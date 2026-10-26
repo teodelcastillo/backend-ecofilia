@@ -2066,6 +2066,10 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             system_prompt = step_system_prompt
             if is_table_step:
                 prompt = f"{prompt}\n\n{table_output_instructions(step_table_schema)}"
+            # Lo que un superadmin pidió para este paso en esta corrida.
+            adicional = str((execution.step_instructions or {}).get(str(step.id)) or "").strip()
+            if adicional:
+                prompt = f"{prompt}\n\n## Instrucciones adicionales para este paso\n{adicional}"
 
             tier_used = resolve_tier(skill, step)
             model_for_step = _resolve_model(skill, tier_used)

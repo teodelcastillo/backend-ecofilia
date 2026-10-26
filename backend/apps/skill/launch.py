@@ -165,6 +165,7 @@ def launch_institutional(
     stage: str | None = None,
     input_values: dict | None = None,
     launched_by: str,
+    step_instructions: dict | None = None,
 ) -> LaunchOutcome:
     """
     Lanza ``skill`` como parte del flujo de la operación.
@@ -219,6 +220,12 @@ def launch_institutional(
         stage=stage,
         extra_metadata={"launched_by": launched_by},
     )
+    instrucciones = {
+        str(k): str(v).strip() for k, v in (step_instructions or {}).items() if str(v or "").strip()
+    }
+    if instrucciones:
+        execution.step_instructions = instrucciones
+        execution.save(update_fields=["step_instructions"])
     outcome = LaunchOutcome(status="launched", execution=execution)
 
     def _dispatch() -> None:

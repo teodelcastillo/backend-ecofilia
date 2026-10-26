@@ -759,7 +759,7 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "id", "skill", "skill_name", "skill_slug", "skill_type", "skill_members_can_run",
             "can_continue", "status", "context_label",
             "repository_slug", "project_slug", "document_slug",
-            "extra_instructions", "input_values", "output_mode",
+            "extra_instructions", "step_instructions", "input_values", "output_mode",
             "output", "output_structured",
             "edited_output", "edited_at", "edited_by_email", "versions_count",
             "published_sections_count", "unpublished_sections_count",
@@ -770,6 +770,26 @@ class SkillExecutionSerializer(serializers.ModelSerializer):
             "stage",
         )
         read_only_fields = fields
+
+    # El detalle técnico de un error (trazas, el worker que murió) es para un
+    # superadmin. El resto ve un mensaje que dice qué pasa sin exponer más.
+    MENSAJE_FALLO = "No se pudo completar el análisis. Un administrador puede revisarlo y relanzarlo."
+    MENSAJE_INTERRUMPIDO = "El análisis se interrumpió. Un administrador puede retomarlo."
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        request = self.context.get("request")
+        if request is None:
+            return data
+        from apps.user.access import is_ecofilia_admin
+
+        if not is_ecofilia_admin(request.user):
+            if data.get("error_message"):
+                data["error_message"] = (
+                    self.MENSAJE_INTERRUMPIDO if obj.status == ExecutionStatus.STALLED else self.MENSAJE_FALLO
+                )
+            data["step_instructions"] = {}
+        return data
 
     def get_versions_count(self, obj) -> int:
         return obj.versions.count() if obj.pk else 0

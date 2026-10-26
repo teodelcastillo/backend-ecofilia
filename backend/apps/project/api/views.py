@@ -79,6 +79,27 @@ def _skill_execution_count_subquery():
     )
 
 
+
+
+def _instrucciones_de_superadmin(request) -> dict[str, dict] | None:
+    """Las instrucciones adicionales por paso, ``{slug: {step_id: texto}}``.
+
+    Sólo un superadmin las puede mandar; de cualquier otro usuario se ignoran.
+    """
+    from apps.user.access import is_ecofilia_admin
+
+    raw = request.data.get("step_instructions") if hasattr(request, "data") else None
+    if not raw or not isinstance(raw, dict) or not is_ecofilia_admin(request.user):
+        return None
+    out: dict[str, dict] = {}
+    for slug, pasos in raw.items():
+        if not isinstance(pasos, dict):
+            continue
+        limpio = {str(k): str(v).strip()[:4000] for k, v in pasos.items() if str(v or "").strip()}
+        if limpio:
+            out[str(slug)] = limpio
+    return out or None
+
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.none()
     permission_classes = [IsAuthenticated, ProjectAccessPermission]
@@ -929,7 +950,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         project = self.get_object()
         try:
-            record = transition(project, str(request.data.get("to") or "").strip(), request.user)
+            record = transition(
+                project,
+                str(request.data.get("to") or "").strip(),
+                request.user,
+                step_instructions=_instrucciones_de_superadmin(request),
+            )
         except StagePermissionError as exc:
             raise PermissionDenied(str(exc))
         except StageError as exc:
@@ -958,7 +984,9 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         project = self.get_object()
         stage = current_stage(project)
-        launches = launch_stage_workflows(project, stage, request.user)
+        launches = launch_stage_workflows(
+            project, stage, request.user, step_instructions=_instrucciones_de_superadmin(request)
+        )
         record_launches(project, stage, launches)
         return Response(
             {"project": self._serialize_project(project), "launches": launches},

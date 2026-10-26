@@ -116,8 +116,14 @@ def launch_stage_workflows(
     user,
     *,
     slugs: list[str] | None = None,
+    step_instructions: dict[str, dict] | None = None,
 ) -> list[dict]:
     """Lanza los workflows de ``stage`` que todavía no corrieron.
+
+    ``step_instructions`` son las instrucciones adicionales por paso de un
+    superadmin, por workflow: ``{slug: {step_id: texto}}``. Si el lanzamiento
+    queda bloqueado (por ejemplo, documentos todavía en proceso), viajan con el
+    registro del lanzamiento y se usan cuando se reintenta.
 
     Una vez por etapa: si ya hay una corrida que no falló, no se repite. Si la
     que hubo falló, tampoco: retomarla (o repetirla) es de un superadmin, que
@@ -158,14 +164,25 @@ def launch_stage_workflows(
             )
             continue
 
+        instrucciones = (step_instructions or {}).get(slug) or None
         outcome = launch_institutional(
-            skill, owner=user, project=project, stage=stage, launched_by="stage"
+            skill,
+            owner=user,
+            project=project,
+            stage=stage,
+            launched_by="stage",
+            step_instructions=instrucciones,
         )
-        results.append(outcome.as_dict(slug))
+        entry = outcome.as_dict(slug)
+        if instrucciones and outcome.status == "blocked":
+            entry["step_instructions"] = instrucciones
+        results.append(entry)
     return results
 
 
-def transition(project: Project, to_stage: str, user) -> ProjectStageTransition:
+def transition(
+    project: Project, to_stage: str, user, *, step_instructions: dict[str, dict] | None = None
+) -> ProjectStageTransition:
     """Mueve la operación a ``to_stage`` y lanza lo que esa etapa pide."""
     if to_stage not in STAGE_ORDER:
         raise StageError(f"Etapa desconocida: {to_stage!r}.")
@@ -199,7 +216,9 @@ def transition(project: Project, to_stage: str, user) -> ProjectStageTransition:
     project.refresh_from_db()
     # Fuera de la transacción: las corridas se encolan apenas existen.
     if stage_index(to_stage) > stage_index(from_stage):
-        record.launches = launch_stage_workflows(project, to_stage, user)
+        record.launches = launch_stage_workflows(
+            project, to_stage, user, step_instructions=step_instructions
+        )
         record.save(update_fields=["launches"])
     return record
 
@@ -219,11 +238,17 @@ def retry_pending_stage_launches(project: Project) -> list[dict] | None:
     )
     if record is None:
         return None
-    blocked = [
-        entry.get("skill_slug")
+    blocked_entries = [
+        entry
         for entry in (record.launches or [])
         if isinstance(entry, dict) and entry.get("status") == "blocked"
     ]
+    blocked = [entry.get("skill_slug") for entry in blocked_entries]
+    instrucciones = {
+        entry.get("skill_slug"): entry["step_instructions"]
+        for entry in blocked_entries
+        if isinstance(entry.get("step_instructions"), dict)
+    }
     if not blocked:
         return None
 
@@ -234,7 +259,9 @@ def retry_pending_stage_launches(project: Project) -> list[dict] | None:
         locked = ProjectStageTransition.objects.select_for_update().get(pk=record.pk)
         retried = {
             entry["skill_slug"]: entry
-            for entry in launch_stage_workflows(project, stage, owner, slugs=blocked)
+            for entry in launch_stage_workflows(
+                project, stage, owner, slugs=blocked, step_instructions=instrucciones or None
+            )
         }
         locked.launches = [
             retried.get(entry.get("skill_slug"), entry) if isinstance(entry, dict) else entry
@@ -249,8 +276,9 @@ def record_launches(project: Project, stage: str, launches: list[dict]) -> None:
 
     Así un "Generar ahora" deja de figurar como bloqueado y el reintento
     automático no vuelve sobre lo que ya arrancó. Una operación creada
-    directamente en la etapa no tiene transición: no hay dónde anotarlo, y no
-    hace falta, porque nada se reintenta solo en ese caso.
+    directamente en la etapa no tiene transición: si algo quedó bloqueado (por
+    ejemplo, documentos que todavía se procesan) se crea el registro de su
+    entrada a la etapa, para que se reintente solo cuando terminen.
     """
     record = (
         ProjectStageTransition.objects.filter(project=project, to_stage=stage)
@@ -258,6 +286,14 @@ def record_launches(project: Project, stage: str, launches: list[dict]) -> None:
         .first()
     )
     if record is None:
+        if any(isinstance(e, dict) and e.get("status") == "blocked" for e in launches):
+            ProjectStageTransition.objects.create(
+                project=project,
+                from_stage="",
+                to_stage=stage,
+                created_by=project.owner,
+                launches=launches,
+            )
         return
     by_slug = {entry["skill_slug"]: entry for entry in launches if isinstance(entry, dict)}
     merged = []

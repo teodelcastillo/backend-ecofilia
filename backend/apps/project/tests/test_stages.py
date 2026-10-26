@@ -259,6 +259,54 @@ class StageLaunchEndpointTestCase(_StageBase):
         response, _ = self._post(self.editor, "stage/launch/")
         self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "failed_before"})
 
+    def test_an_operation_created_in_ido_waits_for_processing_and_launches_alone(self):
+        """Creada directamente en IDO, con documentos en proceso: el análisis
+        queda bloqueado y arranca solo cuando terminan."""
+        self._set_stage("ido_cci")
+        annex = Document.objects.create(
+            owner=self.owner, name="Anexo", slug="anexo-ido", chunking_status="processing"
+        )
+        ProjectDocument.objects.create(project=self.project, document=annex)
+        response, _ = self._post(self.editor, "stage/launch/")
+        self.assertEqual(self._statuses(response.data["launches"]), {IET_SLUG: "blocked"})
+
+        Document.objects.filter(pk=annex.pk).update(chunking_status="done")
+        with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
+            run_followups_for_document(annex.id)
+        self.assertEqual(delay.call_count, 1)
+
+    def test_only_a_superadmin_adds_step_instructions(self):
+        self._set_stage("ido_cci")
+        step = self.iet.steps.order_by("position").first()
+        payload = {"step_instructions": {IET_SLUG: {str(step.id): "Prestá atención al riesgo hídrico."}}}
+        self._post(self.editor, "stage/launch/", payload)
+        run = SkillExecution.objects.get(project=self.project)
+        self.assertEqual(run.step_instructions, {})
+
+        run.delete()
+        admin = User.objects.create_user(email="root@example.com", password="x", is_superuser=True)
+        self.project.shares.create(user=admin, role=ProjectShareRole.EDITOR)
+        self._post(admin, "stage/launch/", payload)
+        run = SkillExecution.objects.get(project=self.project)
+        self.assertEqual(run.step_instructions, {str(step.id): "Prestá atención al riesgo hídrico."})
+
+    def test_step_instructions_survive_a_blocked_launch(self):
+        annex = Document.objects.create(
+            owner=self.owner, name="Anexo", slug="anexo-instr", chunking_status="processing"
+        )
+        ProjectDocument.objects.create(project=self.project, document=annex)
+        admin = User.objects.create_user(email="root2@example.com", password="x", is_superuser=True)
+        self.project.shares.create(user=admin, role=ProjectShareRole.EDITOR)
+        step = self.iet.steps.order_by("position").first()
+        self._post(
+            admin, "stage/", {"to": "ido_cci", "step_instructions": {IET_SLUG: {str(step.id): "Detalle"}}}
+        )
+        Document.objects.filter(pk=annex.pk).update(chunking_status="done")
+        with patch(DELAY), self.captureOnCommitCallbacks(execute=True):
+            run_followups_for_document(annex.id)
+        run = SkillExecution.objects.get(project=self.project)
+        self.assertEqual(run.step_instructions, {str(step.id): "Detalle"})
+
     def test_a_stage_without_workflows_launches_nothing(self):
         self._set_stage("dec")
         response, delay = self._post(self.editor, "stage/launch/")
