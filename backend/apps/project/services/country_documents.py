@@ -1,5 +1,6 @@
 """
-Instrumentos país (NDC, NAP, LTS, AC, NBSAP): asignación automática por país.
+Instrumentos país (NDC, NAP, LTS, AC, NBSAP, ley de cambio climático y reporte
+nacional): asignación automática por país.
 
 Son documentos que un país presenta ante la CMNUCC y versiona en el tiempo —
 hay una NDC de 2016 y otra de 2021 para el mismo país. Para una operación de
@@ -23,8 +24,18 @@ from apps.project.services.evidence_tags import effective_tags, override_tags
 # sembrado en apps/document/migrations/0016_seed_evidence_tags.py; pancd es el
 # otro candidato razonable). La NBSAP (Estrategia Nacional de Biodiversidad)
 # entró el 2026-09-29: los pasos de biodiversidad del IET la leen, y el país
-# la versiona igual que la NDC.
-COUNTRY_INSTRUMENT_TAG_SLUGS = ["ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap"]
+# la versiona igual que la NDC. La ley de cambio climático y el reporte
+# nacional (BTR, BUR o Comunicación Nacional: una sola etiqueta, así que se
+# vincula sólo el más reciente de los tres) entraron el 2026-10-26.
+COUNTRY_INSTRUMENT_TAG_SLUGS = [
+    "ndc",
+    "nap",
+    "lts",
+    "comunicacion-adaptacion",
+    "nbsap",
+    "ley-cambio-climatico",
+    "reporte-nacional",
+]
 
 
 def country_instrument_documents(

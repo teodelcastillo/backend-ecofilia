@@ -130,7 +130,7 @@ class DocumentEvidenceTagsApiTestCase(APITestCase):
         self.assertEqual(groups["dec"], "principal")
         for slug in ("ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto", "ibat", "documento-operacion"):
             self.assertEqual(groups[slug], "operacion", slug)
-        for slug in ("ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap", "pancd", "inventario-gei"):
+        for slug in ("ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap", "pancd", "inventario-gei", "ley-cambio-climatico", "reporte-nacional"):
             self.assertEqual(groups[slug], "contexto", slug)
         self.assertEqual(groups["metodologia-caf"], "otro")
         self.assertEqual(groups["propia"], "otro")

@@ -35,6 +35,8 @@ _GROUPS: dict[str, tuple[str, ...]] = {
         "nbsap",
         "pancd",
         "inventario-gei",
+        "ley-cambio-climatico",
+        "reporte-nacional",
     ),
 }
 
