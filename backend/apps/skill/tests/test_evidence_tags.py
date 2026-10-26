@@ -298,9 +298,8 @@ class DefaultTagsTestCase(TestCase):
             slug="inventario-gei",
             defaults={"name": "Inventario GEI", "source_topics": ["comunicacion nacional"]},
         )
-        self.assertEqual(
-            self._proposed(["Tercera Comunicación Nacional de Chile"]), ["inventario-gei"]
-        )
+        # «reporte-nacional» (BTR / BUR / Comunicación Nacional) también la propone.
+        self.assertIn("inventario-gei", self._proposed(["Tercera Comunicación Nacional de Chile"]))
 
     def test_short_fragment_does_not_false_positive(self):
         """
