@@ -67,6 +67,15 @@ def is_ecofilia_admin(user) -> bool:
     )
 
 
+def home_path(user) -> str:
+    """A dónde va ``user`` al entrar: la consola, su portal o el portal público."""
+    if is_ecofilia_admin(user):
+        return "/admin"
+    if belongs_to_organization(user):
+        return f"/{user.organization.slug}"
+    return "/app"
+
+
 def is_ecofilia_superuser(user) -> bool:
     """Superusuario de la plataforma, sin organización."""
     return bool(

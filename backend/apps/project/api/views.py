@@ -64,8 +64,27 @@ from apps.project.models import (
 )
 
 
+def _report_workflow_slugs() -> list[str]:
+    """Los workflows que son «el informe» de alguna institución (o de la base).
+
+    Cada uno es de su institución (fase 0), así que mirar todos sobre la
+    operación equivale a mirar el de la suya.
+    """
+    from apps.user import institution_config
+    from apps.user.models import Organization
+
+    slugs = {institution_config.workflow(institution_config.effective_config(None), "report")}
+    for org in Organization.objects.exclude(config={}).only("pk", "name", "config"):
+        slugs.add(institution_config.workflow(institution_config.effective_config(org), "report"))
+    return sorted(s for s in slugs if s)
+
+
 def _analysis_running_subquery():
-    """Si la IET de la operación está en cola o corriendo."""
+    """Si el informe de Ecofilia de la operación está en cola o corriendo.
+
+    El informe es el workflow ``report`` de la configuración de la
+    institución (en CAF, la IET).
+    """
     from django.db.models import Exists
 
     from apps.skill.models import ExecutionStatus, SkillExecution
@@ -73,7 +92,7 @@ def _analysis_running_subquery():
     return Exists(
         SkillExecution.objects.filter(
             project=OuterRef("pk"),
-            skill__slug="caf-iet-datbc-evaluacion-tecnica",
+            skill__slug__in=_report_workflow_slugs(),
             status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
         )
     )
@@ -1290,10 +1309,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 {"detail": "Faltan el nombre, el país o el documento."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        org_slug = str(request.data.get("organization") or "").strip()
+        if not org_slug:
+            return Response(
+                {"detail": "Falta 'organization': el slug de la institución del informe."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         document = get_object_or_404(Document, slug=document_slug)
-        organization = get_object_or_404(
-            Organization, slug=str(request.data.get("organization") or "caf")
-        )
+        organization = get_object_or_404(Organization, slug=org_slug)
         notes = {"pais": pais}
         for key in ("fecha_informe", "monto", "tipo_operacion"):
             value = str(request.data.get(key) or "").strip()
