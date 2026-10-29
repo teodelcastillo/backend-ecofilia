@@ -224,6 +224,7 @@ class SeededWorkflowsTestCase(TestCase):
         _migration("0036_seed_caf_lectura_informe_workflow").create_lectura_workflow(django_apps, None)
         _migration("0040_iet_sin_insumo_y_componentes_verdes").aplicar(django_apps, None)
         _migration("0042_iet_lee_etiquetas_de_operacion").aplicar(django_apps, None)
+        _migration("0046_iet_otros_y_ocho_criterios").aplicar(django_apps, None)
         for slug, count in counts.items():
             self.assertEqual(Skill.objects.filter(slug=slug).count(), 1)
             self.assertEqual(Skill.objects.get(slug=slug).steps.count(), count, slug)

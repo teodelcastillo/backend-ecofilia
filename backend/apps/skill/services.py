@@ -2639,6 +2639,43 @@ def approve_step(execution: SkillExecution, *, override_content: str | None = No
     return execution
 
 
+def rerun_from_step(execution: SkillExecution, step_title: str) -> SkillExecution:
+    """
+    Volver a correr una corrida terminada desde el paso ``step_title``.
+
+    Conserva lo que ya estaba escrito antes de ese paso y rehace ese paso y los
+    siguientes, en la misma ejecución. Es para los pasos que sólo leen lo ya
+    redactado (la síntesis por criterio de la IET): rehacerlos cuesta poco y
+    no cambia el informe.
+
+    Retomar es por posición, así que los pasos anteriores tienen que ser los de
+    la definición de hoy: si alguien agregó o sacó uno, lo escrito ya no
+    corresponde y hay que volver a analizar entera.
+    """
+    if execution.status != ExecutionStatus.COMPLETED:
+        raise ValueError("Sólo se puede completar una corrida terminada.")
+    steps = list(execution.skill.steps.all())
+    index = next((i for i, s in enumerate(steps) if (s.title or "").strip() == step_title), None)
+    if index is None:
+        raise ValueError(f"El asistente no tiene el paso «{step_title}».")
+    done = list((execution.output_structured or {}).get("steps", []))
+    if len(done) < index or any(
+        (done[i].get("title") or "").strip() != (steps[i].title or "").strip() for i in range(index)
+    ):
+        raise ValueError("El análisis es de una versión anterior del asistente: hay que volver a analizar.")
+
+    execution.output_structured = {"steps": done[:index]}
+    execution.steps_completed = index
+    execution.status = ExecutionStatus.PENDING
+    execution.current_step_position = None
+    execution.error_message = ""
+    execution.save(update_fields=[
+        "status", "output_structured", "steps_completed",
+        "current_step_position", "error_message",
+    ])
+    return execution
+
+
 def regenerate_step(execution: SkillExecution) -> SkillExecution:
     """
     Discard the last completed step and re-run it.

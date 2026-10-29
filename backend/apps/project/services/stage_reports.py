@@ -71,7 +71,9 @@ class StageReportPermissionError(PermissionError):
 
 def active_report(project: Project, stage: str) -> ProjectStageReport | None:
     return (
-        ProjectStageReport.objects.filter(project=project, stage=stage, voided_at__isnull=True)
+        ProjectStageReport.objects.filter(
+            project=project, stage=stage, voided_at__isnull=True, superseded_at__isnull=True
+        )
         .select_related(
             "execution", "guided_execution", "document", "reader_execution", "emitted_by"
         )
@@ -278,7 +280,9 @@ def apply_guided_result(run) -> dict | None:
     from apps.skill.models import ExecutionSectionEdit
 
     report = (
-        ProjectStageReport.objects.filter(guided_execution=run, voided_at__isnull=True)
+        ProjectStageReport.objects.filter(
+            guided_execution=run, voided_at__isnull=True, superseded_at__isnull=True
+        )
         .select_related("execution")
         .first()
     )
@@ -432,7 +436,7 @@ def emit(project: Project, user, markdown: str = "") -> ProjectStageReport:
     with transaction.atomic():
         report = (
             ProjectStageReport.objects.select_for_update()
-            .filter(project=project, stage=stage, voided_at__isnull=True)
+            .filter(project=project, stage=stage, voided_at__isnull=True, superseded_at__isnull=True)
             .first()
         )
         if report is None:
@@ -473,6 +477,40 @@ def void(report: ProjectStageReport, user, reason: str = "") -> ProjectStageRepo
     return report
 
 
+def new_version(project: Project, user) -> ProjectStageReport:
+    """
+    Una versión nueva del informe emitido de la etapa actual.
+
+    El emitido no se anula: queda como versión anterior, con su snapshot, en la
+    carpeta institucional. La nueva arranca como borrador desde el mismo informe
+    (la misma corrida con sus ediciones, o el mismo documento subido) y se emite
+    de nuevo cuando está lista. El tablero toma la última emitida.
+    """
+    stage = _require_stage(project)
+    with transaction.atomic():
+        report = (
+            ProjectStageReport.objects.select_for_update()
+            .filter(project=project, stage=stage, voided_at__isnull=True, superseded_at__isnull=True)
+            .first()
+        )
+        if report is None or not report.is_emitted:
+            raise StageReportError("Sólo un informe emitido admite una versión nueva.")
+        report.superseded_at = timezone.now()
+        report.save(update_fields=["superseded_at", "updated_at"])
+        return ProjectStageReport.objects.create(
+            project=project,
+            stage=stage,
+            origin=report.origin,
+            execution=report.execution,
+            document=report.document,
+            guided_execution=report.guided_execution,
+            guided_result=report.guided_result,
+            reader_execution=report.reader_execution,
+            previous=report,
+            created_by=user,
+        )
+
+
 def is_emitted_document(document) -> bool:
     """Si ``document`` es el informe oficial emitido de alguna operación."""
     return ProjectStageReport.objects.filter(
@@ -495,6 +533,7 @@ def run_followups_for_document(document_id: int) -> None:
         for report in ProjectStageReport.objects.filter(
             document_id=document_id,
             voided_at__isnull=True,
+            superseded_at__isnull=True,
             reader_execution__isnull=True,
         ).select_related("document", "project"):
             maybe_launch_reading(report)

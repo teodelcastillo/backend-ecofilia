@@ -326,9 +326,11 @@ class ProjectStageReport(models.Model):
     **emite**. Emitido, queda inmutable —el snapshot no cambia aunque la corrida
     se siga editando— y visible para toda la institución en modo lectura.
 
-    Hay a lo sumo uno vigente (no anulado) por etapa. Hasta emitirlo el
-    ejecutivo puede cambiar de vía; emitido, sólo el staff lo anula, y anularlo
-    conserva el registro.
+    Hay a lo sumo uno vigente (ni anulado ni reemplazado) por etapa. Hasta
+    emitirlo el ejecutivo puede cambiar de vía; emitido, sólo el staff lo anula,
+    y anularlo conserva el registro. El ejecutivo puede pedir una versión nueva
+    de uno emitido: el emitido queda como versión anterior (``superseded_at``),
+    con su snapshot, y la nueva arranca como borrador desde el mismo informe.
     """
 
     project = models.ForeignKey(
@@ -415,13 +417,23 @@ class ProjectStageReport(models.Model):
     )
     void_reason = models.CharField(max_length=500, blank=True)
 
+    # Una versión nueva lo reemplazó: sigue emitido, como versión anterior.
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    previous = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
+
     class Meta:
         ordering = ("created_at", "id")
         constraints = [
             models.UniqueConstraint(
                 fields=["project", "stage"],
-                condition=Q(voided_at__isnull=True),
-                name="project_stage_report_one_active",
+                condition=Q(voided_at__isnull=True, superseded_at__isnull=True),
+                name="project_stage_report_one_current",
             )
         ]
 

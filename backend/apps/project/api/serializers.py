@@ -138,6 +138,9 @@ class ProjectSerializer(serializers.ModelSerializer):
         source="project_documents", many=True, read_only=True
     )
     skill_executions_count = serializers.IntegerField(read_only=True, default=0)
+    # El análisis del Asistente IA (la IET) está corriendo o en cola: el listado
+    # lo muestra en la tarjeta para que nadie tenga que entrar a ver.
+    analysis_running = serializers.BooleanField(read_only=True, default=False)
     enabled_skill_slugs = serializers.SlugRelatedField(
         source="enabled_skills",
         many=True,
@@ -176,6 +179,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "owner_email",
             "documents",
             "skill_executions_count",
+            "analysis_running",
             "enabled_skill_slugs",
             "blueprint_document_slug",
             "context_notes",
@@ -196,6 +200,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "owner_email",
             "documents",
             "skill_executions_count",
+            "analysis_running",
             "enabled_skill_slugs",
             "blueprint_document_slug",
             "structure_template_slug",
@@ -244,6 +249,7 @@ class ProjectStageReportSerializer(serializers.ModelSerializer):
     emitted_by_email = serializers.EmailField(source="emitted_by.email", read_only=True, default=None)
     voided_by_email = serializers.EmailField(source="voided_by.email", read_only=True, default=None)
     is_emitted = serializers.BooleanField(read_only=True)
+    previous_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta:
         model = ProjectStageReport
@@ -272,6 +278,8 @@ class ProjectStageReportSerializer(serializers.ModelSerializer):
             "voided_at",
             "voided_by_email",
             "void_reason",
+            "superseded_at",
+            "previous_id",
         )
         read_only_fields = fields
 

@@ -54,7 +54,13 @@ from apps.skill.report_edits import (
     step_ids_of,
 )
 from apps.skill.context_preview import build_preview
-from apps.skill.services import approve_step, regenerate_step, rerun_execution, resume_execution
+from apps.skill.services import (
+    approve_step,
+    regenerate_step,
+    rerun_execution,
+    rerun_from_step,
+    resume_execution,
+)
 from apps.skill.dispatch import dispatch_execution
 from apps.skill.launch import create_execution, resolve_effective_output
 from apps.skill.tasks import run_skill_task
@@ -484,6 +490,27 @@ class SkillExecutionViewSet(
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
+        return _accepted_or_unavailable(execution)
+
+    @action(detail=True, methods=["post"], url_path="rerun-from-step")
+    def rerun_from_step_action(self, request, pk=None):
+        """
+        Rehacer una corrida terminada desde un paso, en la misma ejecución.
+
+        POST /api/skills/executions/{id}/rerun-from-step/
+        Body: { "step_title": "S.1. Síntesis por criterio" }
+        """
+        execution = self.get_object()
+        _ensure_can_run(request.user, execution.skill)
+        if not user_can_mutate_execution(request.user, execution):
+            raise PermissionDenied("No tienes permisos para modificar esta ejecución.")
+        step_title = str(request.data.get("step_title") or "").strip()
+        if not step_title:
+            return Response({"detail": "Falta el paso."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            execution = rerun_from_step(execution, step_title)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
         return _accepted_or_unavailable(execution)
 
     # ------------------------------------------------------------------

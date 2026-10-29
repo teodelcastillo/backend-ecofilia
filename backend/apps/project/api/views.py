@@ -64,6 +64,21 @@ from apps.project.models import (
 )
 
 
+def _analysis_running_subquery():
+    """Si la IET de la operación está en cola o corriendo."""
+    from django.db.models import Exists
+
+    from apps.skill.models import ExecutionStatus, SkillExecution
+
+    return Exists(
+        SkillExecution.objects.filter(
+            project=OuterRef("pk"),
+            skill__slug="caf-iet-datbc-evaluacion-tecnica",
+            status__in=[ExecutionStatus.PENDING, ExecutionStatus.RUNNING],
+        )
+    )
+
+
 def _skill_execution_count_subquery():
     """
     Returns a Subquery that counts SkillExecutions for a given project.
@@ -132,7 +147,8 @@ class ProjectViewSet(viewsets.ModelViewSet):
             .annotate(
                 skill_executions_count=Subquery(
                     _skill_execution_count_subquery()
-                )
+                ),
+                analysis_running=_analysis_running_subquery(),
             )
             .distinct()
         )
@@ -1137,6 +1153,25 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(
         detail=True,
         methods=["post"],
+        url_path="stage-report/nueva-version",
+        url_name="stage-report-nueva-version",
+    )
+    def stage_report_nueva_version(self, request, slug=None):
+        """
+        Una versión nueva del informe emitido. El emitido queda como anterior.
+
+        POST /projects/{slug}/stage-report/nueva-version/
+        """
+        from apps.project.services import stage_reports
+
+        project = self.get_object()
+        return self._stage_report_response(
+            project, lambda: stage_reports.new_version(project, request.user)
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
         url_path=r"stage-report/(?P<report_id>\d+)/anular",
         url_name="stage-report-anular",
     )
@@ -1193,6 +1228,68 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return Response(
             EmittedStageReportSerializer(qs, many=True, context=self.get_serializer_context()).data
         )
+
+    @action(detail=False, methods=["get"], url_path="evaluation-records")
+    def evaluation_records(self, request):
+        """
+        El registro de evaluación de las operaciones visibles: el análisis del
+        Asistente IA, el informe emitido del ejecutivo y los informes subidos o
+        históricos, con la misma forma (ver ``services.evaluation_records``).
+
+        GET /projects/evaluation-records/[?organization=caf]
+        """
+        from apps.project.services.evaluation_records import records_for
+
+        qs = Project.objects.for_user(request.user)
+        if org := request.query_params.get("organization"):
+            qs = qs.filter(organization__slug=org)
+        return Response(records_for(qs.order_by("id")))
+
+    @action(detail=False, methods=["post"], url_path="historical-report")
+    def historical_report(self, request):
+        """
+        Carga un IET histórico, hecho por fuera, como operación nueva (staff).
+
+        POST /projects/historical-report/
+            {"document_slug": "...", "name": "...", "pais": "...",
+             "organization": "caf", "fecha_informe": "2025-05-10",
+             "monto": "40", "tipo_operacion": "..."}
+
+        El informe queda como subido en IDO y se lee solo; no se corre el
+        análisis del Asistente IA.
+        """
+        from apps.document.models import Document
+        from apps.project.services.evaluation_records import create_historical
+        from apps.project.services.stages import is_ecofilia_staff
+        from apps.user.models import Organization
+
+        if not is_ecofilia_staff(request.user):
+            raise PermissionDenied("La carga de informes históricos es del staff de Ecofilia.")
+        name = str(request.data.get("name") or "").strip()
+        pais = str(request.data.get("pais") or "").strip()
+        document_slug = str(request.data.get("document_slug") or "").strip()
+        if not (name and pais and document_slug):
+            return Response(
+                {"detail": "Faltan el nombre, el país o el documento."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        document = get_object_or_404(Document, slug=document_slug)
+        organization = get_object_or_404(
+            Organization, slug=str(request.data.get("organization") or "caf")
+        )
+        notes = {"pais": pais}
+        for key in ("fecha_informe", "monto", "tipo_operacion"):
+            value = str(request.data.get(key) or "").strip()
+            if value:
+                notes[key] = value
+        report = create_historical(
+            user=request.user,
+            organization=organization,
+            document=document,
+            name=name,
+            notes=notes,
+        )
+        return Response(self._serialize_project(report.project), status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="alignment-history")
     def alignment_history(self, request):

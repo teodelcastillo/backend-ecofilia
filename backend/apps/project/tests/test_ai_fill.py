@@ -91,7 +91,11 @@ class FillMissingFromBlueprintTestCase(TestCase):
         )
         self.project = Project.objects.create(
             owner=self.user, name="Op", blueprint_document=self.ido,
-            context_notes={"pais": "Chile", "objetivo": "Escrito a mano"},
+            context_notes={
+                "pais": "Chile",
+                "objetivo": "Escrito a mano",
+                "tipo_operacion": "Préstamo programático (PBL)",
+            },
         )
 
     def test_fills_only_what_is_missing(self):
@@ -119,7 +123,7 @@ class FillMissingFromBlueprintTestCase(TestCase):
 
     def test_nothing_missing_is_a_noop(self):
         Project.objects.filter(pk=self.project.pk).update(
-            context_notes={"objetivo": "a", "componentes": "b"}
+            context_notes={"objetivo": "a", "componentes": "b", "tipo_operacion": "Préstamo corporativo"}
         )
         with patch.object(ai_fill, "extract_fields") as extract:
             self.assertEqual(ai_fill.fill_missing_from_blueprint(self.project.id), {})

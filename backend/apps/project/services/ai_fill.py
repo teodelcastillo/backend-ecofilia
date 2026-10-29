@@ -73,6 +73,32 @@ class ExtractableField:
     key: str
     label: str
     description: str
+    # Si el campo es una opción de una lista cerrada: lo que no esté en la
+    # lista se descarta en vez de guardarse.
+    choices: tuple[str, ...] = ()
+
+
+# Los tipos de operación del portal CAF (``CAF_TIPOS_OPERACION`` en el front).
+TIPOS_OPERACION: tuple[str, ...] = (
+    "Programa / Proyecto de Inversión (PPI)",
+    "Préstamo programático (PBL)",
+    "Préstamo sectorial (SWAp)",
+    "Préstamo corporativo",
+    "Línea de crédito contingente",
+    "Línea de crédito revolvente no comprometida",
+    "Línea de crédito comprometida",
+    "Financiamiento Extraordinario de Liquidez de corto plazo (FEL)",
+    "Financiamiento estructurado",
+    "Préstamo A/B",
+    "Avales y garantías",
+    "Asesoría financiera",
+    "Inversión patrimonial",
+    "Préstamo subordinado",
+    "Autorización de Programa o Facilidad",
+)
+
+# Marca de que el tipo lo sugirió el modelo y nadie lo confirmó todavía.
+TIPO_SUGERIDO_KEY = "tipo_operacion_sugerido"
 
 
 # To add a new field: append an ExtractableField entry to this list.
@@ -115,6 +141,17 @@ _FIELD_LIST: list[ExtractableField] = [
             "la operación]\n"
             "..."
         ),
+    ),
+    ExtractableField(
+        key="tipo_operacion",
+        label="Tipo de operación",
+        description=(
+            "El tipo de operación según el documento, exactamente uno de estos "
+            "valores, copiado tal cual: "
+            + "; ".join(f"«{t}»" for t in TIPOS_OPERACION)
+            + ". Si el documento no permite saberlo, dejalo vacío."
+        ),
+        choices=TIPOS_OPERACION,
     ),
 ]
 
@@ -292,7 +329,12 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
     # Guarantee all requested keys are present; missing or blank → None. The
     # model sometimes prefers a JSON array for "lista numerada" fields on the
     # OpenAI path — normalize so callers always get a string.
-    return {k: _coerce_to_text(result.get(k)) for k in field_keys}
+    out = {k: _coerce_to_text(result.get(k)) for k in field_keys}
+    for key in field_keys:
+        choices = EXTRACTABLE_FIELDS[key].choices
+        if choices and out.get(key) not in choices:
+            out[key] = None
+    return out
 
 
 def _coerce_to_text(value: Any) -> Any:
@@ -368,7 +410,7 @@ def save_extracted(project_id: int, results: dict[str, Any], *, only_missing: bo
 
 
 def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
-    """Completa en la operación el objetivo y los componentes que falten.
+    """Completa en la operación el objetivo, los componentes y el tipo que falten.
 
     Corre sola cuando el documento principal termina de procesarse. Antes eso
     quedaba a cargo del formulario de alta, que llamaba a la extracción en el
@@ -390,6 +432,10 @@ def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
         return {}
 
     results = ai_fill_project(project, missing)
+    # El tipo que se completa solo queda como sugerido: el ejecutivo lo confirma
+    # o lo corrige desde el formulario.
+    if results.get("tipo_operacion"):
+        results[TIPO_SUGERIDO_KEY] = "ia"
     filled = save_extracted(project_id, results, only_missing=True)
     logger.info("ai_fill: operación %s completada con %s", project_id, sorted(filled))
     return filled
