@@ -120,6 +120,11 @@ class SkillViewSet(viewsets.ModelViewSet):
         skill_type = self.request.query_params.get("skill_type")
         if skill_type:
             qs = qs.filter(skill_type=skill_type)
+        # Filtros de la consola (fase 2): se aplican sobre lo que cada uno ve.
+        if scope := self.request.query_params.get("scope"):
+            qs = qs.filter(scope=scope)
+        if org_slug := self.request.query_params.get("organization"):
+            qs = qs.filter(scope=SkillScope.ORGANIZATION, organization__slug=org_slug)
         context = self.request.query_params.get("context")
         if context:
             # Match skills whose allowed_contexts includes this context OR "any"

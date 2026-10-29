@@ -619,6 +619,7 @@ Orden: por email.
 | válido | **200** con el usuario |
 | darle institución a un usuario `is_staff` o `is_superuser` | **400**: tendría acceso a todas las instituciones |
 | el superadmin cambiándose a sí mismo `organization_slug`, `role` o `is_active` | **400**: no puede quitarse el acceso por error |
+| un cambio que dejaría a alguien como superadmin: `role=admin` sin institución, por ejemplo sacarle la institución a un admin de institución o darle `admin` a un público | **400**. La consola no crea superadmins; eso se decide en el admin de Django. Para sacar de su institución a un admin, mandá también `"role": "member"` |
 | institución inexistente | **400** |
 | usuario inexistente | **404** |
 

@@ -856,5 +856,33 @@ class EvidenceTagWriteSerializer(serializers.ModelSerializer):
         return name
 
     def validate(self, attrs):
-        attrs.pop("organization_slug", None)
+        organization_slug = attrs.pop("organization_slug", None)
+        # Mover una etiqueta de institución (fase 2): sólo superadmin, y sólo si
+        # el slug no choca con lo que ve la institución de destino.
+        if self.instance is not None and "organization_slug" in self.initial_data:
+            from apps.document.services import evidence_tags_for_organization
+            from apps.user.access import is_ecofilia_admin
+            from apps.user.models import Organization
+
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            if not (getattr(user, "is_staff", False) or is_ecofilia_admin(user)):
+                raise serializers.ValidationError(
+                    {"organization_slug": "Sólo un superadmin cambia la institución de una etiqueta."}
+                )
+            target = None
+            if organization_slug:
+                target = Organization.objects.filter(slug=organization_slug).first()
+                if target is None:
+                    raise serializers.ValidationError(
+                        {"organization_slug": f"No existe la institución «{organization_slug}»."}
+                    )
+            pool = (
+                evidence_tags_for_organization(target.pk) if target else EvidenceTag.objects.all()
+            )
+            if pool.filter(slug=self.instance.slug).exclude(pk=self.instance.pk).exists():
+                raise serializers.ValidationError(
+                    {"organization_slug": f"Ya existe «{self.instance.slug}» para esa institución."}
+                )
+            attrs["organization"] = target
         return attrs

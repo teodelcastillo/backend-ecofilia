@@ -1231,7 +1231,7 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
         return EvidenceTagSerializer
 
     def perform_update(self, serializer):
-        if not self.request.user.is_staff:
+        if not self._is_superadmin():
             raise PermissionDenied(
                 "Editar una etiqueta cambia lo que piden todos los workflows "
                 "que la usan. Sólo staff puede hacerlo."
