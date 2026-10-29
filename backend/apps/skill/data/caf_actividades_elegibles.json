@@ -1,0 +1,1407 @@
+[
+{
+"codigo": "A",
+"nivel": 1,
+"nombre": "ADAPTACIÓN"
+},
+{
+"codigo": "A.1",
+"nivel": 2,
+"nombre": "Gestión y Suministro de Agua y Saneamiento"
+},
+{
+"codigo": "A.1.1",
+"nivel": 3,
+"nombre": "Medidas que contribuyen a mejorar el acceso y/o el uso eficiente del agua"
+},
+{
+"codigo": "A.1.1.1",
+"nivel": 4,
+"nombre": "Mejora de la planificación y gestión de captación del recurso hídrico"
+},
+{
+"codigo": "A.1.1.2",
+"nivel": 4,
+"nombre": "Instalación de equipos de captura y almacenamiento de aguas pluviales domésticas"
+},
+{
+"codigo": "A.1.1.3",
+"nivel": 4,
+"nombre": "Instalación de nuevas conexiones de agua potable y/o rehabilitación de las redes de distribución de agua"
+},
+{
+"codigo": "A.1.1.4",
+"nivel": 4,
+"nombre": "Actividades de dotación de agua para riego de la producción agrícola y el fortalecimiento de la seguridad alimentaria y nutricional (SAN)"
+},
+{
+"codigo": "A.1.1.5",
+"nivel": 4,
+"nombre": "Acciones desde la demanda que ayuden a mejorar el consumo (eficiencia), reducir la huella hídrica y/o promover la economía circular"
+},
+{
+"codigo": "A.1.1.6",
+"nivel": 4,
+"nombre": "Medidas para el control activo de fugas de agua"
+},
+{
+"codigo": "A.1.1.7",
+"nivel": 4,
+"nombre": "Otras medidas que contribuyen a mejorar el acceso y/o el uso eficiente del agua"
+},
+{
+"codigo": "A.2",
+"nivel": 2,
+"nombre": "Agricultura, uso de la tierra, actividad pecuaria, pesca, maricultura o acuicultura"
+},
+{
+"codigo": "A.2.1",
+"nivel": 3,
+"nombre": "Medidas que contribuyen al mantenimiento o mejora de la productividad de los sistemas agrícolas, pecuarios, pesqueros, de la maricultura o en la acuicultura marina o continental"
+},
+{
+"codigo": "A.2.1.1",
+"nivel": 4,
+"nombre": "Incremento de la producción de cultivos forrajeros para complementar la dieta proveniente de pastizales cuya calidad y nivel de cantidad se han visto afectada por el cambio climático"
+},
+{
+"codigo": "A.2.1.2",
+"nivel": 4,
+"nombre": "Agricultura de conservación para prevenir la pérdida de tierras cultivables y a la vez regenerar las tierras degradadas, fomentando el mantenimiento de una cobertura permanente de los suelos, el laboreo mínimo de las tierras y la diversificación de cultivos"
+},
+{
+"codigo": "A.2.1.3",
+"nivel": 4,
+"nombre": "Infraestructura de irrigación nueva y/o rehabilitada, o medidas para la captura y almacenamiento de agua en áreas rurales, que contribuyan a mejorar el rendimiento de los sistemas agrícolas, pecuarios o en la acuicultura continental"
+},
+{
+"codigo": "A.2.1.4",
+"nivel": 4,
+"nombre": "Adopción de técnicas para la pesca, maricultura o acuicultura sostenible, como, por ejemplo, adopción de tecnologías para mantener los niveles óptimos de oxígeno en piscigranjas o lagunas de cultivo; inversión en tecnologías de la información y la comunicación; infraestructura o herramientas resistentes para la pesca y/o la acuicultura, entre otros"
+},
+{
+"codigo": "A.2.1.5",
+"nivel": 4,
+"nombre": "Producción pecuaria sostenible basada en buenas prácticas para mejorar la productividad ante los impactos del cambio climático. Por ejemplo, soluciones para un mejor uso del recurso hídrico y otros recursos naturales que participen en la cadena de valor; acciones de reforestación y aforestación; sanidad animal; infraestructura para la protección animal ante temperaturas extremas; entre otros"
+},
+{
+"codigo": "A.2.1.6",
+"nivel": 4,
+"nombre": "Medidas basadas en tecnología que impulsen la productividad de una agricultura inteligente ante el cambio climático. Esto incluye actividades de producción de Agricultura bajo Ambiente Controlado (AAC); semillas mejoradas; mejoramiento genético; entre otras"
+},
+{
+"codigo": "A.2.1.7",
+"nivel": 4,
+"nombre": "Otras medidas que contribuyen al mantenimiento o mejora de la productividad de los sistemas agrícolas, pecuarios, pesqueros, de la maricultura o en la acuicultura marina o continental"
+},
+{
+"codigo": "A.3",
+"nivel": 2,
+"nombre": "Adaptación basada en ecosistemas"
+},
+{
+"codigo": "A.3.1",
+"nivel": 3,
+"nombre": "Uso de la biodiversidad y los servicios ecosistémicos para reducir la vulnerabilidad y el riesgo físico climático"
+},
+{
+"codigo": "A.3.1.1",
+"nivel": 4,
+"nombre": "Mejora de la gestión de pendientes en las cuencas para adaptarse al aumento de la erosión del suelo causada por las inundaciones debido al exceso de lluvias"
+},
+{
+"codigo": "A.3.1.2",
+"nivel": 4,
+"nombre": "Plantación y/o restauración ecológica de manglares, pastos marinos, corales y/o vegetación costera nativa para construir una barrera natural para adaptarse al aumento de la erosión costera y/o limitar la intrusión de agua salada en los suelos causados por el aumento del nivel del mar"
+},
+{
+"codigo": "A.3.1.3",
+"nivel": 4,
+"nombre": "Restauración y gestión integral de cuencas y subcuencas hidrográficas"
+},
+{
+"codigo": "A.3.1.4",
+"nivel": 4,
+"nombre": "Recuperación y/o reforestación de bosques urbanos que cumplen funciones vitales para la sostenibilidad y contribuyen a la mitigación del riesgo climático"
+},
+{
+"codigo": "A.3.1.5",
+"nivel": 4,
+"nombre": "Jardines filtrantes en cuerpos de agua urbanos para reducir el riesgo de inundaciones"
+},
+{
+"codigo": "A.3.1.6",
+"nivel": 4,
+"nombre": "Inversión en cobertura vegetal para el control de erosión de suelos y reducción del riesgo climático por deslizamientos"
+},
+{
+"codigo": "A.3.1.7",
+"nivel": 4,
+"nombre": "Plantaciones forestales con planes de manejo certificados (i.e. aforestación y reforestación) que contribuyan a mitigar riesgo ante impactos del clima"
+},
+{
+"codigo": "A.3.1.8",
+"nivel": 4,
+"nombre": "Conservación y/o recarga de acuíferos o humedales"
+},
+{
+"codigo": "A.3.1.9",
+"nivel": 4,
+"nombre": "Otras actividades con uso de la biodiversidad y los servicios ecosistémicos para reducir la vulnerabilidad y el riesgo físico climático"
+},
+{
+"codigo": "A.4",
+"nivel": 2,
+"nombre": "Infraestructura resiliente para la adaptación de la población frente a eventos adversos del cambio climático"
+},
+{
+"codigo": "A.4.1",
+"nivel": 3,
+"nombre": "Construcción, mantenimiento o rehabilitación de infraestructura para fortalecer la resiliencia de poblaciones costeras o insulares ante impactos del cambio climático"
+},
+{
+"codigo": "A.4.1.1",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de infraestructura verde o gris, construida con consideraciones de riesgo climático, que fortalezca la resiliencia climática de las comunidades costeras o insulares. Entre estas actividades se encuentran diques o rompeolas; muros de contención; plantas o soluciones para la desalinización del recurso hídrico; sistemas de drenaje; obras de alcantarillado pluvial; y otras"
+},
+{
+"codigo": "A.4.1.2",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de infraestructura verde o gris, construida con consideraciones de riesgo climático, que contribuya con la sostenibilidad de sectores productivos o actividades económicas asociadas al mar. Entre estas actividades se encuentran el desarrollo de puertos resilientes ante el cambio climático; industrias con cadenas de valor que hacen uso sostenible de recursos marítimos; turismo sostenible, incluyendo la protección o rehabilitación de infraestructura, monumentos, zonas, etc., consideradas patrimonio cultural"
+},
+{
+"codigo": "A.4.2",
+"nivel": 3,
+"nombre": "Construcción, mantenimiento y rehabilitación de infraestructura para fortalecer la resiliencia de poblaciones continentales"
+},
+{
+"codigo": "A.4.2.1",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de infraestructura verde o gris, construida con consideraciones de riesgo climático, que fortalezca la resiliencia climática de las comunidades. Entre estas actividades se encuentran hidroparques o acupunturas urbanas; sistemas de drenaje urbano; obras de alcantarillado pluvial; muros de contención; techos verdes y/o jardines verticales; entre otras. Asimismo, obras que contribuyan con un turismo sostenible en zonas vulnerables, incluyendo la protección o rehabilitación de infraestructuras, monumentos, zonas, etc., consideradas patrimonio cultural"
+},
+{
+"codigo": "A.4.3",
+"nivel": 3,
+"nombre": "Construcción, mantenimiento y rehabilitación de infraestructura vial resiliente que mitiga el riesgo climático de comunidades"
+},
+{
+"codigo": "A.4.3.1",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de caminos, carreteras, o puentes resilientes, que mejoran la inclusión y conectividad de comunidades rurales y vulnerables a centros urbanos, facilitando el acceso a lugares de trabajo, centros educativos y de salud, así como el tránsito a otras zonas en caso de eventos extremos del clima"
+},
+{
+"codigo": "A.4.3.2",
+"nivel": 4,
+"nombre": "Proyectos de transporte o de infraestructura vial resiliente que contribuyan en la dimensión del acceso de la seguridad alimentaria y nutricional (SAN), al mejorar o garantizar adecuados canales de distribución de alimentos desde zonas rurales de producción a centros urbanos"
+},
+{
+"codigo": "A.5",
+"nivel": 2,
+"nombre": "Infraestructura social resiliente o sistemas para la dotación de servicios sociales que brindan a la población de mayor capacidad adaptativa o reducen su sensibilidad ante los impactos del cambio climático"
+},
+{
+"codigo": "A.5.1",
+"nivel": 3,
+"nombre": "Construcción, mantenimiento o rehabilitación de infraestructura social resiliente"
+},
+{
+"codigo": "A.5.1.1",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de hospitales o centros de salud, que garanticen la sostenibilidad del acceso al servicio médico a comunidades vulnerables en zonas de medio o alto riesgo climático"
+},
+{
+"codigo": "A.5.1.2",
+"nivel": 4,
+"nombre": "Construcción, mantenimiento o rehabilitación de centros educativos resilientes al cambio climático, que transformen positivamente las condiciones de los espacios educativos de nivel preescolar o básico, facilitando el acceso, permanencia y calidad educativa a comunidades vulnerables en zonas de medio o alto riesgo climático"
+},
+{
+"codigo": "A.5.1.3",
+"nivel": 4,
+"nombre": "Construcción de infraestructura resiliente que permite el acceso al servicio básico de electricidad a comunidades y/o a zonas no interconectadas"
+},
+{
+"codigo": "A.5.1.4",
+"nivel": 4,
+"nombre": "Otras actividades de construcción, mantenimiento o rehabilitación de infraestructura social resiliente"
+},
+{
+"codigo": "A.5.2",
+"nivel": 3,
+"nombre": "Inversión en tecnología e investigación para mejorar los servicios sociales brindados a comunidades vulnerables"
+},
+{
+"codigo": "A.5.2.1",
+"nivel": 4,
+"nombre": "Sistemas de telemedicina que aumenten la cobertura, la gobernanza, la equidad y la eficiencia del servicio público de salud, mejorando el diagnóstico y un sistema de atención y seguimiento 24/7 de pacientes de comunidades vulnerables en zonas con medio o alto riesgo climático"
+},
+{
+"codigo": "A.5.2.2",
+"nivel": 4,
+"nombre": "Inversión en investigación para la innovación en el área de salud, con el fin de prevenir y mitigar casos de enfermedades causadas o agravadas por el cambio climático. Esto incluye el control de vectores, mejoramiento genético, vacunación, atención a patologías posteriores a un evento extremo del clima, entre otras actividades"
+},
+{
+"codigo": "A.5.2.3",
+"nivel": 4,
+"nombre": "Transformación digital que promueva la “tecnología educativa” en comunidades vulnerables. Esto incluye, además de dotación de equipos de cómputo y acceso a internet, desarrollo de aplicaciones para la educación sobre planes y gestión de riesgo de desastres; aplicaciones que faciliten el entendimiento de otros temas educativos asociados al cambio climático; pizarras digitales; desarrollo de plataformas educativas, entre otros"
+},
+{
+"codigo": "A.5.2.4",
+"nivel": 4,
+"nombre": "Otras inversiones en tecnología y transformación digital que fortalezcan la resiliencia climática de comunidades vulnerables"
+},
+{
+"codigo": "A.6",
+"nivel": 2,
+"nombre": "Otros temas que fortalecen la capacidad adaptativa"
+},
+{
+"codigo": "A.6.1",
+"nivel": 3,
+"nombre": "Fortalecimiento Institucional. DISEÑO DE POLITICAS, ESTRATEGIAS, REGULACIONES, PLANES DE ACCIÓN, ORIENTADOS A LA IMPLEMENTACIÓN DE:"
+},
+{
+"codigo": "A.6.1.1",
+"nivel": 4,
+"nombre": "Planes Nacionales de Adaptación, Planes Locales de Adaptación, y/o Planes Nacionales Sectoriales de Adaptación"
+},
+{
+"codigo": "A.6.1.2",
+"nivel": 4,
+"nombre": "Políticas, planes y estrategias para la prevención y gestión del riesgo de desastres ante eventos climáticos extremos"
+},
+{
+"codigo": "A.6.1.3",
+"nivel": 4,
+"nombre": "Evaluaciones de riesgos climáticos y/o vulnerabilidad climática a nivel territorial o sectorial"
+},
+{
+"codigo": "A.6.1.4",
+"nivel": 4,
+"nombre": "Coordinación interinstitucional para el cumplimiento de compromisos climáticos e implementación de medidas y/o proyectos para la resiliencia"
+},
+{
+"codigo": "A.6.1.5",
+"nivel": 4,
+"nombre": "Sistemas de alerta temprana, de monitoreo, o plataformas que permitan la mejor gestión, preparación y fortalezcan la resiliencia ante fenómenos hidrometeorológicos extremos y cambios en los patrones climáticos"
+},
+{
+"codigo": "A.6.1.6",
+"nivel": 4,
+"nombre": "Desarrollo de Protocolos Verdes; Taxonomías Nacionales Verdes o Sostenibles; diseño o estructuración de Instrumentos Financieros Innovadores, activos ambientales entre otros; sistemas para la exposición de los Riesgos Sistémicos Climáticos en las carteras de las Instituciones Financieras; u otras herramientas que contribuyan al fortalecimiento de Sistemas Financieros Sostenibles"
+},
+{
+"codigo": "A.6.1.7",
+"nivel": 4,
+"nombre": "Inversiones en transformación digital, abordando el desarrollo o combinación de avances como por ejemplo el Internet de las cosas, la robotización o la inteligencia artificial, que permitan aplicar soluciones innovadoras y eficientes a la adaptación climática"
+},
+{
+"codigo": "A.6.1.8",
+"nivel": 4,
+"nombre": "Otras actividades de fortalecimiento institucional para la adaptación climática"
+},
+{
+"codigo": "A.6.2",
+"nivel": 3,
+"nombre": "Apoyo presupuestario, incentivos y compensación"
+},
+{
+"codigo": "A.6.2.1",
+"nivel": 4,
+"nombre": "Apoyo presupuestario específico a las autoridades nacionales o locales para la aplicación de la política de adaptación al cambio climático"
+},
+{
+"codigo": "A.6.2.2",
+"nivel": 4,
+"nombre": "Seguros y otras medidas de protección financiera orientados a mitigar la pérdida y daños causados por los fenómenos asociados o detonados por el clima, particularmente eventos hidrometeorológicos extremos"
+},
+{
+"codigo": "A.6.2.3",
+"nivel": 4,
+"nombre": "Pagos por servicios ecosistémicos (conservación de fuentes de agua, bosques y biodiversidad)"
+},
+{
+"codigo": "A.6.2.4",
+"nivel": 4,
+"nombre": "Acciones orientadas a incrementar la participación del sector privado en procesos de inversiones o financiamiento climático en diferentes sectores"
+},
+{
+"codigo": "A.6.2.5",
+"nivel": 4,
+"nombre": "Líneas de crédito o fondos gestionados a partir de la banca de desarrollo nacional u otro tipo de instituciones con capacidad fiduciaria, con el fin de beneficiar a pequeños y medianos productores vulnerables ante el cambio climático"
+},
+{
+"codigo": "A.6.2.6",
+"nivel": 4,
+"nombre": "Líneas de Crédito para la gestión del riesgo de desastres climáticos"
+},
+{
+"codigo": "A.6.2.7",
+"nivel": 4,
+"nombre": "Otras actividades de apoyo presupuestario, incentivos y compensación y mercados de activos ambientales"
+},
+{
+"codigo": "A.6.3",
+"nivel": 3,
+"nombre": "Capacidades y gestión del conocimiento sobre el riesgo climático y la adaptación. TALLERES, CONFERENCIAS, INVESTIGACIÓN Y ESTUDIOS ORIENTADOS A LA APLICACIÓN PRÁCTICA EN:"
+},
+{
+"codigo": "A.6.3.1",
+"nivel": 4,
+"nombre": "Adaptación y resiliencia de infraestructuras, sistemas socioeconómicos y ecosistemas"
+},
+{
+"codigo": "A.6.3.2",
+"nivel": 4,
+"nombre": "Enfoque de resiliencia climática en cualquier campo de la gestión pública"
+},
+{
+"codigo": "A.6.3.3",
+"nivel": 4,
+"nombre": "Cadenas de valor resilientes en sistemas productivos"
+},
+{
+"codigo": "A.6.3.4",
+"nivel": 4,
+"nombre": "Componentes de adaptación en diversos tipos de proyectos y sectores para que aporten a la resiliencia"
+},
+{
+"codigo": "A.6.3.5",
+"nivel": 4,
+"nombre": "Conservación o recuperación de patrimonios culturales englobados en saberes tradicionales o ancestrales; expresión de la creatividad, valores, creencias, entre otros"
+},
+{
+"codigo": "A.6.3.6",
+"nivel": 4,
+"nombre": "Financiamiento y/o instrumentos financieros para la adaptación al cambio climático"
+},
+{
+"codigo": "A.6.3.7",
+"nivel": 4,
+"nombre": "Otros temas destinados a reforzar capacidades y gestión del conocimiento sobre el riesgo climático y la adaptación"
+},
+{
+"codigo": "B",
+"nivel": 1,
+"nombre": "MEDIO AMBIENTE Y BIODIVERSIDAD"
+},
+{
+"codigo": "B.1",
+"nivel": 2,
+"nombre": "Sostenibilidad y protección de los recursos hídricos"
+},
+{
+"codigo": "B.1.1",
+"nivel": 3,
+"nombre": "Conservación del agua"
+},
+{
+"codigo": "B.1.1.1",
+"nivel": 4,
+"nombre": "Restauración y gestión integral de cuencas, subcuencas hidrográficas"
+},
+{
+"codigo": "B.1.1.2",
+"nivel": 4,
+"nombre": "Inversión en remediación, recuperación y/o descontaminación de cuerpos de agua superficiales o subterráneos"
+},
+{
+"codigo": "B.1.1.3",
+"nivel": 4,
+"nombre": "Monitoreo y control de calidad de aguas"
+},
+{
+"codigo": "B.1.1.4",
+"nivel": 4,
+"nombre": "Restauración de acuíferos, humedales, páramos o permafrost"
+},
+{
+"codigo": "B.1.2",
+"nivel": 3,
+"nombre": "Suministro de agua"
+},
+{
+"codigo": "B.1.2.1",
+"nivel": 4,
+"nombre": "Dotación, distribución de agua o expansión de la red que demuestren una evaluación de capacidad de la fuente y de ser necesario considere medidas compensatorias para la recarga de acuíferos"
+},
+{
+"codigo": "B.1.2.2",
+"nivel": 4,
+"nombre": "Reducción de pérdidas en sistemas de distribución y almacenamiento"
+},
+{
+"codigo": "B.1.2.3",
+"nivel": 4,
+"nombre": "Modernización y eficiencia en sistemas de irrigación y drenaje agrícola"
+},
+{
+"codigo": "B.1.3",
+"nivel": 3,
+"nombre": "Aguas residuales"
+},
+{
+"codigo": "B.1.3.1",
+"nivel": 4,
+"nombre": "Plantas de tratamiento de aguas residuales con estándares de efluente que garanticen la salud de ecosistemas en el cuerpo de agua receptor"
+},
+{
+"codigo": "B.1.3.2",
+"nivel": 4,
+"nombre": "Captación, conducción y mejora de la calidad de las aguas residuales en zonas urbanas o rurales"
+},
+{
+"codigo": "B.1.3.3",
+"nivel": 4,
+"nombre": "Sistemas drenajes sostenibles, como jardines filtrantes en cuerpos de agua para reducir la carga contaminante"
+},
+{
+"codigo": "B.1.3.4",
+"nivel": 4,
+"nombre": "Innovación tecnológica o de gestión en el ciclo de las aguas residuales, como el reúso de aguas tratadas o la recarga de acuíferos"
+},
+{
+"codigo": "B.1.3.5",
+"nivel": 4,
+"nombre": "Monitoreo, control de calidad de aguas"
+},
+{
+"codigo": "B.2",
+"nivel": 2,
+"nombre": "Protección y restauración de la biodiversidad y los ecosistemas"
+},
+{
+"codigo": "B.2.1",
+"nivel": 3,
+"nombre": "Conservación y restauración de ecosistemas estratégicos terrestres"
+},
+{
+"codigo": "B.2.1.1",
+"nivel": 4,
+"nombre": "Conservación de bosques y otros ecosistemas estratégicos terrestres"
+},
+{
+"codigo": "B.2.1.2",
+"nivel": 4,
+"nombre": "Recuperación de ecosistemas estratégicos terrestres degradados previamente por actividades productivas u otros usos"
+},
+{
+"codigo": "B.2.1.3",
+"nivel": 4,
+"nombre": "Remediación de suelos sobre explotados (e.g. agropecuario, minería u otras causas). Descontaminación de suelos de materiales tóxicos (i.e. fuera de lo exigido por ley resultado de compensación por vertidos irregulares)"
+},
+{
+"codigo": "B.2.1.4",
+"nivel": 4,
+"nombre": "Reforestación o arborización urbana orientada a mejorar calidad del aire, salud ambiental o regular la temperatura"
+},
+{
+"codigo": "B.2.1.5",
+"nivel": 4,
+"nombre": "Monitoreo, control y vigilancia de ecosistemas estratégicos (e.g. monitoreo de factores que inciden en la pérdida de biodiversidad como deforestación, incendios, invasión especies introducidas, otros)"
+},
+{
+"codigo": "B.2.1.6",
+"nivel": 4,
+"nombre": "Restauración de áreas degradadas (suelos degradados) y/o regeneración de la fertilidad del suelo"
+},
+{
+"codigo": "B.2.1.7",
+"nivel": 4,
+"nombre": "Ecoturismo o turismo de impacto neutro o positivo en biodiversidad de áreas protegidas, que promueva beneficios a comunidades locales"
+},
+{
+"codigo": "B.2.1.8",
+"nivel": 4,
+"nombre": "Inversión en cobertura vegetal para el control de erosión de suelos y reducción de desastres por deslizamientos"
+},
+{
+"codigo": "B.2.2",
+"nivel": 3,
+"nombre": "Agricultura, forestal y otros usos sostenibles del suelo"
+},
+{
+"codigo": "B.2.2.1",
+"nivel": 4,
+"nombre": "Plantaciones forestales con planes de manejo certificados (i.e. aforestación y reforestación)"
+},
+{
+"codigo": "B.2.2.2",
+"nivel": 4,
+"nombre": "Ecoeficiencia en la cadena de valor de los productos del bosque, tanto maderables como no maderables"
+},
+{
+"codigo": "B.2.2.3",
+"nivel": 4,
+"nombre": "Implementación de usos mixtos de agroforestería y/o agro-silvopastoriles. Producción pecuaria sostenible"
+},
+{
+"codigo": "B.2.2.4",
+"nivel": 4,
+"nombre": "Agricultura local y huertos urbanos"
+},
+{
+"codigo": "B.2.2.5",
+"nivel": 4,
+"nombre": "Nivelación de suelos para la optimización del uso del agua en la agricultura bajo riego"
+},
+{
+"codigo": "B.2.3",
+"nivel": 3,
+"nombre": "Ecosistemas marinos costeros"
+},
+{
+"codigo": "B.2.3.1",
+"nivel": 4,
+"nombre": "Prevención de vertimientos/ contaminación al océano o a otros ecosistemas marinos"
+},
+{
+"codigo": "B.2.3.2",
+"nivel": 4,
+"nombre": "Conservación y/o restauración de manglares, pastos marinos y/o arrecifes de coral"
+},
+{
+"codigo": "B.2.3.3",
+"nivel": 4,
+"nombre": "Ecoturismo costero y/ marino"
+},
+{
+"codigo": "B.2.3.4",
+"nivel": 4,
+"nombre": "Industria pesquera y acuicultura"
+},
+{
+"codigo": "B.3",
+"nivel": 2,
+"nombre": "Prevención y control de la contaminación"
+},
+{
+"codigo": "B.3.1",
+"nivel": 3,
+"nombre": "Aire"
+},
+{
+"codigo": "B.3.1.1",
+"nivel": 4,
+"nombre": "Inversión en instalaciones nuevas o existentes de sistemas de tratamiento o filtración de emisiones. Sistema de lavadores de gases /tratamiento para control de contaminación del aire"
+},
+{
+"codigo": "B.3.1.2",
+"nivel": 4,
+"nombre": "Estaciones de monitoreo de la calidad del aire"
+},
+{
+"codigo": "B.3.2",
+"nivel": 3,
+"nombre": "Control de la contaminación industrial"
+},
+{
+"codigo": "B.3.2.1",
+"nivel": 4,
+"nombre": "Reducción de contaminantes líquidos, sólidos y atmosféricos de la industria"
+},
+{
+"codigo": "B.3.3",
+"nivel": 3,
+"nombre": "Gestión de Residuos"
+},
+{
+"codigo": "B.3.3.1",
+"nivel": 4,
+"nombre": "Sistemas de recolección, transporte, transferencia, clasificación, reciclaje, reúso y disposición final de residuos sólidos"
+},
+{
+"codigo": "B.3.3.2",
+"nivel": 4,
+"nombre": "Sistemas de recolección de residuos plásticos en océanos u otros cuerpos de agua receptor"
+},
+{
+"codigo": "B.3.3.3",
+"nivel": 4,
+"nombre": "Actividades de economía circular orientadas a la reducción, rediseño, reuso de materiales/residuos (i.e. construcción, infraestructura, procesos industriales, entre otros)"
+},
+{
+"codigo": "B.4",
+"nivel": 2,
+"nombre": "Otros temas transversales de medio ambiente y biodiversidad"
+},
+{
+"codigo": "B.4.1",
+"nivel": 3,
+"nombre": "Fortalecimiento Institucional. POLITICAS, ESTRATEGIAS, REGULACIONES, PLANES DE ACCIÓN, ORIENTADOS A LA IMPLEMENTACIÓN DE:"
+},
+{
+"codigo": "B.4.1.1",
+"nivel": 4,
+"nombre": "Manejo sostenible de recursos naturales (e.g. ecosistemas, recursos hídricos, bosques, suelos, recursos pesqueros, biodiversidad, etc.)"
+},
+{
+"codigo": "B.4.1.2",
+"nivel": 4,
+"nombre": "Ordenamiento territorial y planificación urbana orientada al uso sostenible de recursos y energía"
+},
+{
+"codigo": "B.4.1.3",
+"nivel": 4,
+"nombre": "Otros temas de protección de recursos naturales y conservación de la biodiversidad"
+},
+{
+"codigo": "B.4.1.4",
+"nivel": 4,
+"nombre": "Apoyo presupuestario específico a las autoridades nacionales o locales para la aplicación de política de puesta en valor del capital natural o conservación de la biodiversidad"
+},
+{
+"codigo": "B.4.2",
+"nivel": 3,
+"nombre": "Apoyo presupuestario, incentivos y compensación"
+},
+{
+"codigo": "B.4.2.1",
+"nivel": 4,
+"nombre": "Generación y/o pago por servicios ecosistémicos"
+},
+{
+"codigo": "B.4.3",
+"nivel": 3,
+"nombre": "Capacidades y gestión del conocimiento"
+},
+{
+"codigo": "B.4.3.1",
+"nivel": 4,
+"nombre": "Otros temas de protección de recursos naturales y conservación de la biodiversidad"
+},
+{
+"codigo": "M",
+"nivel": 1,
+"nombre": "MITIGACIÓN"
+},
+{
+"codigo": "M.1",
+"nivel": 2,
+"nombre": "Energía"
+},
+{
+"codigo": "M.1.1",
+"nivel": 3,
+"nombre": "Generación de energía renovable"
+},
+{
+"codigo": "M.1.1.1",
+"nivel": 4,
+"nombre": "Generación de energía renovable con bajas emisiones de GEI para suministrar electricidad, calefacción, energía mecánica o refrigeración"
+},
+{
+"codigo": "M.1.1.2",
+"nivel": 4,
+"nombre": "Uso conjunto de energías renovables y combustibles fósiles para el suministro de electricidad, calor, energía mecánica o refrigeración"
+},
+{
+"codigo": "M.1.2",
+"nivel": 3,
+"nombre": "Energía con bajas emisiones de carbono"
+},
+{
+"codigo": "M.1.2.1",
+"nivel": 4,
+"nombre": "Producción, almacenamiento o uso de hidrógeno con bajas emisiones de carbono"
+},
+{
+"codigo": "M.1.2.2",
+"nivel": 4,
+"nombre": "Instalaciones existentes - Desplazamiento de combustibles fósiles con altos contenidos de carbono por combustibles y fuentes de energía con bajas emisiones de carbono para suministrar electricidad, calor, energía mecánica o refrigeración"
+},
+{
+"codigo": "M.1.2.3",
+"nivel": 4,
+"nombre": "Uso de gases residuales como materia prima o combustible para suministrar electricidad, calor, energía mecánica o refrigeración"
+},
+{
+"codigo": "M.1.3",
+"nivel": 3,
+"nombre": "Almacenamiento de energía y estabilidad de la red"
+},
+{
+"codigo": "M.1.3.1",
+"nivel": 4,
+"nombre": "Almacenamiento de energía o medidas para mejorar la estabilidad de la red que incremente la participación de energía en el sistema con bajas emisiones de carbono"
+},
+{
+"codigo": "M.1.4",
+"nivel": 3,
+"nombre": "Transporte de energía"
+},
+{
+"codigo": "M.1.4.1",
+"nivel": 4,
+"nombre": "Nueva infraestructura de transmisión o distribución que aumenta la participación de electricidad de bajas emisiones de carbono"
+},
+{
+"codigo": "M.1.4.2",
+"nivel": 4,
+"nombre": "Sistemas de alta eficiencia energética para la transmisión o distribución de energía para refrigeración o calefacción"
+},
+{
+"codigo": "M.1.4.3",
+"nivel": 4,
+"nombre": "Mejora de la eficiencia energética en instalaciones existentes o reducción de las emisiones de CO2e en los sistemas existentes de transmisión o distribución de electricidad, calor o gas"
+},
+{
+"codigo": "M.1.4.4",
+"nivel": 4,
+"nombre": "Reducción de pérdidas técnicas en la transmisión y distribución de electricidad, calor o gas; o medidas destinadas a la gestión de la demanda"
+},
+{
+"codigo": "M.1.5",
+"nivel": 3,
+"nombre": "Emisiones fugitivas"
+},
+{
+"codigo": "M.1.5.1",
+"nivel": 4,
+"nombre": "Reducción de las emisiones fugitivas de GEI en infraestructuras existentes de transporte o almacenamiento de energía"
+},
+{
+"codigo": "M.2",
+"nivel": 2,
+"nombre": "Minería y producción metalúrgica para la acción climática"
+},
+{
+"codigo": "M.2.1",
+"nivel": 3,
+"nombre": "Minería para la acción climática"
+},
+{
+"codigo": "M.2.1.1",
+"nivel": 4,
+"nombre": "Proyectos que apoyen la extracción de minerales de uso frecuente o críticos para la energía renovable, tecnologías que aumenten la eficiencia energética, otras tecnologías bajas en carbono o materiales y productos con bajas emisiones de GEI incorporadas"
+},
+{
+"codigo": "M.2.2",
+"nivel": 3,
+"nombre": "Producción metalúrgica para la acción climática"
+},
+{
+"codigo": "M.2.2.1",
+"nivel": 4,
+"nombre": "Proyectos que apoyen la producción de metales o aleaciones de uso frecuente o críticos para la energía renovable, tecnologías que aumenten la eficiencia energética, otras tecnologías bajas en carbono o materiales y productos con bajas emisiones de GEI"
+},
+{
+"codigo": "M.3",
+"nivel": 2,
+"nombre": "Manufactura"
+},
+{
+"codigo": "M.3.1",
+"nivel": 3,
+"nombre": "Eficiencia energética y de carbono"
+},
+{
+"codigo": "M.3.1.1",
+"nivel": 4,
+"nombre": "Mejora de la eficiencia energética en instalaciones existentes"
+},
+{
+"codigo": "M.3.1.2",
+"nivel": 4,
+"nombre": "Nuevas instalaciones de manufactura altamente eficientes o con bajas emisiones de carbono, o equipos o líneas de producción en industrias existentes"
+},
+{
+"codigo": "M.3.1.3",
+"nivel": 4,
+"nombre": "Modernización de la infraestructura industrial existente que permita evitar los GEI industriales, un cambio a GEI industriales con menor potencial de calentamiento global o implementar tecnologías o prácticas que minimicen las fugas de GEI"
+},
+{
+"codigo": "M.3.1.4",
+"nivel": 4,
+"nombre": "Mejoras en los procesos industriales existentes, nuevos procesos o soluciones tecnológicas de fabricación avanzadas, que conduzcan a una reducción del consumo o a una reducción en el desperdicio de recursos no energéticos mediante cambios en los procesos o en los insumos de los procesos"
+},
+{
+"codigo": "M.3.2",
+"nivel": 3,
+"nombre": "Generación de energía con bajas emisiones de carbono"
+},
+{
+"codigo": "M.3.2.1",
+"nivel": 4,
+"nombre": "Conversión de sistemas existentes basados en un tipo de energía a sistemas de generación conjunta o suministro para el uso de electricidad, calor, energía mecánica, refrigeración o desalinización"
+},
+{
+"codigo": "M.3.2.2",
+"nivel": 4,
+"nombre": "Producción o uso de hidrógeno bajo en carbono"
+},
+{
+"codigo": "M.3.2.3",
+"nivel": 4,
+"nombre": "Uso de gases residuales como materia prima o como combustible para suministrar electricidad, calor, energía mecánica o refrigeración"
+},
+{
+"codigo": "M.3.3",
+"nivel": 3,
+"nombre": "Electrificación"
+},
+{
+"codigo": "M.3.3.1",
+"nivel": 4,
+"nombre": "Sustitución de equipos o procesos basados en combustibles fósiles por alternativas eléctricas en instalaciones industriales existentes"
+},
+{
+"codigo": "M.3.4",
+"nivel": 3,
+"nombre": "Almacenamiento de energía"
+},
+{
+"codigo": "M.3.4.1",
+"nivel": 4,
+"nombre": "Almacenamiento de energía o soluciones inteligentes a escala industrial para aumentar la integración de energía baja en emisiones de carbono o el uso de energía previamente desperdiciada"
+},
+{
+"codigo": "M.3.5",
+"nivel": 3,
+"nombre": "Apoyo al desarrollo bajo en carbono"
+},
+{
+"codigo": "M.3.5.1",
+"nivel": 4,
+"nombre": "Proyectos que apoyen la producción de componentes, equipos o infraestructuras dedicados exclusivamente a la utilización de energías renovables, la mejora de la eficiencia energética u otras tecnologías bajas en carbono"
+},
+{
+"codigo": "M.4",
+"nivel": 2,
+"nombre": "Agricultura, silvicultura y uso de la tierra y pesca"
+},
+{
+"codigo": "M.4.1",
+"nivel": 3,
+"nombre": "Agricultura: eficiencia energética, secuestro de carbono, reducción de emisiones de GEI"
+},
+{
+"codigo": "M.4.1.1",
+"nivel": 4,
+"nombre": "Reducción del consumo de energía en las operaciones"
+},
+{
+"codigo": "M.4.1.2",
+"nivel": 4,
+"nombre": "Proyectos agrícolas que contribuyan a aumentar los stocks de carbono en el suelo o a evitar la pérdida de carbono del suelo a través de medidas de control de la erosión"
+},
+{
+"codigo": "M.4.1.3",
+"nivel": 4,
+"nombre": "Reducción de las emisiones de gases de efecto invernadero distintas de CO2 derivadas de prácticas o tecnologías agrícolas"
+},
+{
+"codigo": "M.4.2",
+"nivel": 3,
+"nombre": "Ganadería: reducción de emisiones de GEI, secuestro de carbono"
+},
+{
+"codigo": "M.4.2.1",
+"nivel": 4,
+"nombre": "Proyectos que reduzcan las emisiones de metano u otras emisiones de GEI de la ganadería"
+},
+{
+"codigo": "M.4.2.2",
+"nivel": 4,
+"nombre": "Proyectos ganaderos que mejoran el secuestro de carbono a través de la gestión de pastizales"
+},
+{
+"codigo": "M.4.3",
+"nivel": 3,
+"nombre": "Silvicultura: reducción de las emisiones de GEI y secuestro de carbono"
+},
+{
+"codigo": "M.4.3.1",
+"nivel": 4,
+"nombre": "Proyectos forestales o agroforestales que secuestran carbono mediante una gestión forestal sostenible, evitando la deforestación o la degradación de la tierra"
+},
+{
+"codigo": "M.4.4",
+"nivel": 3,
+"nombre": "Hábitats marinos y otros hábitats acuáticos: reducción de emisiones de GEI"
+},
+{
+"codigo": "M.4.4.1",
+"nivel": 4,
+"nombre": "Proyectos que reduzcan las emisiones de GEI derivadas de la degradación de los ecosistemas marinos u otros ecosistemas acuáticos"
+},
+{
+"codigo": "M.4.5",
+"nivel": 3,
+"nombre": "Pesca y acuicultura: reducción de emisiones de GEI"
+},
+{
+"codigo": "M.4.5.1",
+"nivel": 4,
+"nombre": "Proyectos que reduzcan la intensidad de CO2e en la pesca o la acuicultura"
+},
+{
+"codigo": "M.4.6",
+"nivel": 3,
+"nombre": "Alimentación y dieta: eficiencia en el uso de los recursos"
+},
+{
+"codigo": "M.4.6.1",
+"nivel": 4,
+"nombre": "Proyectos que reduzcan las pérdidas o el desperdicio de alimentos o fomenten dietas bajas en carbono"
+},
+{
+"codigo": "M.4.7",
+"nivel": 3,
+"nombre": "Reducción de GEI mediante la producción de biomateriales"
+},
+{
+"codigo": "M.4.7.1",
+"nivel": 4,
+"nombre": "Proyectos que contribuyan a la reducción de emisiones de GEI mediante la producción de biomateriales/bioenergía a partir de biomasa"
+},
+{
+"codigo": "M.5",
+"nivel": 2,
+"nombre": "Suministro de agua y manejo de aguas residuales"
+},
+{
+"codigo": "M.5.1",
+"nivel": 3,
+"nombre": "Suministro de agua: reducción de emisiones de GEI, eficiencia energética y gestión de la demanda"
+},
+{
+"codigo": "M.5.1.1",
+"nivel": 4,
+"nombre": "Mejora de la eficiencia energética en sistemas de existentes de suministro de agua mediante el despliegue de tecnologías o equipos de bajo consumo energético, la promoción de mejores prácticas de auditoría o la reducción de pérdidas de agua"
+},
+{
+"codigo": "M.5.1.2",
+"nivel": 4,
+"nombre": "Nuevos o existentes Proyectos de suministro de agua bajos en carbono que reemplacen el uso de cisternas o mecanismos rudimentarios de acopio de agua por un sistema de servicio de suministro de agua por tuberías"
+},
+{
+"codigo": "M.5.1.3",
+"nivel": 4,
+"nombre": "Nuevos proyectos de suministro de agua que cumplan con altos estándares de eficiencia energética o que hagan uso de la gestión de la demanda"
+},
+{
+"codigo": "M.5.1.4",
+"nivel": 4,
+"nombre": "Proyectos de suministro de agua en zonas nuevas o existentes que promuevan una mejor operación y mantenimiento para reducir las pérdidas de agua, fomentar el ahorro de energía o cumplir o superar los objetivos de tratamiento de aguas residuales"
+},
+{
+"codigo": "M.5.2",
+"nivel": 3,
+"nombre": "Gestión de aguas residuales: reducción de emisiones de GEI, eficiencia energética y gestión de la demanda"
+},
+{
+"codigo": "M.5.2.1",
+"nivel": 4,
+"nombre": "Proyectos nuevos que reduzcan las emisiones de metano u óxido nitroso mediante la recogida y el tratamiento de aguas residuales, estiércol o residuos sépticos"
+},
+{
+"codigo": "M.5.2.2",
+"nivel": 4,
+"nombre": "Proyectos de aguas residuales en instalaciones existentes que reduzcan emisiones mediante mejoras de la eficiencia energética o de los objetivos de tratamiento"
+},
+{
+"codigo": "M.5.2.3",
+"nivel": 4,
+"nombre": "Proyectos de mejora de letrinas o recogida de aguas residuales, estiércol o residuos sépticos en instalaciones nuevas o existentes"
+},
+{
+"codigo": "M.5.3",
+"nivel": 3,
+"nombre": "Uso eficiente de las aguas residuales"
+},
+{
+"codigo": "M.5.3.1",
+"nivel": 4,
+"nombre": "Reutilización de aguas residuales"
+},
+{
+"codigo": "M.6",
+"nivel": 2,
+"nombre": "Manejo y gestión de residuos sólidos"
+},
+{
+"codigo": "M.6.1",
+"nivel": 3,
+"nombre": "Recolección, transporte, almacenamiento y transferencia de residuos"
+},
+{
+"codigo": "M.6.1.1",
+"nivel": 4,
+"nombre": "Recogida selectiva y transporte de fracciones de residuos segregados en origen"
+},
+{
+"codigo": "M.6.1.2",
+"nivel": 4,
+"nombre": "Almacenamiento temporal, aumento de volumen o transferencia de fracciones de residuos recogidas por separado y separadas en origen"
+},
+{
+"codigo": "M.6.2",
+"nivel": 3,
+"nombre": "Reutilización de productos y recuperación de materiales a partir de residuos sólidos"
+},
+{
+"codigo": "M.6.2.1",
+"nivel": 4,
+"nombre": "Reparación y reacondicionamiento de productos o componentes de productos para permitir su reutilización"
+},
+{
+"codigo": "M.6.2.2",
+"nivel": 4,
+"nombre": "Recuperación de materiales a partir de residuos recogidos selectivamente mediante procesos mecánicos"
+},
+{
+"codigo": "M.6.2.3",
+"nivel": 4,
+"nombre": "Recuperación de materiales a partir de residuos recogidos selectivamente o preclasificados mediante procesos no mecánicos"
+},
+{
+"codigo": "M.6.3",
+"nivel": 3,
+"nombre": "Recuperación y valorización de biorresiduos"
+},
+{
+"codigo": "M.6.3.1",
+"nivel": 4,
+"nombre": "Digestión anaeróbica de biorresiduos recogidos selectivamente"
+},
+{
+"codigo": "M.6.3.2",
+"nivel": 4,
+"nombre": "Compostaje de biorresiduos recogidos selectivamente"
+},
+{
+"codigo": "M.6.3.3",
+"nivel": 4,
+"nombre": "Otros tipos de recuperación y valorización de biorresiduos"
+},
+{
+"codigo": "M.6.4",
+"nivel": 3,
+"nombre": "Tratamiento de residuos mezclados"
+},
+{
+"codigo": "M.6.4.1",
+"nivel": 4,
+"nombre": "Tratamiento mecánico o biológico de residuos mixtos"
+},
+{
+"codigo": "M.6.4.2",
+"nivel": 4,
+"nombre": "Incineración de residuos con recuperación de energía (conversión de residuos en energía) a partir de residuos residuales mixtos, RDF (Combustible Derivado de Residuos) o SRF (Combustible Sólido Recuperado)"
+},
+{
+"codigo": "M.6.5",
+"nivel": 3,
+"nombre": "Captura, reducción y utilización de gases de relleno sanitario/vertedero"
+},
+{
+"codigo": "M.6.5.1",
+"nivel": 4,
+"nombre": "Captura, reducción o utilización de gases de relleno sanitario como parte del cierre de antiguos vertederos, celdas de vertederos o botaderos"
+},
+{
+"codigo": "M.6.5.2",
+"nivel": 4,
+"nombre": "Captura, reducción o utilización de gases de relleno sanitario en nuevos rellenos sanitarios o celdas de rellenos sanitarios existentes"
+},
+{
+"codigo": "M.6.6",
+"nivel": 3,
+"nombre": "Eficiencia energética"
+},
+{
+"codigo": "M.6.6.1",
+"nivel": 4,
+"nombre": "Proyectos en instalaciones existentes destinados a mejorar la eficiencia energética en instalaciones de gestión de residuos"
+},
+{
+"codigo": "M.7",
+"nivel": 2,
+"nombre": "Transporte"
+},
+{
+"codigo": "M.7.1",
+"nivel": 3,
+"nombre": "Transporte urbano y rural"
+},
+{
+"codigo": "M.7.1.1",
+"nivel": 4,
+"nombre": "Proyectos de transporte público urbano y rural"
+},
+{
+"codigo": "M.7.1.2",
+"nivel": 4,
+"nombre": "Transporte no motorizado (TNM) o sistemas para compartir bicicletas"
+},
+{
+"codigo": "M.7.2",
+"nivel": 3,
+"nombre": "Transporte interurbano bajo en carbono"
+},
+{
+"codigo": "M.7.2.1",
+"nivel": 4,
+"nombre": "Proyectos ferroviarios interurbanos para mercancías o viajeros"
+},
+{
+"codigo": "M.7.2.2",
+"nivel": 4,
+"nombre": "Transporte público de pasajeros o bus"
+},
+{
+"codigo": "M.7.3",
+"nivel": 3,
+"nombre": "Vehículos y combustible con bajas emisiones de carbono, y gestión de la demanda"
+},
+{
+"codigo": "M.7.3.1",
+"nivel": 4,
+"nombre": "Flotas de pasajeros o de carga o infraestructuras asociadas con cero o bajas emisiones directas"
+},
+{
+"codigo": "M.7.3.2",
+"nivel": 4,
+"nombre": "Operaciones de transporte que utilizan biocombustibles o combustibles sintéticos con bajas emisiones de GEI en su ciclo de vida"
+},
+{
+"codigo": "M.7.3.3",
+"nivel": 4,
+"nombre": "Política de gestión de la demanda de transporte o sistemas inteligentes de transporte (STI) asociados"
+},
+{
+"codigo": "M.7.3.4",
+"nivel": 4,
+"nombre": "Uso de gases residuales como combustible para el transporte"
+},
+{
+"codigo": "M.7.4",
+"nivel": 3,
+"nombre": "Transporte acuático: modo bajo en carbono y mejora de la eficiencia"
+},
+{
+"codigo": "M.7.4.1",
+"nivel": 4,
+"nombre": "Proyectos de transporte acuatico de carga o pasajeros, o mejora de la eficiencia"
+},
+{
+"codigo": "M.7.5",
+"nivel": 3,
+"nombre": "Aviación y transporte acuático eficiencia y energías renovables"
+},
+{
+"codigo": "M.7.5.1",
+"nivel": 4,
+"nombre": "Gestión eficiente del tráfico aéreo y acuático"
+},
+{
+"codigo": "M.7.5.2",
+"nivel": 4,
+"nombre": "Operaciones eficientes del sistema portuario (aéreo y acuático) o generación de energía renovable in situ"
+},
+{
+"codigo": "M.8",
+"nivel": 2,
+"nombre": "Eficiencia energética de uso final en edificaciones o equipos"
+},
+{
+"codigo": "M.8.1",
+"nivel": 3,
+"nombre": "Eficiencia energética, energías renovables, reducción de emisiones de CO2e y sumideros de carbono en edificios y espacios públicos"
+},
+{
+"codigo": "M.8.1.1",
+"nivel": 4,
+"nombre": "Medidas que reduzcan el consumo neto de energía, el consumo de recursos o las emisiones de CO2e, o que aumenten los sumideros de carbono de origen vegetal en edificios de zonas nuevas, existentes o terrenos asociados"
+},
+{
+"codigo": "M.8.1.2",
+"nivel": 4,
+"nombre": "Medidas que reduzcan el consumo neto de energía, el consumo de recursos o las emisiones de CO2e, o medidas que aumenten los sumideros de carbono de origen vegetal en edificios nuevos o modernizados y terrenos asociados, que permitan cumplir las normas de certificación"
+},
+{
+"codigo": "M.8.1.2",
+"nivel": 4,
+"nombre": "Medidas que reduzcan el consumo neto de energía, el consumo de recursos o las emisiones de CO2e, o que aumenten los sumideros de carbono de origen vegetal en zonas o instalaciones públicas"
+},
+{
+"codigo": "M.8.2",
+"nivel": 3,
+"nombre": "Eficiencia energética del uso final en equipos"
+},
+{
+"codigo": "M.8.2.1",
+"nivel": 4,
+"nombre": "Mejora de la eficiencia energética en instalaciones existentes o reducción de emisiones de CO2e en electrodomésticos o equipos existentes"
+},
+{
+"codigo": "M.8.2.2",
+"nivel": 4,
+"nombre": "Equipos nuevos o substitución con equipos de alta eficiencia energética"
+},
+{
+"codigo": "M.9",
+"nivel": 2,
+"nombre": "Tecnología de la información y las comunicaciones (TIC) y tecnologías digitales"
+},
+{
+"codigo": "M.9.1",
+"nivel": 3,
+"nombre": "Eficiencia energética, energías renovables y reducción de emisiones de CO2e"
+},
+{
+"codigo": "M.9.1.1",
+"nivel": 4,
+"nombre": "Mejora de la eficiencia energética, implementación de energías renovables o reducción de emisiones de CO2e en los centros de datos existentes"
+},
+{
+"codigo": "M.9.1.2",
+"nivel": 4,
+"nombre": "Centros de datos totalmente nuevos que cumplan con las mejores prácticas internacionales en materia de eficiencia energética o que se abastecen en gran medida de generación de energía renovable in situ"
+},
+{
+"codigo": "M.9.1.3",
+"nivel": 4,
+"nombre": "Redes de telecomunicaciones con niveles de eficiencia energética que cumplen con las mejores prácticas internacionales"
+},
+{
+"codigo": "M.10",
+"nivel": 2,
+"nombre": "Investigación, desarrollo e innovación"
+},
+{
+"codigo": "M.10.1",
+"nivel": 3,
+"nombre": "Investigación, desarrollo e innovación"
+},
+{
+"codigo": "M.10.1.1",
+"nivel": 4,
+"nombre": "Investigación o desarrollo de energías renovables, mejora de la eficiencia energética, tecnologías bajas en carbono u otras tecnologías instrumentales para lograr la descarbonización total"
+},
+{
+"codigo": "M.11",
+"nivel": 2,
+"nombre": "Actividades intersectoriales"
+},
+{
+"codigo": "M.11.1",
+"nivel": 3,
+"nombre": "Eficiencia en el uso de la energía y los recursos"
+},
+{
+"codigo": "M.11.1.1",
+"nivel": 4,
+"nombre": "Una actividad que permite reducir el uso de energía o materiales a lo largo de una cadena de suministro (aguas arriba o aguas abajo) mediante mejoras en la eficiencia energética o en la eficiencia del uso de recursos en la cadena de suministro existente, mediante el cambio a una cadena de suministro menos intensiva en carbono, o mediante la implementación de sistemas de economía circular"
+},
+{
+"codigo": "M.11.2",
+"nivel": 3,
+"nombre": "Reducción de la demanda"
+},
+{
+"codigo": "M.11.2.1",
+"nivel": 4,
+"nombre": "Una actividad orientada a la gestión de la demanda"
+},
+{
+"codigo": "M.11.3",
+"nivel": 3,
+"nombre": "Prestación electrónica de servicios"
+},
+{
+"codigo": "M.11.3.1",
+"nivel": 4,
+"nombre": "Digitalización de la prestación de servicios o de las operaciones internas, lo que supone una reducción sustancial de los desplazamientos o del uso de materiales y materias primas"
+},
+{
+"codigo": "M.11.4",
+"nivel": 3,
+"nombre": "Transición energética"
+},
+{
+"codigo": "M.11.4.1",
+"nivel": 4,
+"nombre": "Financiamiento directo, acciones políticas, programas o asistencia técnica para apoyar el cierre de plantas de combustibles fósiles u otras actividades que impliquen extracción, procesamiento o transporte de combustibles fósiles, incluido el apoyo a los trabajadores o las comunidades afectadas por dicho cierre"
+},
+{
+"codigo": "M.11.5",
+"nivel": 3,
+"nombre": "Reducción de emisiones de GEI"
+},
+{
+"codigo": "M.11.5.1",
+"nivel": 4,
+"nombre": "Transporte, uso o almacenamiento permanente del CO2 capturado"
+},
+{
+"codigo": "M.11.6",
+"nivel": 3,
+"nombre": "Apoyo a las políticas, asistencia técnica, desarrollo de capacidades y difusión de información"
+},
+{
+"codigo": "M.11.6.1",
+"nivel": 4,
+"nombre": "Acciones políticas intersectoriales nacionales, subnacionales o territoriales que tengan como objetivo conducir a acciones de mitigación del cambio climático o apoyo técnico para dichas acciones"
+},
+{
+"codigo": "M.11.6.2",
+"nivel": 4,
+"nombre": "Acciones políticas, programas o asistencia técnica para establecer estándares más estrictos de eficiencia energética o de uso de recursos o una aplicación más estricta de los estándares de eficiencia"
+},
+{
+"codigo": "M.11.6.3",
+"nivel": 4,
+"nombre": "Sistemas o herramientas de transparencia para el seguimiento de las emisiones de GEI"
+},
+{
+"codigo": "M.11.6.4",
+"nivel": 4,
+"nombre": "Auditorías energéticas destinadas a identificar las posibilidades de aumentar la eficiencia energética o la generación de energía renovable in situ"
+},
+{
+"codigo": "M.11.6.5",
+"nivel": 4,
+"nombre": "Acciones políticas, programas o asistencia técnica para establecer incentivos fiscales para aumentar las inversiones o la implementación de tecnologías y medidas bajas en carbono"
+},
+{
+"codigo": "M.11.6.6",
+"nivel": 4,
+"nombre": "Acciones políticas, programas o asistencia técnica dirigidas a los precios del carbono u otros pagos que tengan efectos equivalentes"
+},
+{
+"codigo": "M.11.6.7",
+"nivel": 4,
+"nombre": "Acciones políticas, programas o asistencia técnica para reducir el desarrollo urbano no planificado de baja densidad o promover la densificación, conduciendo a evitar un bloqueo a largo plazo de un entorno construido con mayores emisiones de carbono"
+},
+{
+"codigo": "M.11.6.8",
+"nivel": 4,
+"nombre": "Educación, formación, desarrollo de capacidades o sensibilización centrada en la mitigación del cambio climático"
+},
+{
+"codigo": "M.11.6.9",
+"nivel": 4,
+"nombre": "Programas o sistemas que proporcionen incentivos o herramientas a las unidades o equipos dentro de las entidades para gestionar y minimizar las emisiones de GEI y contribuir con los objetivos de descarbonización de la entidad"
+},
+{
+"codigo": "M.11.6.10",
+"nivel": 4,
+"nombre": "Articulación de planes de acción climática o descarbonización a nivel de entidad"
+},
+{
+"codigo": "M.11.7",
+"nivel": 3,
+"nombre": "Apoyo a la mitigación del cambio climático"
+},
+{
+"codigo": "M.11.7.1",
+"nivel": 4,
+"nombre": "Servicios técnicos necesarios para desarrollar o implementar proyectos de financiamiento para la mitigación del cambio climático"
+},
+{
+"codigo": "M.11.7.2",
+"nivel": 4,
+"nombre": "Servicios, instrumentos financieros o comercio de carbono, incluyendo el carbono azul"
+}
+]

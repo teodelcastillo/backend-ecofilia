@@ -163,3 +163,29 @@ class TipoOperacionTestCase(_ReportBase):
         self.project.refresh_from_db()
         self.assertEqual(self.project.context_notes["tipo_operacion"], "Préstamo programático (PBL)")
         self.assertEqual(self.project.context_notes[TIPO_SUGERIDO_KEY], "ia")
+
+
+class CatalogoVerdeTestCase(_ReportBase):
+    """El catálogo de actividades de CAF llega a C.1 y a S.2 (``skill/0047``)."""
+
+    def test_the_catalog_has_four_levels_and_unique_activity_codes(self):
+        from apps.skill.caf_catalogo_verde import catalogo, codigos_de_actividad
+
+        codigos = codigos_de_actividad()
+        self.assertIn("B.1.1.1", codigos)
+        self.assertNotIn("B.1.1", codigos)
+        self.assertEqual(len(codigos), len(set(codigos)))
+        self.assertEqual({r["nivel"] for r in catalogo()}, {1, 2, 3, 4})
+        # Sin las marcas de nota al pie del documento de CAF.
+        self.assertFalse(any("verde6" in r["nombre"] for r in catalogo()))
+
+    def test_s2_asks_for_the_activity_code_with_the_catalog(self):
+        from apps.skill.models import SkillStep
+
+        s2 = SkillStep.objects.get(skill__slug="caf-iet-datbc-evaluacion-tecnica", title__startswith="S.2")
+        columna = next(c for c in s2.table_schema["columns"] if c["key"] == "codigo_actividad")
+        # Texto, no lista cerrada: S.2 es estricto y un código raro no debe tumbar el análisis.
+        self.assertEqual((columna["type"], columna["required"]), ("text", False))
+        self.assertIn("- M.6.1.1 Recogida selectiva", s2.instructions)
+        for c1 in SkillStep.objects.filter(title__startswith="C.1."):
+            self.assertIn("Catálogo de actividades elegibles de CAF", c1.instructions)

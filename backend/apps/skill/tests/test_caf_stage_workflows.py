@@ -77,7 +77,9 @@ class SeededWorkflowsTestCase(TestCase):
 
     def test_section_c_no_longer_points_to_the_insumo(self):
         c1 = Skill.objects.get(slug=IET_SLUG).steps.get(title__startswith="C.1.")
-        self.assertNotIn("insumo", c1.instructions.lower())
+        # El catálogo de actividades (0047) dice «insumos» en otro sentido: no cuenta.
+        instrucciones = c1.instructions.split("## Catálogo de actividades elegibles de CAF")[0]
+        self.assertNotIn("insumo", instrucciones.lower())
         self.assertIn("componentes que califican o podrían calificar", c1.instructions)
         self.assertIn("recomendaciones para aumentar los co-beneficios", c1.instructions)
         self.assertIn("Citá el documento de cada dato.", c1.instructions)
@@ -108,11 +110,11 @@ class SeededWorkflowsTestCase(TestCase):
         self.assertEqual((s2.evidence_selection, s2.output_validation), ("blueprint_only", "strict"))
         self.assertEqual(
             [c["key"] for c in s2.table_schema["columns"]],
-            ["componente", "actividad_elegible", "objetivo", "categoria", "monto_usd", "fundamento"],
+            ["componente", "codigo_actividad", "actividad_elegible", "objetivo", "categoria", "monto_usd", "fundamento"],
         )
         self.assertIn("actividad_elegible", s2.instructions)
         self.assertEqual(
-            s2.table_schema["columns"][2]["allowed_values"],
+            next(c for c in s2.table_schema["columns"] if c["key"] == "objetivo")["allowed_values"],
             ["Adaptación", "Mitigación", "Biodiversidad y otros objetivos ambientales"],
         )
 
