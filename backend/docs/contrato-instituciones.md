@@ -8,7 +8,7 @@ cambia, se cambia en este archivo, en el mismo PR que lo implementa.
 | Fase | Qué | Estado del contrato |
 |---|---|---|
 | 0 | Aislamiento entre instituciones | **Implementado** (PR #7) |
-| 1 | Configuración de cada institución en datos | **Escrito**, en implementación (PR de `fase-1-backend`) |
+| 1 | Configuración de cada institución en datos | **Implementado** (PR de `fase-1-backend`) |
 | 2 | Consola del superadmin | Pendiente |
 | 3 | Portal genérico `/{institución}` | Pendiente |
 | 4 | Plantilla pública `/app` y portal base sólo superadmin | Pendiente |
@@ -448,6 +448,9 @@ PUT /api/organizations/{slug}/config/
 Un documento con claves de primer nivel faltantes se completa con las de la
 configuración base. Las claves desconocidas se rechazan (400).
 
+`me` queda reservado: no puede ser el slug de una institución (la fase 5 lo
+valida al dar de alta).
+
 ### Lo que cambia en endpoints existentes
 
 | Endpoint | Cambio |
@@ -461,9 +464,12 @@ configuración base. Las claves desconocidas se rechazan (400).
 
 ### Migración de datos
 
-`user/0009`: si existe la institución `caf`, le guarda la configuración de
-arriba, con los valores que hoy tiene el código. Reversible: al volver, le borra
-la configuración. Sin CAF no hace nada.
+`user/0008` agrega `Organization.config`. `user/0009`: si existe la institución
+`caf`, le guarda la configuración de arriba, con los valores que hoy tiene el
+código. Reversible: al volver, le borra la configuración. Sin CAF no hace nada.
+
+El registro de evaluación se arma por las etapas que tienen documento principal
+(`stages[].principal_tag`): en CAF, `ido_cci` y `dec`, las mismas de siempre.
 
 ### Datos de prueba
 

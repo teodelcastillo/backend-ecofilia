@@ -40,15 +40,13 @@ from apps.project.services.caf_criteria import (
     guided_basis,
 )
 from apps.project.services.stages import (
-    GUIADO_SLUG,
-    IET_SLUG,
-    LECTURA_SLUG,
-    STAGE_LABELS,
     current_stage,
     is_ecofilia_staff,
     retry_pending_stage_launches,
     runs_for_stage,
+    stage_label,
 )
+from apps.user import institution_config
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +54,22 @@ logger = logging.getLogger(__name__)
 # generación es una corrida entera del IET; el staff no tiene tope.
 GUIADO_MAX_PER_STAGE = 3
 
-# Las vías que viven en una corrida de IET sólo existen en IDO: el IET es el
-# informe de IDO, y el análisis de DEC todavía no está.
-_IET_STAGES = ("ido_cci",)
+def _report_stages(project: Project) -> list[str]:
+    """Las etapas con reporte de Ecofilia: las que lanzan el workflow del informe.
+
+    Las vías que viven en una corrida del informe (editado, guiado) sólo existen
+    ahí. En CAF es IDO: el IET es el informe de IDO, y el análisis de DEC
+    todavía no está.
+    """
+    return institution_config.report_stages(institution_config.config_for_project(project))
+
+
+def _role_skill(project: Project, role: str):
+    """La skill que cumple ``role`` (report, guided, reading) en la institución."""
+    from apps.skill.models import Skill
+
+    slug = institution_config.workflow(institution_config.config_for_project(project), role)
+    return Skill.objects.filter(slug=slug).first() if slug else None
 
 
 class StageReportError(ValueError):
@@ -93,7 +104,7 @@ def _editable_report(project: Project, stage: str, user) -> ProjectStageReport:
     report = active_report(project, stage)
     if report is not None and report.is_emitted:
         raise StageReportError(
-            f"El informe de {STAGE_LABELS.get(stage, stage)} ya se emitió y no se puede cambiar."
+            f"El informe de {stage_label(project, stage)} ya se emitió y no se puede cambiar."
         )
     if report is None:
         report = ProjectStageReport(project=project, stage=stage, created_by=user)
@@ -106,9 +117,9 @@ def current_ecofilia_report(project: Project, stage: str):
     Es la misma regla que usa la interfaz: la más reciente entre su fin y su
     ascenso, entre las que terminaron bien.
     """
-    from apps.skill.models import ExecutionStatus, Skill
+    from apps.skill.models import ExecutionStatus
 
-    skill = Skill.objects.filter(slug=IET_SLUG).first()
+    skill = _role_skill(project, "report")
     if skill is None:
         return None
     runs = runs_for_stage(project, skill, stage).filter(status=ExecutionStatus.COMPLETED)
@@ -123,7 +134,7 @@ def current_ecofilia_report(project: Project, stage: str):
 
 def choose_editado(project: Project, user) -> ProjectStageReport:
     stage = _require_stage(project)
-    if stage not in _IET_STAGES:
+    if stage not in _report_stages(project):
         raise StageReportError("En esta etapa todavía no hay reporte de Ecofilia para editar.")
     execution = current_ecofilia_report(project, stage)
     if execution is None:
@@ -139,9 +150,9 @@ def choose_editado(project: Project, user) -> ProjectStageReport:
 
 def guiado_runs_used(project: Project, stage: str) -> int:
     """Generaciones del guiado que cuentan para el tope (las que no fallaron)."""
-    from apps.skill.models import ExecutionStatus, Skill
+    from apps.skill.models import ExecutionStatus
 
-    skill = Skill.objects.filter(slug=GUIADO_SLUG).first()
+    skill = _role_skill(project, "guided")
     if skill is None:
         return 0
     return runs_for_stage(project, skill, stage).exclude(status=ExecutionStatus.FAILED).count()
@@ -156,14 +167,13 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
     las secciones que cambiaron.
     """
     from apps.skill.launch import launch_institutional
-    from apps.skill.models import Skill
 
     stage = _require_stage(project)
-    if stage not in _IET_STAGES:
+    if stage not in _report_stages(project):
         raise StageReportError("El informe guiado todavía no está disponible en esta etapa.")
-    skill = Skill.objects.filter(slug=GUIADO_SLUG).first()
+    skill = _role_skill(project, "guided")
     if skill is None:
-        raise StageReportError("El agente del informe guiado no está disponible.")
+        raise StageReportError("El informe guiado no está disponible en esta institución.")
     base = current_ecofilia_report(project, stage)
     if base is None:
         raise StageReportError(
@@ -379,13 +389,12 @@ def maybe_launch_reading(report: ProjectStageReport):
     """Lanza la lectura del informe subido, si el documento ya se puede leer."""
     from apps.document.models import ChunkingStatus
     from apps.skill.launch import launch_institutional
-    from apps.skill.models import Skill
 
     if report.origin != Origin.SUBIDO or report.reader_execution_id or not report.document_id:
         return None
     if report.document.chunking_status not in (ChunkingStatus.DONE, ChunkingStatus.PARTIAL):
         return None
-    skill = Skill.objects.filter(slug=LECTURA_SLUG).first()
+    skill = _role_skill(report.project, "reading")
     if skill is None:
         return None
 

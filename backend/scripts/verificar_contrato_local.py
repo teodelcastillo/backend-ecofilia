@@ -55,3 +55,10 @@ for who in ("superadmin", "caf-admin", "caf-miembro", "otra-miembro", "publico")
           call("/projects/evaluation-records/?organization=caf", token)[0],
           call("/projects/evaluation-records/?organization=otra", token)[0])
     print("  GET local-plataforma:", call("/skills/local-plataforma/", token)[0])
+    # Fase 1: configuración de la institución.
+    _, mine = call("/organizations/me/config/", token)
+    org = (mine or {}).get("organization")
+    stages = [s["slug"] for s in ((mine or {}).get("config") or {}).get("stages", [])]
+    print("  config propia:", org["slug"] if org else None, "| etapas:", stages)
+    print("  GET config caf / otra:",
+          call("/organizations/caf/config/", token)[0], call("/organizations/otra/config/", token)[0])

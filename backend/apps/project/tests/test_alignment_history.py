@@ -5,13 +5,19 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.project.models import Project, ProjectAlignmentSnapshot
+from apps.user.models import Organization
+from apps.user.tests.fixtures import caf_config
 
 User = get_user_model()
 
 
 class AlignmentHistoryTestCase(APITestCase):
     def setUp(self):
-        self.user = User.objects.create_user(email="h@example.com", password="x", username="h")
+        # Las etapas salen de la configuración de la institución (fase 1).
+        self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.user = User.objects.create_user(
+            email="h@example.com", password="x", username="h", organization=self.caf
+        )
         self.other = User.objects.create_user(email="o@example.com", password="x", username="o")
         self.client.force_authenticate(self.user)
         self.project = Project.objects.create(

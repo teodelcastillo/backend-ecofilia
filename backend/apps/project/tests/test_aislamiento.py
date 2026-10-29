@@ -34,6 +34,7 @@ from apps.project.models import (
 from apps.project.services.evidence_tags import tagged_in_project_q
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillScope, SkillType
 from apps.user.models import Organization
+from apps.user.tests.fixtures import caf_config
 
 User = get_user_model()
 
@@ -45,8 +46,12 @@ def _rows(data):
 class AislamientoEntreInstitucionesTestCase(APITestCase):
     @classmethod
     def setUpTestData(cls):
-        cls.org_a = Organization.objects.create(name="Institución A", slug="inst-a")
-        cls.org_b = Organization.objects.create(name="Institución B", slug="inst-b", restricted=True)
+        # Con los criterios de CAF, para que el registro de evaluación tenga qué
+        # mostrar: desde la fase 1 los criterios salen de la configuración.
+        cls.org_a = Organization.objects.create(name="Institución A", slug="inst-a", config=caf_config())
+        cls.org_b = Organization.objects.create(
+            name="Institución B", slug="inst-b", restricted=True, config=caf_config()
+        )
 
         cls.member_a = User.objects.create_user(email="m@a.org", password="x", organization=cls.org_a)
         cls.admin_a = User.objects.create_user(

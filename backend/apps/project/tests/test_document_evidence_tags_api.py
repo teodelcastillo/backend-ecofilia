@@ -9,6 +9,8 @@ from rest_framework.test import APITestCase
 
 from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument
+from apps.user.models import Organization
+from apps.user.tests.fixtures import caf_config
 
 User = get_user_model()
 
@@ -122,6 +124,9 @@ class DocumentEvidenceTagsApiTestCase(APITestCase):
         self.assertEqual(ndc["document_count"], 1)
 
     def test_the_catalog_says_the_group_of_each_tag(self):
+        # Los grupos son los de la institución de quien mira (fase 1): los de CAF.
+        self.owner.organization = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.owner.save(update_fields=["organization"])
         EvidenceTag.objects.update_or_create(slug="propia", defaults={"name": "Propia"})
         response = self.client.get("/api/document/evidence-tags/")
         rows = response.data["results"] if isinstance(response.data, dict) else response.data
@@ -141,7 +146,11 @@ class PrincipalStageTagTestCase(APITestCase):
     como decisión de la operación: el mismo archivo puede ser anexo en otra."""
 
     def setUp(self):
-        self.owner = User.objects.create_user(email="owner@example.com", password="x", username="owner")
+        # La etiqueta de cada etapa sale de la configuración de la institución (fase 1).
+        caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.owner = User.objects.create_user(
+            email="owner@example.com", password="x", username="owner", organization=caf
+        )
         self.client.force_authenticate(self.owner)
         self.doc = Document.objects.create(owner=self.owner, name="IDO", slug="ido-doc")
         self.doc.evidence_tags.set([EvidenceTag.objects.get(slug="documento-operacion")])

@@ -759,8 +759,11 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
 class EvidenceTagSerializer(serializers.ModelSerializer):
     """Etiqueta del catálogo con el que los pasos piden su evidencia.
 
-    ``group`` (principal / operacion / contexto / otro) sale del slug, para que
-    el portal filtre sin listas duras (ver ``apps.document.evidence_tag_groups``).
+    ``group`` sale de los ``evidence_tag_groups`` de la configuración de la
+    institución (ver ``apps.user.institution_config``), para que el portal
+    filtre sin listas duras. La etiqueta de una institución usa la de esa
+    institución; una global, la de quien mira (la vista la pasa en el contexto
+    como ``group_config``). Sin grupo: ``"otro"``.
     """
 
     document_count = serializers.IntegerField(read_only=True, required=False)
@@ -789,9 +792,13 @@ class EvidenceTagSerializer(serializers.ModelSerializer):
         )
 
     def get_group(self, obj) -> str:
-        from apps.document.evidence_tag_groups import evidence_tag_group
+        from apps.user import institution_config
 
-        return evidence_tag_group(obj.slug)
+        if obj.organization_id:
+            config = institution_config.effective_config(obj.organization)
+        else:
+            config = self.context.get("group_config") or institution_config.effective_config(None)
+        return institution_config.tag_group(config, obj.slug)
 
 
 class EvidenceTagWriteSerializer(serializers.ModelSerializer):

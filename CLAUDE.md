@@ -304,6 +304,25 @@ sin institución.
 
 La batería que lo verifica es `apps/project/tests/test_aislamiento.py`.
 
+### Configuración de cada institución (fase 1)
+
+Lo que hace distinto al portal de una institución vive en `Organization.config`,
+no en el código:
+- la marca;
+- las etapas, y lo que lanza cada una;
+- la etiqueta del documento principal por etapa;
+- qué workflow es el informe, el guiado y la lectura;
+- los grupos de etiquetas;
+- los criterios de evaluación.
+
+Se lee con `apps.user.institution_config.effective_config` y se escribe validada
+(`validate_config`, `PUT /api/organizations/{slug}/config/`). Sin configuración
+propia rige la base, que no tiene etapas ni workflows: **una operación sin
+institución, o de una institución sin configurar, no lanza nada de CAF**. La de
+CAF la siembra `user/0009_config_caf` con los valores que tenía el código. En
+tests, una operación de CAF necesita esa configuración
+(`apps.user.tests.fixtures.caf_config`).
+
 ```bash
 # Qué skills hay en cada alcance, y abrir al público las confirmadas
 python manage.py listar_skills_alcance
