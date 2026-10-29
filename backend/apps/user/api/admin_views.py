@@ -1,5 +1,5 @@
 """
-La consola del superadmin (fase 2).
+La consola del superadmin (fase 2) y el alta de instituciones (fase 5).
 
 Todo lo de ``/api/admin/`` es sólo del superadmin de Ecofilia
 (``is_ecofilia_admin``); cualquier otro recibe 403. Contrato en
@@ -133,6 +133,22 @@ class AdminOrganizationsView(AdminView):
     def get(self, request):
         return Response([organization_item(o) for o in _organizations_queryset()])
 
+    def post(self, request):
+        from apps.user.onboarding import OnboardingError, create_institution
+
+        try:
+            result = create_institution(request.data if isinstance(request.data, dict) else {})
+        except OnboardingError as exc:
+            return _bad(exc.errors)
+        return Response(
+            {
+                **organization_detail(result.organization),
+                "cloned_skills": result.cloned_skills,
+                "members": result.members,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 
 class AdminOrganizationDetailView(AdminView):
     def get(self, request, slug):
@@ -202,6 +218,20 @@ class AdminOrganizationDetailView(AdminView):
             if default is not None:
                 org.default_project_skills.set(default)
         return Response(organization_detail(org))
+
+
+class AdminOrganizationMembersView(AdminView):
+    def post(self, request, slug):
+        from apps.user.onboarding import OnboardingError, add_member
+
+        org = get_object_or_404(Organization, slug=slug)
+        data = request.data if isinstance(request.data, dict) else {}
+        try:
+            with transaction.atomic():
+                member = add_member(org, data.get("email"), data.get("role") or UserRole.MEMBER)
+        except OnboardingError as exc:
+            return _bad(exc.errors)
+        return Response(member, status=status.HTTP_201_CREATED)
 
 
 # ---------------------------------------------------------------------------

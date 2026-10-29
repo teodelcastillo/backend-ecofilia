@@ -9,10 +9,10 @@ cambia, se cambia en este archivo, en el mismo PR que lo implementa.
 |---|---|---|
 | 0 | Aislamiento entre instituciones | **Implementado** (PR #7) |
 | 1 | Configuración de cada institución en datos | **Implementado** (PR de `fase-1-backend`) |
-| 2 | Consola del superadmin | **Escrito**, en implementación (`fase-2-backend`) |
-| 3 | Portal genérico `/{institución}` | **Escrito**, en implementación (`fase-3-backend`) |
-| 4 | Plantilla pública `/app` y portal base sólo superadmin | **Escrito**, en implementación (`fase-4-backend`) |
-| 5 | Alta de instituciones | **Escrito**, en implementación (`fase-5-backend`) |
+| 2 | Consola del superadmin | **Implementado** (PR de `fase-2-backend`) |
+| 3 | Portal genérico `/{institución}` | **Implementado** (PR de `fase-3-backend`) |
+| 4 | Plantilla pública `/app` y portal base sólo superadmin | **Implementado** (PR de `fase-4-backend`) |
+| 5 | Alta de instituciones | **Implementado** (PR de `fase-5-backend`) |
 
 ---
 
@@ -772,8 +772,9 @@ Qué hace, todo o nada (si algo falla, no se crea nada):
      operaciones.
 3. **Arma la configuración.** Con `from_template`, es la plantilla (fase 4); si
    no, queda vacía y rige la base. Si la plantilla nombra una skill que se
-   copió, la configuración apunta a la copia. Se valida para la institución
-   nueva, como un `PUT` de la fase 1.
+   copió, la configuración apunta a la copia. La marca lleva el nombre de la
+   institución: el de la plantilla es un ejemplo. Se valida para la
+   institución nueva, como un `PUT` de la fase 1.
 4. **Agrega a los miembros.**
    - Un email que no existe crea el usuario y le manda una invitación. El
      usuario queda aprobado, sin contraseña y con el email sin verificar.
@@ -805,11 +806,17 @@ POST /api/admin/organizations/{slug}/members/
 Mismas reglas que `members` en el alta. **201** con
 `{"email", "id", "created", "invited"}`.
 
+Si el email ya es de esa institución, se le actualiza el rol. Si además todavía
+no eligió su contraseña (email sin verificar), se le reenvía la invitación
+(`invited: true`): es la forma de reinvitar cuando venció el enlace.
+Institución inexistente: **404**.
+
 ### La invitación
 
 El email lleva un enlace a
 `{FRONTEND_BASE_URL}/auth/reset-password?uid=…&token=…&invite=1`, la misma
-pantalla de restablecer contraseña. Con `invite=1` el front puede titularla
+pantalla de restablecer contraseña. Vale lo que `PASSWORD_RESET_TIMEOUT`
+(3 días por defecto). Con `invite=1` el front puede titularla
 «Elegí tu contraseña».
 
 Cambio en `POST /api/auth/password/reset/confirm/`: si el email todavía no

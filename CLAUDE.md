@@ -323,6 +323,19 @@ CAF la siembra `user/0009_config_caf` con los valores que tenía el código. En
 tests, una operación de CAF necesita esa configuración
 (`apps.user.tests.fixtures.caf_config`).
 
+### Consola, portal genérico, /app y alta (fases 2 a 5)
+
+- **Consola del superadmin** (`apps/user/api/admin_views.py`, `/api/admin/`): instituciones, usuarios por
+  nivel, alcance de skills en lote. **La consola no crea superadmins**: `role=admin` sin institución es
+  superadmin de toda la plataforma, así que un cambio que deje a alguien así da 400.
+- **Portal genérico**: `home_path` en `/api/auth/me/` (`/admin`, `/{slug}` o `/app`) y
+  `GET /api/organizations/` con los portales que cada uno puede abrir. Ningún endpoint asume CAF.
+- **Configuraciones de plataforma** (`PlatformConfig`): `public` rige `/app` (usuarios y operaciones sin
+  institución); `template` es el portal base y el punto de partida de una institución nueva.
+- **Alta** (`apps/user/onboarding.py`, `POST /api/admin/organizations/`): todo o nada. Copia skills de
+  Ecofilia (nunca de otra institución), arma la configuración desde la plantilla e invita miembros. El
+  enlace de la invitación es el de restablecer contraseña, que ahora también verifica el email.
+
 ```bash
 # Qué skills hay en cada alcance, y abrir al público las confirmadas
 python manage.py listar_skills_alcance
