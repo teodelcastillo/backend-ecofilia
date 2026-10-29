@@ -212,6 +212,46 @@ class ScopeDataMigrationTestCase(TestCase):
         self.assertTrue(project_evidence_tags(other_op.pk).filter(slug="ndc").exists())
 
 
+class CafOwnTagsTestCase(APITestCase):
+    """«Metodología CAF» y las salvaguardas de CAF son de CAF: otra institución no las ve."""
+
+    CAF_ONLY = ("metodologia-caf", "salvaguardas-cesas")
+
+    def setUp(self):
+        for slug in (*self.CAF_ONLY, "ndc"):
+            EvidenceTag.objects.update_or_create(slug=slug, organization=None, defaults={"name": slug})
+        self.migration = _migration("document", "0025_metodologia_y_salvaguardas_de_caf")
+
+    def _slugs(self, user):
+        self.client.force_authenticate(user)
+        rows = self.client.get("/api/document/evidence-tags/").data
+        return {t["slug"]: t["organization_slug"] for t in rows}
+
+    def test_without_caf_nothing_changes(self):
+        self.migration.asignar(django_apps, None)
+        self.assertFalse(EvidenceTag.objects.filter(slug__in=self.CAF_ONLY, organization__isnull=False).exists())
+
+    def test_they_go_to_caf_and_no_other_institution_sees_them(self):
+        caf = Organization.objects.create(name="CAF", slug="caf")
+        otra = Organization.objects.create(name="Otra", slug="otra")
+        self.migration.asignar(django_apps, None)
+        for slug in self.CAF_ONLY:
+            self.assertEqual(EvidenceTag.objects.get(slug=slug).organization, caf)
+
+        caf_member = User.objects.create_user(email="m@caf.org", password="x", organization=caf)
+        other_member = User.objects.create_user(email="m@otra.org", password="x", organization=otra)
+        public = User.objects.create_user(email="p@gmail.com", password="x")
+        self.assertEqual({s: self._slugs(caf_member).get(s) for s in self.CAF_ONLY}, dict.fromkeys(self.CAF_ONLY, "caf"))
+        for user in (other_member, public):
+            seen = self._slugs(user)
+            for slug in self.CAF_ONLY:
+                self.assertNotIn(slug, seen, (user.email, slug))
+            self.assertIn("ndc", seen)
+
+        self.migration.revertir(django_apps, None)
+        self.assertFalse(EvidenceTag.objects.filter(slug__in=self.CAF_ONLY, organization__isnull=False).exists())
+
+
 class ScopeCommandsTestCase(TestCase):
     def setUp(self):
         self.org_a = Organization.objects.create(name="A", slug="inst-a")
@@ -274,6 +314,8 @@ class SeedLocalInstitucionesTestCase(TestCase):
         caf = Organization.objects.get(slug="caf")
         self.assertTrue(Skill.objects.filter(slug__startswith="caf-", organization=caf).exists())
         self.assertEqual(EvidenceTag.objects.get(slug="ido").organization, caf)
+        for slug in ("metodologia-caf", "salvaguardas-cesas"):
+            self.assertEqual(EvidenceTag.objects.get(slug=slug).organization, caf)
         self.assertTrue(User.objects.get(email="caf-miembro@local.test").check_password("ecofilia-local"))
 
     def test_refuses_production(self):

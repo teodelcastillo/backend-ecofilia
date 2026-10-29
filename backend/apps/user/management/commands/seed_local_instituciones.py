@@ -126,6 +126,7 @@ class Command(BaseCommand):
         # Lo que en producción dejan las migraciones de la fase 0 con CAF presente.
         importlib.import_module("apps.skill.migrations.0049_asignar_alcance_skills").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0024_etiquetas_de_operacion_caf").asignar(django_apps, None)
+        importlib.import_module("apps.document.migrations.0025_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 
