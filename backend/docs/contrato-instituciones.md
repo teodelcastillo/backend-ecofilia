@@ -110,19 +110,20 @@ institución, un usuario público y un superadmin.
 | Skill | `caf-*` (de las migraciones) | `organization` / `caf`; habilitadas para CAF salvo `caf-insumo-ejecutivo` |
 | Skill | `local-propia-del-publico` | `user` / dueño `publico` |
 | Etiqueta | `propia-de-otra` | institución `otra` |
-| Etiqueta | `ido`, `dec`, `ias`, `ibat`, … | institución `caf` (las 9 de operación) |
-| Etiqueta | `ndc`, `nap`, `lts`, … | globales (11) |
+| Etiqueta | `ido`, `dec`, `ias`, `ibat`, …, `metodologia-caf`, `salvaguardas-cesas` | institución `caf` (11) |
+| Etiqueta | `ndc`, `nap`, `lts`, … | globales (las 9 de país) |
 
 **Lo que tiene que ver cada uno** (verificado con `verificar_contrato_local.py`):
 
 | Usuario | `GET /api/skills/` | Operaciones y emitidos | Etiquetas con institución | `evaluation-records` sin org / `caf` / `otra` | `GET /api/skills/local-plataforma/` |
 |---|---|---|---|---|---|
 | superadmin | todas | las 3 | las de `caf` y `otra` | 400 / 200 / 200 | 200 |
-| caf-admin, caf-miembro | 4 `caf-*` + `local-publica` | la de CAF | las 9 de `caf` | 400 / 200 / 403 | 404 |
+| caf-admin, caf-miembro | 4 `caf-*` + `local-publica` | la de CAF | las 11 de `caf` | 400 / 200 / 403 | 404 |
 | otra-miembro | `local-de-otra` + `local-publica` | la suya | `propia-de-otra` | 400 / 403 / 200 | 404 |
 | publico | `local-publica` + `local-propia-del-publico` | la suya | ninguna | 400 / 403 / 403 | 404 |
 
-Todos ven las 11 etiquetas globales.
+Todos ven las 9 etiquetas globales (las de país). Ninguna etiqueta de CAF le
+llega a `otra` ni al público.
 
 ---
 
@@ -286,8 +287,9 @@ GET /api/projects/evaluation-records/?organization=<slug>
 
 - Skills `caf-*` → `organization` / CAF. Las demás con dueño → `user`. **Todas
   las demás sin dueño → `platform`.**
-- Etiquetas de operación de CAF → CAF. Las de país quedan globales.
-  `metodologia-caf` y `salvaguardas-cesas` quedan globales hasta que se decida.
+- Etiquetas de operación de CAF → CAF (`document/0024`), y también
+  `metodologia-caf` y `salvaguardas-cesas` (`document/0025`). Las de país
+  quedan globales: son las únicas que ve una institución que no es CAF.
 
 > **Para la salida:** las skills que hoy ven todos (en una base nueva, las 11
 > plantillas `ecofilia-*`) quedan en `platform` y dejan de verse. La lista de
