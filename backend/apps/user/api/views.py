@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 
 from apps.user import institution_config
 from apps.user.access import is_ecofilia_admin
-from apps.user.models import Organization
+from apps.user.models import Organization, PlatformConfig
 
 
 def config_payload(organization) -> dict:
@@ -99,3 +99,29 @@ class OrganizationConfigView(APIView):
         organization.config = config
         organization.save(update_fields=["config", "updated_at"])
         return Response(config_payload(organization))
+
+
+class PlatformConfigView(APIView):
+    """``/api/platform/config/{public|template}/`` (fase 4).
+
+    La pública la lee cualquiera autenticado; la plantilla, sólo el superadmin.
+    Escribir cualquiera de las dos es del superadmin, y se validan como «sin
+    institución»: sólo skills públicas y etiquetas globales.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, key: str):
+        if key != PlatformConfig.Key.PUBLIC and not is_ecofilia_admin(request.user):
+            raise PermissionDenied("La plantilla de institución nueva es sólo del superadmin.")
+        return Response({"config": institution_config.platform_config(key)})
+
+    def put(self, request, key: str):
+        if not is_ecofilia_admin(request.user):
+            raise PermissionDenied("Sólo un superadmin cambia las configuraciones de la plataforma.")
+        raw = request.data.get("config") if isinstance(request.data, dict) else None
+        config, errors = institution_config.validate_config(raw, None)
+        if errors:
+            return Response({"config": errors}, status=status.HTTP_400_BAD_REQUEST)
+        PlatformConfig.objects.update_or_create(key=key, defaults={"config": config})
+        return Response({"config": institution_config.platform_config(key)})

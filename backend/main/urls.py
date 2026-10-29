@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/skills/', include('apps.skill.api.urls')),
     path('api/organizations/', include('apps.user.api.urls')),
     path('api/admin/', include('apps.user.api.admin_urls')),
+    path('api/platform/', include('apps.user.api.platform_urls')),
     path('api/evaluations/', include('apps.evaluation.api.urls')),
     path('api/evaluation-templates/', include('apps.evaluation.api.urls_templates')),
     path('api/auth/', include('apps.authentication.api.urls')),
