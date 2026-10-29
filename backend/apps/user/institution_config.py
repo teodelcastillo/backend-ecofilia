@@ -79,19 +79,39 @@ _SLUG = re.compile(r"^[-a-z0-9_]+$")
 # Lectura
 # ---------------------------------------------------------------------------
 
-def effective_config(organization) -> dict:
-    """La configuración que rige para ``organization`` (``None``: la base).
+def platform_config(key: str) -> dict:
+    """Una configuración de plataforma (``public`` o ``template``), o la base."""
+    from apps.user.models import PlatformConfig
 
-    Nunca se modifica el resultado en el lugar: es una copia.
-    """
-    stored = getattr(organization, "config", None) if organization is not None else None
+    stored = PlatformConfig.objects.filter(key=key).values_list("config", flat=True).first()
+    return _fill(stored)
+
+
+def _fill(stored) -> dict:
     config = copy.deepcopy(BASE_CONFIG)
     if isinstance(stored, dict) and stored:
         for key in TOP_LEVEL_KEYS:
             if key in stored:
                 config[key] = copy.deepcopy(stored[key])
-    elif organization is not None:
-        config["branding"]["display_name"] = organization.name
+    return config
+
+
+def effective_config(organization) -> dict:
+    """La configuración que rige para ``organization``.
+
+    Sin institución (``None``), la pública de la plataforma (fase 4), que sin
+    guardar es la base. Una institución sin configuración propia usa la base,
+    no la pública: lo de ``/app`` no es de ninguna institución.
+
+    Nunca se modifica el resultado en el lugar: es una copia.
+    """
+    if organization is None:
+        return platform_config("public")
+    stored = getattr(organization, "config", None)
+    if isinstance(stored, dict) and stored:
+        return _fill(stored)
+    config = _fill(None)
+    config["branding"]["display_name"] = organization.name
     return config
 
 

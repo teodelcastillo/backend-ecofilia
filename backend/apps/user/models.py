@@ -86,6 +86,30 @@ class Organization(models.Model):
         return self.name
 
 
+class PlatformConfig(models.Model):
+    """Las configuraciones de plataforma (fase 4), con la forma de ``Organization.config``.
+
+    - ``public``: rige ``/app``, es decir los usuarios sin institución y las
+      operaciones sin institución.
+    - ``template``: el portal base, sólo del superadmin. De acá sale la
+      configuración de una institución nueva (fase 5).
+
+    Sin fila, rige la configuración base del código
+    (``apps.user.institution_config.BASE_CONFIG``).
+    """
+
+    class Key(models.TextChoices):
+        PUBLIC = "public", _("Pública (/app)")
+        TEMPLATE = "template", _("Plantilla de institución nueva")
+
+    key = models.CharField(max_length=20, choices=Key.choices, unique=True)
+    config = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.key
+
+
 class UserManager(DjangoUserManager):
     use_in_migrations = True
 

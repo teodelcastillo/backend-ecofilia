@@ -175,12 +175,47 @@ class Command(BaseCommand):
         }
         otra.save(update_fields=["config", "updated_at"])
         # Lo sembrado tiene que cumplir el contrato, igual que lo que entra por la API.
-        from apps.user.institution_config import validate_config
+        from apps.user.institution_config import COUNTRY_CONTEXT_TAGS, validate_config
+        from apps.user.models import PlatformConfig
 
         for organization in (Organization.objects.get(pk=caf.pk), otra):
             _, errors = validate_config(organization.config, organization)
             if errors:
                 raise CommandError(f"La configuración sembrada de {organization.slug} no es válida: {errors}")
+
+        # Configuraciones de plataforma (fase 4): /app y el portal base se ven
+        # distintos de CAF y de «otra».
+        context_group = {"slug": "contexto", "label": "Contexto país", "tags": list(COUNTRY_CONTEXT_TAGS)}
+        platform = {
+            PlatformConfig.Key.PUBLIC: {
+                "version": 1,
+                "branding": {"display_name": "Ecofilia", "logo_url": ""},
+                "stages": [
+                    {"slug": "borrador", "label": "Borrador", "principal_tag": None, "launches": []},
+                    {"slug": "listo", "label": "Listo", "principal_tag": None, "launches": []},
+                ],
+                "workflows": {"report": None, "guided": None, "reading": None},
+                "evidence_tag_groups": [context_group],
+                "evaluation": {"framework": "", "criteria": []},
+            },
+            PlatformConfig.Key.TEMPLATE: {
+                "version": 1,
+                "branding": {"display_name": "Nueva institución", "logo_url": ""},
+                "stages": [
+                    {"slug": "inicio", "label": "Inicio", "principal_tag": None, "launches": []},
+                    {"slug": "analisis", "label": "Análisis", "principal_tag": None, "launches": []},
+                    {"slug": "cierre", "label": "Cierre", "principal_tag": None, "launches": []},
+                ],
+                "workflows": {"report": None, "guided": None, "reading": None},
+                "evidence_tag_groups": [context_group],
+                "evaluation": {"framework": "", "criteria": []},
+            },
+        }
+        for key, config in platform.items():
+            clean, errors = validate_config(config, None)
+            if errors:
+                raise CommandError(f"La configuración {key} sembrada no es válida: {errors}")
+            PlatformConfig.objects.update_or_create(key=key, defaults={"config": clean})
         if not SkillExecution.objects.filter(project=op_otra).exists():
             SkillExecution.objects.create(
                 skill=skill_otra, owner=otra_member, project=op_otra, status=ExecutionStatus.COMPLETED,
