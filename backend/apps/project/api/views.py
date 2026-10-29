@@ -281,7 +281,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
         link = get_object_or_404(
             ProjectDocument, project=project, document__slug=document_slug
         )
-        serializer = ProjectDocumentTagsSerializer(data=request.data)
+        serializer = ProjectDocumentTagsSerializer(data=request.data, context={"project": project})
         serializer.is_valid(raise_exception=True)
         if serializer.validated_data.get("inherit"):
             inherit_tags(link)
@@ -1232,17 +1232,34 @@ class ProjectViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="evaluation-records")
     def evaluation_records(self, request):
         """
-        El registro de evaluación de las operaciones visibles: el análisis del
-        Asistente IA, el informe emitido del ejecutivo y los informes subidos o
-        históricos, con la misma forma (ver ``services.evaluation_records``).
+        El registro de evaluación de las operaciones visibles de una
+        institución: el análisis del Asistente IA, el informe emitido del
+        ejecutivo y los informes subidos o históricos, con la misma forma (ver
+        ``services.evaluation_records``).
 
-        GET /projects/evaluation-records/[?organization=caf]
+        GET /projects/evaluation-records/?organization=caf
+
+        Es la materia con la que una institución mejora sus asistentes, y cada
+        una mejora sólo con sus propios datos: la institución es obligatoria
+        (400 sin ella) y quien no es superadmin sólo puede pedir la suya (403).
         """
         from apps.project.services.evaluation_records import records_for
+        from apps.user.access import is_ecofilia_admin
+        from apps.user.models import Organization
 
-        qs = Project.objects.for_user(request.user)
-        if org := request.query_params.get("organization"):
-            qs = qs.filter(organization__slug=org)
+        org_slug = (request.query_params.get("organization") or "").strip()
+        if not org_slug:
+            return Response(
+                {"detail": "Falta el parámetro 'organization' con el slug de la institución."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        superadmin = user.is_staff or is_ecofilia_admin(user)
+        own_slug = user.organization.slug if getattr(user, "organization_id", None) else None
+        if not superadmin and org_slug != own_slug:
+            raise PermissionDenied("Sólo podés ver el registro de evaluación de tu institución.")
+        organization = get_object_or_404(Organization, slug=org_slug)
+        qs = Project.objects.for_user(user).filter(organization=organization)
         return Response(records_for(qs.order_by("id")))
 
     @action(detail=False, methods=["post"], url_path="historical-report")

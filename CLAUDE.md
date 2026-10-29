@@ -278,6 +278,42 @@ python manage.py reprocess_documents --status partial,error,processing
 
 ---
 
+## Aislamiento entre instituciones (fase 0)
+
+Ninguna información de una institución la ve otra. Tres niveles de acceso:
+superadmin de Ecofilia (`apps.user.access.is_ecofilia_admin`: superuser o
+`role=admin`, sin organización), miembro de una institución y usuario público
+sin institución.
+
+- **Skills** (`Skill.scope`): `platform` (sólo superadmin), `public`,
+  `organization` (con `Skill.organization`) y `user` (sólo su `owner`). La regla
+  vive en `apps/skill/visibility.py` y la usan el listado, el detalle y todas
+  las acciones que corren o continúan una corrida. Una institución `restricted`
+  ve de las suyas sólo las de `enabled_for_organizations`. El alcance lo cambia
+  sólo el superadmin (`PATCH /api/skills/{slug}/` con `scope` /
+  `organization_slug`).
+- **Etiquetas de evidencia** (`EvidenceTag.organization`): sin institución es
+  global (instrumentos de país); con institución, sólo la ve esa. El slug es
+  único por institución, y todo slug se resuelve dentro de las globales más las
+  de la institución de la operación (`apps/document/services.py`:
+  `evidence_tags_for_organization`, `resolve_evidence_tags`).
+- **Aprendizaje por institución**: `GET /api/projects/evaluation-records/`
+  exige `?organization=<slug>`; las versiones de definición de una skill de
+  institución sólo pueden venir informadas por ella
+  (`SkillDefinitionVersion.informed_by_organization`).
+
+La batería que lo verifica es `apps/project/tests/test_aislamiento.py`.
+
+```bash
+# Qué skills hay en cada alcance, y abrir al público las confirmadas
+python manage.py listar_skills_alcance
+python manage.py listar_skills_alcance --hacer-publicas slug1,slug2 --dry-run
+# Usuarios por nivel (superadmin / institución / público)
+python manage.py listar_usuarios_por_nivel
+```
+
+---
+
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
 
 `SECRET_KEY`, `JWT_SIGNING_KEY`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`

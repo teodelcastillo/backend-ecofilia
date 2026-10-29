@@ -9,7 +9,12 @@ from django.db.migrations.executor import MigrationExecutor
 from django.test import TransactionTestCase
 
 BEFORE = [("project", "0011_evidence_tags_on_document"), ("document", "0018_evidence_tags_on_document")]
-AFTER = [("project", "0012_move_evidence_tags_to_documents")]
+# El documento también avanza: las aserciones leen con el modelo actual, que ya
+# tiene columnas que la tabla en 0018 no tiene (``EvidenceTag.organization``).
+AFTER = [
+    ("project", "0012_move_evidence_tags_to_documents"),
+    ("document", "0024_etiquetas_de_operacion_caf"),
+]
 
 
 class MoveEvidenceTagsMigrationTestCase(TransactionTestCase):

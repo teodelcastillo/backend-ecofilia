@@ -336,7 +336,7 @@ class DocumentBulkEvidenceTagsAPIView(APIView):
         if not ecofilia and not is_organization_admin(user):
             raise PermissionDenied("Sólo superadmins pueden etiquetar documentos en lote.")
 
-        serializer = DocumentBulkEvidenceTagsSerializer(data=request.data)
+        serializer = DocumentBulkEvidenceTagsSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         slugs = list(dict.fromkeys(data["slugs"]))
@@ -703,7 +703,11 @@ class DocumentListAPIView(ListAPIView):
             if evidence_tag == "__none__":
                 queryset = queryset.filter(evidence_tags__isnull=True)
             elif evidence_tag:
-                queryset = queryset.filter(evidence_tags__slug=evidence_tag).distinct()
+                from apps.document.services import visible_evidence_tags
+
+                queryset = queryset.filter(
+                    evidence_tags__in=visible_evidence_tags(request.user).filter(slug=evidence_tag)
+                ).distinct()
             queryset = queryset.order_by(*_document_list_sort_order(request))
             paginator = PublicDocumentListPagination()
             page = paginator.paginate_queryset(queryset, request, view=self)
@@ -1108,14 +1112,18 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
     """
     Catálogo de etiquetas de evidencia.
 
-    Es global y compartido a propósito: los slugs quedan escritos en la
-    definición de los workflows, así que si cada usuario tuviera el suyo, un
-    workflow compartido pediría etiquetas que para otro no existen.
+    Las globales (sin institución: los instrumentos de país) las ve todo el
+    mundo; las de una institución, sólo esa institución. El superadmin ve todas
+    y puede pedir las que ve una institución con ``?organization=<slug>``
+    (globales más las de esa institución).
 
-    Ampliarlo lo puede cualquier usuario autenticado —agregar un tipo de
-    documento es parte de armar un workflow—, pero editar y borrar queda para
-    staff: renombrar una etiqueta afecta a todos los workflows que la piden.
-    Las de semilla no se borran ni siendo staff; son las que referencian los
+    Ampliarlo lo puede cualquier miembro de una institución —agregar un tipo de
+    documento es parte de armar un workflow— y la etiqueta nueva es de su
+    institución. El superadmin agrega globales o, con ``organization_slug``, de
+    una institución. Un usuario sin institución no agrega: lo suyo sería global
+    y lo verían todas las instituciones. Editar y borrar queda para staff:
+    renombrar una etiqueta afecta a todos los workflows que la piden. Las de
+    semilla no se borran ni siendo staff; son las que referencian los
     workflows que provee Ecofilia.
     """
 
@@ -1123,12 +1131,92 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     lookup_field = "slug"
 
+    def _is_superadmin(self) -> bool:
+        user = self.request.user
+        return bool(user.is_staff or is_ecofilia_admin(user))
+
+    def _requested_organization(self):
+        from apps.user.models import Organization
+
+        slug = self.request.query_params.get("organization")
+        if not slug or not self._is_superadmin():
+            return None
+        return get_object_or_404(Organization, slug=slug)
+
     def get_queryset(self):
+        from apps.document.services import evidence_tags_for_organization, visible_evidence_tags
+
+        user = self.request.user
+        organization = self._requested_organization()
+        if organization is not None:
+            qs = evidence_tags_for_organization(organization.pk)
+        else:
+            qs = visible_evidence_tags(user)
         # Cuántos documentos de la biblioteca la llevan. Antes contaba
-        # vínculos a operaciones, que era donde vivía la etiqueta.
-        return EvidenceTag.objects.annotate(
-            document_count=Count("documents", distinct=True)
-        )
+        # vínculos a operaciones, que era donde vivía la etiqueta. Quien no es
+        # superadmin cuenta sólo los que ve: el número de documentos de otra
+        # institución también es información de esa institución.
+        if self._is_superadmin():
+            count = Count("documents", distinct=True)
+        else:
+            count = Count(
+                "documents",
+                filter=Q(documents__in=Document.objects.filter(visible_documents_q(user)).values("pk")),
+                distinct=True,
+            )
+        return qs.select_related("organization").annotate(document_count=count)
+
+    def get_object(self):
+        """Por slug, dentro de lo que ve el usuario.
+
+        Para el superadmin, que ve todas, un slug puede repetirse entre
+        instituciones: gana la de ``?organization``, después la global.
+        """
+        from apps.document.services import resolve_evidence_tags
+
+        slug = self.kwargs.get(self.lookup_field)
+        organization = self._requested_organization()
+        prefer = organization.pk if organization else getattr(self.request.user, "organization_id", None)
+        tag = resolve_evidence_tags([slug], self.get_queryset(), prefer).get(slug)
+        if tag is None:
+            from django.http import Http404
+
+            raise Http404
+        self.check_object_permissions(self.request, tag)
+        return tag
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        if self.action == "create":
+            context["target_organization_id"] = self._target_organization_id()
+        return context
+
+    def _target_organization_id(self):
+        """En qué institución queda una etiqueta nueva."""
+        from apps.user.models import Organization
+
+        user = self.request.user
+        if self._is_superadmin():
+            slug = (self.request.data or {}).get("organization_slug")
+            if not slug:
+                return None
+            organization = Organization.objects.filter(slug=slug).first()
+            if organization is None:
+                from rest_framework.exceptions import ValidationError
+
+                raise ValidationError({"organization_slug": f"No existe la institución «{slug}»."})
+            return organization.pk
+        if not getattr(user, "organization_id", None):
+            raise PermissionDenied(
+                "Las etiquetas nuevas son de una institución. Un usuario sin "
+                "institución no agrega etiquetas al catálogo."
+            )
+        if (self.request.data or {}).get("organization_slug") not in (None, "", user.organization.slug):
+            raise PermissionDenied("Sólo un superadmin agrega etiquetas a otra institución.")
+        return user.organization_id
+
+    def perform_create(self, serializer):
+        serializer.save(organization_id=serializer.context.get("target_organization_id"))
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):

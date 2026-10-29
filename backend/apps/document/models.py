@@ -386,9 +386,24 @@ class EvidenceTag(models.Model):
 
     El catálogo es ampliable: ``is_seed`` sólo distingue las que provee
     Ecofilia (que no se borran) de las que agrega un equipo.
+
+    Sin ``organization`` la etiqueta es global (los instrumentos de país: NDC,
+    NAP, LTS…); con ``organization`` es de esa institución y ninguna otra la
+    ve. Por eso el slug es único por institución y no en todo el catálogo:
+    cada slug se resuelve dentro de las globales más las de la institución
+    (ver ``apps.document.services.evidence_tags_for_organization``).
     """
 
-    slug = models.SlugField(unique=True, max_length=80)
+    slug = models.SlugField(max_length=80)
+    organization = models.ForeignKey(
+        "user.Organization",
+        null=True,
+        blank=True,
+        # Borrar la institución no puede volver globales sus etiquetas.
+        on_delete=models.PROTECT,
+        related_name="evidence_tags",
+        help_text="Vacío: etiqueta global. Con institución: sólo la ve esa institución.",
+    )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     source_topics = ArrayField(
@@ -410,6 +425,18 @@ class EvidenceTag(models.Model):
 
     class Meta:
         ordering = ("position", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "slug"), name="evidence_tag_org_slug_unique"
+            ),
+            # ``(organization, slug)`` no alcanza para las globales: en
+            # Postgres dos NULL no chocan.
+            models.UniqueConstraint(
+                fields=("slug",),
+                condition=Q(organization__isnull=True),
+                name="evidence_tag_global_slug_unique",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.slug})"

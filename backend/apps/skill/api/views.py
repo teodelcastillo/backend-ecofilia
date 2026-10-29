@@ -32,12 +32,15 @@ from apps.skill.api.serializers import (
     SkillExecutionSerializer,
     SkillExecutionSummarySerializer,
     SkillExecutionVersionSerializer,
+    SCOPE_FORBIDDEN_MESSAGE,
+    SkillScopeSerializer,
     SkillSerializer,
     SkillWriteSerializer,
 )
 from apps.skill.models import (
     ExecutionStatus,
     Skill,
+    SkillScope,
     SkillExecution,
     SkillExecutionVersion,
     SkillStep,
@@ -64,11 +67,19 @@ from apps.skill.services import (
 from apps.skill.dispatch import dispatch_execution
 from apps.skill.launch import create_execution, resolve_effective_output
 from apps.skill.tasks import run_skill_task
+from apps.skill.visibility import user_can_see_skill, visible_skills
 
 
 
 def _ensure_can_run(user, skill) -> None:
-    """Corta con 403 si el usuario no puede ejecutar este asistente."""
+    """Corta con 403 si el usuario no puede ejecutar este asistente.
+
+    Primero, que lo vea: la corrida puede estar en una operación compartida con
+    él y el asistente ser de otra institución o de plataforma. Correrlo,
+    reanudarlo o rehacerlo es usarlo, y un asistente que no ve no lo usa.
+    """
+    if not user_can_see_skill(user, skill):
+        raise PermissionDenied("No tenés acceso a este asistente.")
     if not user_can_run_skill(user, skill):
         raise PermissionDenied(RUN_FORBIDDEN_MESSAGE)
 
@@ -86,7 +97,9 @@ def _accepted_or_unavailable(execution: SkillExecution) -> Response:
 class SkillViewSet(viewsets.ModelViewSet):
     """
     CRUD for Skills + the run action.
-    Returns: Ecofilia templates (owner=null) + the requesting user's own skills.
+
+    Qué asistentes ve cada uno lo decide ``Skill.scope`` (ver
+    ``apps.skill.visibility``): lo que no ve responde 404, también al correrlo.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = SkillSerializer
@@ -94,19 +107,16 @@ class SkillViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = (
+        qs = visible_skills(
+            user,
             Skill.objects
-            .filter(Q(owner__isnull=True) | Q(owner=user))
             .prefetch_related(
                 Prefetch("steps", queryset=SkillStep.objects.order_by("position")),
                 "enabled_for_organizations",
                 "default_for_organizations",
             )
-            .select_related("owner")
+            .select_related("owner", "organization"),
         )
-        # Restricted orgs (e.g. CAF) only see the skills Ecofilia enabled for them.
-        if getattr(user, "is_restricted", False):
-            qs = qs.filter(enabled_for_organizations=user.organization)
         skill_type = self.request.query_params.get("skill_type")
         if skill_type:
             qs = qs.filter(skill_type=skill_type)
@@ -134,7 +144,21 @@ class SkillViewSet(viewsets.ModelViewSet):
             qs = qs.filter(enabled_projects=project).distinct()
         return qs
 
+    def _is_scope_only_update(self) -> bool:
+        """Un PATCH que sólo cambia el alcance (``scope`` / ``organization_slug``).
+
+        Va por su propio serializer: el de escritura revalida la definición
+        entera y, para un workflow, le prende el modo comparativo de paso.
+        Cambiar quién ve un asistente no puede cambiar cómo corre.
+        """
+        if self.action != "partial_update":
+            return False
+        keys = set(getattr(self.request, "data", {}) or {})
+        return bool(keys) and keys <= set(SkillScopeSerializer.Meta.fields)
+
     def get_serializer_class(self):
+        if self._is_scope_only_update():
+            return SkillScopeSerializer
         if self.action in {"create", "update", "partial_update"}:
             return SkillWriteSerializer
         return SkillSerializer
@@ -144,11 +168,23 @@ class SkillViewSet(viewsets.ModelViewSet):
             raise PermissionDenied(
                 "Your organization cannot create skills; contact Ecofilia."
             )
-        serializer.save(owner=self.request.user, is_template=False)
+        # Lo que crea un usuario es suyo. Sólo el superadmin elige otro alcance
+        # (``scope`` / ``organization_slug`` en el pedido; ver el serializer).
+        extra = {}
+        if "scope" not in serializer.validated_data:
+            extra["scope"] = SkillScope.USER
+        serializer.save(owner=self.request.user, is_template=False, **extra)
 
     def perform_update(self, serializer):
         skill = self.get_object()
-        if not skill.can_edit(self.request.user):
+        if isinstance(serializer, SkillScopeSerializer):
+            # El alcance lo decide sólo el superadmin; el serializer lo vuelve
+            # a verificar, pero acá corta antes de tocar nada.
+            from apps.user.access import is_ecofilia_admin
+
+            if not is_ecofilia_admin(self.request.user):
+                raise PermissionDenied(SCOPE_FORBIDDEN_MESSAGE)
+        elif not skill.can_edit(self.request.user):
             raise PermissionDenied("You cannot edit this skill.")
         serializer.save()
 
@@ -343,8 +379,60 @@ class SkillViewSet(viewsets.ModelViewSet):
         entonces.
         """
         skill = self.get_object()
-        versions = skill.definition_versions.order_by("-version_number")
+        versions = skill.definition_versions.select_related(
+            "informed_by_organization"
+        ).order_by("-version_number")
         return Response(SkillDefinitionVersionSerializer(versions, many=True).data)
+
+    @action(
+        detail=True,
+        methods=["patch"],
+        url_path=r"definition-versions/(?P<version_number>\d+)",
+        url_name="definition-version-detail",
+    )
+    def definition_version_detail(self, request, slug=None, version_number=None):
+        """
+        Fija con los datos de qué institución se mejoró una versión (superadmin).
+
+        PATCH /api/skills/{slug}/definition-versions/{version_number}/
+        Body: { "informed_by_organization_slug": "caf" | null }
+
+        En un asistente de alcance institución tiene que ser la suya: cada
+        institución mejora sus asistentes sólo con sus propios datos. Si no, 400.
+        """
+        from django.core.exceptions import ValidationError as DjangoValidationError
+        from apps.user.access import is_ecofilia_admin
+        from apps.user.models import Organization
+
+        if not is_ecofilia_admin(request.user):
+            raise PermissionDenied("Sólo un superadmin edita las versiones de un asistente.")
+        skill = self.get_object()
+        version = skill.definition_versions.filter(version_number=int(version_number)).first()
+        if version is None:
+            return Response({"detail": "No existe esa versión."}, status=status.HTTP_404_NOT_FOUND)
+        if "informed_by_organization_slug" not in request.data:
+            return Response(
+                {"detail": "Falta 'informed_by_organization_slug'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        org_slug = request.data.get("informed_by_organization_slug")
+        organization = None
+        if org_slug:
+            organization = Organization.objects.filter(slug=org_slug).first()
+            if organization is None:
+                return Response(
+                    {"informed_by_organization_slug": f"No existe la institución «{org_slug}»."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        version.informed_by_organization = organization
+        try:
+            version.save(update_fields=["informed_by_organization"])
+        except DjangoValidationError as exc:
+            return Response(
+                {"informed_by_organization_slug": exc.message_dict.get("informed_by_organization", exc.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(SkillDefinitionVersionSerializer(version).data)
 
     def _skill_enabled_for_context(self, skill: Skill, context_type: str, data: dict) -> bool:
         if context_type == "document":

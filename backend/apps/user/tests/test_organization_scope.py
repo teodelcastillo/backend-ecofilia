@@ -102,7 +102,10 @@ class OrganizationScopeTestCase(APITestCase):
         self.assertTrue(doc.is_public)
 
     def test_org_admin_does_not_see_other_clients(self):
-        skill = Skill.objects.create(name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"])
+        # Público: asignado a dos clientes, los dos lo ven (fase 0).
+        skill = Skill.objects.create(
+            name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"], scope="public"
+        )
         self.caf.enabled_skills.add(skill)
         self.other.enabled_skills.add(skill)
         self._as(self.caf_admin)

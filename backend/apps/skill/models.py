@@ -60,6 +60,25 @@ class ExecutionOutputMode(models.TextChoices):
     TABLE = "table", _("Table")
 
 
+class SkillScope(models.TextChoices):
+    """
+    Quién ve un asistente. Ninguna institución ve lo de otra.
+
+    - ``platform``: de Ecofilia, sólo lo ve el superadmin. Es donde nace todo lo
+      que no tiene dueño hasta que el dueño del producto confirme qué se abre.
+    - ``public``: lo ve cualquiera, con o sin institución.
+    - ``organization``: sólo los miembros de ``Skill.organization``.
+    - ``user``: sólo su dueño (``Skill.owner``).
+
+    El superadmin ve todos. La regla vive en ``apps.skill.visibility``.
+    """
+
+    PLATFORM = "platform", _("Plataforma (sólo superadmin)")
+    PUBLIC = "public", _("Público")
+    ORGANIZATION = "organization", _("Institución")
+    USER = "user", _("Usuario")
+
+
 # ---------------------------------------------------------------------------
 # Skill definition
 # ---------------------------------------------------------------------------
@@ -68,7 +87,9 @@ class Skill(models.Model):
     """
     A reusable AI automation template.
 
-    owner=None means it's an Ecofilia-provided template visible to all users.
+    Quién lo ve lo decide ``scope`` (ver ``SkillScope``); ``owner`` ya no alcanza
+    por sí solo: hasta la fase 0 ``owner=None`` lo mostraba a todos los usuarios,
+    también los workflows armados para una sola institución.
     """
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -76,6 +97,26 @@ class Skill(models.Model):
         on_delete=models.CASCADE,
         null=True,
         blank=True,
+    )
+    scope = models.CharField(
+        max_length=20,
+        choices=SkillScope.choices,
+        default=SkillScope.PLATFORM,
+        db_index=True,
+        help_text=(
+            "Quién ve el asistente: plataforma (sólo superadmin), público, una "
+            "institución o sólo su dueño."
+        ),
+    )
+    organization = models.ForeignKey(
+        "user.Organization",
+        null=True,
+        blank=True,
+        # Sin institución, un asistente de alcance institución no lo ve nadie
+        # salvo el superadmin: falla cerrado, no abierto.
+        on_delete=models.SET_NULL,
+        related_name="own_skills",
+        help_text="La institución dueña, cuando scope='organization'. Vacío en los demás.",
     )
     skill_type = models.CharField(
         max_length=20, choices=SkillType.choices, default=SkillType.QUICK
@@ -270,12 +311,26 @@ class Skill(models.Model):
         ordering = ("skill_type", "name")
         indexes = [models.Index(fields=("owner", "skill_type"))]
 
+    def __init__(self, *args, **kwargs):
+        # Un asistente que se crea con dueño y sin alcance es de su dueño, no
+        # de la plataforma: es lo que hacía ``owner`` antes de que existiera
+        # ``scope``. Las filas que vienen de la base llegan posicionales y no
+        # pasan por acá.
+        if not args and "scope" not in kwargs and (
+            kwargs.get("owner") is not None or kwargs.get("owner_id") is not None
+        ):
+            kwargs["scope"] = SkillScope.USER
+        super().__init__(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.name} ({self.skill_type})"
 
     def save(self, *args, **kwargs):
         if not self.slug:
             self.slug = self._unique_slug()
+        # La institución sólo significa algo con alcance institución.
+        if self.scope != SkillScope.ORGANIZATION:
+            self.organization = None
         super().save(*args, **kwargs)
 
     def _unique_slug(self) -> str:
@@ -615,6 +670,22 @@ class SkillStep(models.Model):
 # Definition versions
 # ---------------------------------------------------------------------------
 
+def informed_by_error(skill, informed_by_organization_id) -> str:
+    """Por qué una versión de ``skill`` no puede venir informada por esa institución.
+
+    Vacío si puede. Sólo restringe a los asistentes de alcance institución: los
+    demás no son de nadie en particular.
+    """
+    if skill is None or skill.scope != SkillScope.ORGANIZATION:
+        return ""
+    if informed_by_organization_id != skill.organization_id:
+        return (
+            "Una versión de un asistente de una institución sólo puede venir "
+            "informada por los datos de esa institución."
+        )
+    return ""
+
+
 class SkillDefinitionVersion(models.Model):
     """
     Una definición de workflow congelada, tal como se ejecutó.
@@ -652,7 +723,39 @@ class SkillDefinitionVersion(models.Model):
     definition = models.JSONField(
         help_text="Snapshot completo: skill, pasos y parámetros declarados.",
     )
+    # Con los datos de qué institución se mejoró esta versión. Cada institución
+    # mejora sus asistentes sólo con sus propios datos: una versión de un
+    # asistente de una institución no puede venir informada por otra.
+    informed_by_organization = models.ForeignKey(
+        "user.Organization",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="informed_skill_versions",
+        help_text=(
+            "Institución cuyos datos informaron esta versión. En un asistente de "
+            "alcance institución, tiene que ser la suya."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        super().clean()
+        error = informed_by_error(self.skill, self.informed_by_organization_id)
+        if error:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"informed_by_organization": error})
+
+    def save(self, *args, **kwargs):
+        # Se valida siempre, no sólo desde un formulario: la regla es de
+        # aislamiento y no puede depender de quién guarda.
+        error = informed_by_error(self.skill, self.informed_by_organization_id)
+        if error:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({"informed_by_organization": error})
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ("skill", "-version_number")
