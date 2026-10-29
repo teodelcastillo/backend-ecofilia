@@ -8,7 +8,7 @@ cambia, se cambia en este archivo, en el mismo PR que lo implementa.
 | Fase | Qué | Estado del contrato |
 |---|---|---|
 | 0 | Aislamiento entre instituciones | **Implementado** (PR #7) |
-| 1 | Configuración de cada institución en datos | Pendiente |
+| 1 | Configuración de cada institución en datos | **Implementado** (PR de `fase-1-backend`) |
 | 2 | Consola del superadmin | Pendiente |
 | 3 | Portal genérico `/{institución}` | Pendiente |
 | 4 | Plantilla pública `/app` y portal base sólo superadmin | Pendiente |
@@ -301,7 +301,198 @@ GET /api/projects/evaluation-records/?organization=<slug>
 
 ## Fase 1 — Configuración de cada institución en datos
 
-*Pendiente. Se escribe antes de implementarla.*
+**Objetivo:** que lo que hoy está escrito para CAF en el código (en el back y en
+el front) salga de la configuración de cada institución. Para CAF el
+comportamiento queda idéntico: una migración le siembra su configuración con
+los valores que hoy están en el código.
+
+### Qué se configura
+
+1. **Marca:** nombre visible y logo.
+2. **Etapas** de una operación, en orden, con su etiqueta.
+3. **Etiqueta del documento principal** por etapa (hoy IDO → `ido`, DEC → `dec`).
+4. **Qué asistentes lanza** la operación al entrar a cada etapa (hoy, sólo IDO lanza el IET).
+5. **Roles de los workflows del informe:** cuál es el informe de Ecofilia, cuál el
+   guiado y cuál la lectura de un informe subido.
+6. **Grupos de etiquetas** (hoy `apps/document/evidence_tag_groups.py`).
+7. **Criterios de evaluación**, con sus opciones y tonos (hoy duplicados en
+   `caf_criteria.py` y `ecofiliaV2/lib/caf-alineacion.ts`).
+
+### Forma de la configuración (versión 1)
+
+```json
+{
+  "version": 1,
+  "branding": {
+    "display_name": "CAF",
+    "logo_url": "/images/caf-logo.png"
+  },
+  "stages": [
+    {"slug": "pre_originacion", "label": "Pre-originación", "principal_tag": null, "launches": []},
+    {"slug": "ido_cci", "label": "IDO-CCI", "principal_tag": "ido",
+     "launches": ["caf-iet-datbc-evaluacion-tecnica"]},
+    {"slug": "dec", "label": "DEC", "principal_tag": "dec", "launches": []},
+    {"slug": "aprobada", "label": "Aprobada", "principal_tag": null, "launches": []}
+  ],
+  "workflows": {
+    "report": "caf-iet-datbc-evaluacion-tecnica",
+    "guided": "caf-iet-guiado-ejecutivo",
+    "reading": "caf-lectura-informe-ejecutivo"
+  },
+  "evidence_tag_groups": [
+    {"slug": "principal", "label": "Documento principal", "tags": ["ido", "dec"]},
+    {"slug": "operacion", "label": "Documentos de la operación",
+     "tags": ["ias", "analisis-riesgos", "matriz-resultados", "disenos-proyecto", "ibat", "otros", "documento-operacion"]},
+    {"slug": "contexto", "label": "Contexto país",
+     "tags": ["ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap", "pancd", "inventario-gei", "ley-cambio-climatico", "reporte-nacional"]}
+  ],
+  "evaluation": {
+    "framework": "caf-datbc",
+    "criteria": [
+      {"key": "ct_a1", "code": "CT A1", "name": "Análisis de riesgos climáticos", "group": "objetivo_1",
+       "is_determination": false,
+       "options": [{"value": "Riesgo bajo", "short": "Riesgo bajo", "tone": "ok"}, "…"]},
+      "… los 10 criterios de CAF: ct_a1, ct_a2, ct_a3, objetivo_1, ct_m1 … ct_m5, objetivo_2"
+    ]
+  }
+}
+```
+
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `version` | int | `1` |
+| `branding.display_name` | string | no vacío; por defecto, el `name` de la institución |
+| `branding.logo_url` | string | URL absoluta o ruta del front (`/images/...`); puede ser `""` |
+| `stages[]` | lista | orden = orden del ciclo; puede ser vacía |
+| `stages[].slug` | slug | único; es el valor de `context_notes.estado` |
+| `stages[].label` | string | no vacío |
+| `stages[].principal_tag` | slug \| null | etiqueta que existe para la institución (globales + las suyas) |
+| `stages[].launches` | lista de slugs de skill | cada una `public` o de esta institución |
+| `workflows.report` / `.guided` / `.reading` | slug de skill \| null | ídem; `null` = la institución no tiene ese rol |
+| `evidence_tag_groups[]` | lista | `slug` único; una etiqueta en a lo sumo un grupo; cada etiqueta existe para la institución. Una etiqueta sin grupo cae en `"otro"` |
+| `evaluation.framework` | string | `"caf-datbc"` o `""`. Con `caf-datbc`, los criterios tienen que ser exactamente los 10 de CAF: las reglas de determinación están en código y dependen de esas claves |
+| `evaluation.criteria[]` | lista | `key` única; `group` es la clave del criterio-determinación al que pertenece (o `null`); `options[].tone` ∈ `ok`, `atencion`, `brecha`, `critico`, `pendiente`, `neutro` |
+
+Los roles de la etapa se derivan, no se configuran aparte. Una etapa tiene
+**informe de Ecofilia** si sus `launches` incluyen `workflows.report`; hoy, sólo
+`ido_cci`. Ahí se ofrecen las vías editado y guiado.
+
+### Configuración base
+
+La usan las operaciones **sin institución** y las instituciones que todavía no
+tienen configuración propia:
+
+```json
+{
+  "version": 1,
+  "branding": {"display_name": "Ecofilia", "logo_url": ""},
+  "stages": [],
+  "workflows": {"report": null, "guided": null, "reading": null},
+  "evidence_tag_groups": [
+    {"slug": "contexto", "label": "Contexto país", "tags": ["ndc", "nap", "lts", "…los 9 de país"]}
+  ],
+  "evaluation": {"framework": "", "criteria": []}
+}
+```
+
+> **Cambio de comportamiento:** hasta ahora cualquier operación que entraba a
+> `ido_cci` lanzaba el IET de CAF, fuera de la institución que fuera. Con la
+> configuración base, una operación sin institución, o de una institución sin
+> configurar, no tiene etapas ni lanza nada de CAF. Una institución que no es
+> CAF no puede usar un workflow de CAF (regla de la fase 0).
+
+### Endpoints
+
+**Leer la configuración propia** — cualquier usuario autenticado:
+
+```
+GET /api/organizations/me/config/
+```
+
+```json
+{
+  "organization": {"slug": "caf", "name": "CAF", "restricted": true},
+  "config": { "…configuración efectiva, forma de arriba…" }
+}
+```
+
+Sin institución: `"organization": null` y la configuración base. Es lo que el
+front tiene que leer en vez de las constantes de `caf-etapas.ts`,
+`caf-alineacion.ts`, `caf-portal.ts` y los grupos de etiquetas.
+
+**Leer la de una institución:**
+
+```
+GET /api/organizations/{slug}/config/
+```
+
+| Quién | Respuesta |
+|---|---|
+| miembro de esa institución, o superadmin | **200**, misma forma que `/me/config/` |
+| cualquier otro (incluido el público) | **404**: no se revela si la institución existe |
+| superadmin con un slug que no existe | **404** |
+
+**Reemplazar la configuración** — sólo superadmin. La fase 2 construye la
+consola encima de este endpoint:
+
+```
+PUT /api/organizations/{slug}/config/
+{"config": { "…documento completo…" }}
+```
+
+| Caso | Respuesta |
+|---|---|
+| válido | **200**, misma forma que el `GET`; queda guardada normalizada |
+| inválido | **400** `{"config": ["stages[1].launches[0]: la skill «x» no es pública ni de esta institución.", "…"]}`, con todos los errores juntos y la ruta de cada campo |
+| no superadmin | **403** |
+| institución inexistente | **404** |
+
+Un documento con claves de primer nivel faltantes se completa con las de la
+configuración base. Las claves desconocidas se rechazan (400).
+
+`me` queda reservado: no puede ser el slug de una institución (la fase 5 lo
+valida al dar de alta).
+
+### Lo que cambia en endpoints existentes
+
+| Endpoint | Cambio |
+|---|---|
+| `GET /api/document/evidence-tags/` | `group` sale de los `evidence_tag_groups` de la institución del usuario (superadmin con `?organization=`: de esa institución; sin institución: de la base). Mismos valores que hoy para CAF |
+| `POST /api/projects/{slug}/stage/` `{"to": ...}` | las etapas válidas son las de la institución de la operación. Una etapa que no existe en su configuración da **400**, igual que hoy una desconocida |
+| lanzamientos al entrar a una etapa | salen de `stages[].launches` de la institución de la operación |
+| informe editado / guiado / lectura | usan `workflows.report` / `.guided` / `.reading` de la institución. Sin el rol, **400** «no disponible en esta institución» |
+| `GET /api/projects/evaluation-records/?organization=` | los criterios de cada registro salen de `evaluation.criteria` de esa institución (mismos 10 para CAF) |
+| etiqueta de etapa del documento principal | sale de `stages[].principal_tag` |
+
+### Migración de datos
+
+`user/0008` agrega `Organization.config`. `user/0009`: si existe la institución
+`caf`, le guarda la configuración de arriba, con los valores que hoy tiene el
+código. Reversible: al volver, le borra la configuración. Sin CAF no hace nada.
+
+El registro de evaluación se arma por las etapas que tienen documento principal
+(`stages[].principal_tag`): en CAF, `ido_cci` y `dec`, las mismas de siempre.
+
+### Datos de prueba
+
+`seed_local_instituciones` le pone a `caf` la configuración de CAF y deja a
+`otra` con una configuración propia mínima:
+- marca «Otra institución»;
+- etapas `borrador` → `revision` → `cerrada`;
+- `revision` lanza `local-de-otra`;
+- sin roles de informe;
+- sin criterios.
+
+Así se ve una institución que no es CAF.
+
+| Usuario | `GET /api/organizations/me/config/` | `GET /api/organizations/caf/config/` | `GET /api/organizations/otra/config/` |
+|---|---|---|---|
+| superadmin | `organization: null` + base | 200 | 200 |
+| caf-admin, caf-miembro | `caf` + la de CAF | 200 | 404 |
+| otra-miembro | `otra` + la suya | 404 | 200 |
+| publico | `organization: null` + base | 404 | 404 |
+
+`PUT .../config/`: 200 sólo para el superadmin; 403 para el resto.
 
 ## Fase 2 — Consola del superadmin
 

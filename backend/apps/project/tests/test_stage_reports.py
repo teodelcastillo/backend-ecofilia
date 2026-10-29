@@ -37,6 +37,7 @@ from apps.project.services.stages import (
 )
 from apps.skill.models import ExecutionSectionEdit, ExecutionStatus, Skill, SkillExecution
 from apps.user.models import Organization
+from apps.user.tests.fixtures import caf_config
 
 User = get_user_model()
 DELAY = "apps.skill.dispatch.run_skill_task.delay"
@@ -44,7 +45,7 @@ DELAY = "apps.skill.dispatch.run_skill_task.delay"
 
 class _ReportBase(APITestCase):
     def setUp(self):
-        self.caf = Organization.objects.create(name="CAF", slug="caf")
+        self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
         self.owner = User.objects.create_user(email="owner@caf.com", password="x", organization=self.caf)
         self.editor = User.objects.create_user(email="editor@caf.com", password="x", organization=self.caf)
         self.staff = User.objects.create_user(email="staff@example.com", password="x", is_staff=True)
@@ -529,7 +530,7 @@ class GuiadoDispatchFailureTestCase(APITransactionTestCase):
             slug=IET_SLUG,
             defaults={"name": "IET", "skill_type": "copilot", "allowed_contexts": ["project"]},
         )
-        caf = Organization.objects.create(name="CAF", slug="caf")
+        caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
         owner = User.objects.create_user(email="owner@caf.com", password="x", organization=caf)
         project = Project.objects.create(
             owner=owner, organization=caf, name="Operación",

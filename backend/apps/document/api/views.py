@@ -1186,9 +1186,16 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
         return tag
 
     def get_serializer_context(self):
+        from apps.user import institution_config
+
         context = super().get_serializer_context()
         if self.action == "create":
             context["target_organization_id"] = self._target_organization_id()
+        # Los grupos de las etiquetas globales son los de la institución de
+        # quien mira (o la pedida por el superadmin); los de una etiqueta de
+        # institución, los de esa institución (ver el serializer).
+        organization = self._requested_organization() or getattr(self.request.user, "organization", None)
+        context["group_config"] = institution_config.effective_config(organization)
         return context
 
     def _target_organization_id(self):

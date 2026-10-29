@@ -95,7 +95,8 @@ def ensure_principal_stage_tag(project, link: ProjectDocument | None = None) -> 
     """El documento principal lleva la etiqueta de la etapa en que se cargó.
 
     Al marcarlo como principal, si no tiene ``ido`` ni ``dec`` se le pone la de
-    la etapa actual de la operación (IDO → ``ido``, DEC → ``dec``), como
+    la etapa actual de la operación según su institución
+    (``stages[].principal_tag``; en CAF, IDO → ``ido``, DEC → ``dec``), como
     decisión de la operación y no del documento: el mismo archivo puede ser el
     IDO de una operación y un anexo en otra. En pre-originación no hay etiqueta
     de etapa, y un documento que ya trae una (p. ej. marcado IDO en IDO y
@@ -103,8 +104,8 @@ def ensure_principal_stage_tag(project, link: ProjectDocument | None = None) -> 
 
     Devuelve el slug que puso, o vacío si no hizo falta.
     """
-    from apps.document.evidence_tag_groups import PRINCIPAL_TAG_BY_STAGE, principal_tag_slugs
     from apps.project.services.stages import current_stage
+    from apps.user import institution_config
 
     if link is None:
         if not project.blueprint_document_id:
@@ -116,11 +117,12 @@ def ensure_principal_stage_tag(project, link: ProjectDocument | None = None) -> 
         )
         if link is None:
             return ""
-    slug = PRINCIPAL_TAG_BY_STAGE.get(current_stage(project), "")
+    config = institution_config.config_for_project(project)
+    slug = institution_config.principal_tag(config, current_stage(project)) or ""
     if not slug:
         return ""
     current = effective_tags(link)
-    if any(tag.slug in principal_tag_slugs() for tag in current):
+    if any(tag.slug in institution_config.principal_tags(config) for tag in current):
         return ""
     tag = resolve_evidence_tags(
         [slug], evidence_tags_for_organization(project.organization_id), project.organization_id

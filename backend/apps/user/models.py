@@ -70,6 +70,12 @@ class Organization(models.Model):
             "without this their projects would be born with an empty workspace."
         ),
     )
+    # Lo que hace distinto al portal de esta institución: marca, etapas,
+    # lanzamientos, roles de los workflows, grupos de etiquetas y criterios.
+    # Vacío: rige la configuración base. Se lee con
+    # ``apps.user.institution_config.effective_config`` y se escribe validado
+    # (``validate_config``); la forma está en backend/docs/contrato-instituciones.md.
+    config = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

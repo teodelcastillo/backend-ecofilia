@@ -123,10 +123,12 @@ class Command(BaseCommand):
         caf, _ = Organization.objects.get_or_create(slug="caf", defaults={"name": "CAF", "restricted": True})
         otra, _ = Organization.objects.get_or_create(slug="otra", defaults={"name": "Otra institución"})
 
-        # Lo que en producción dejan las migraciones de la fase 0 con CAF presente.
+        # Lo que en producción dejan las migraciones de datos con CAF presente:
+        # alcance de skills y etiquetas (fase 0) y su configuración (fase 1).
         importlib.import_module("apps.skill.migrations.0049_asignar_alcance_skills").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0024_etiquetas_de_operacion_caf").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0025_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
+        importlib.import_module("apps.user.migrations.0009_config_caf").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 
@@ -151,6 +153,34 @@ class Command(BaseCommand):
         op_otra = self._operation(otra_member, otra, "Operación de otra (local)", "doc-otra", [tag_otra, *ndc])
         self._operation(public, None, "Operación del público (local)", "doc-publico", ndc)
         op_otra.enabled_skills.add(skill_otra)
+        # Una institución que no es CAF, con su propia configuración mínima.
+        otra.config = {
+            "version": 1,
+            "branding": {"display_name": "Otra institución", "logo_url": ""},
+            "stages": [
+                {"slug": "borrador", "label": "Borrador", "principal_tag": None, "launches": []},
+                {"slug": "revision", "label": "En revisión", "principal_tag": None,
+                 "launches": [skill_otra.slug]},
+                {"slug": "cerrada", "label": "Cerrada", "principal_tag": None, "launches": []},
+            ],
+            "workflows": {"report": None, "guided": None, "reading": None},
+            "evidence_tag_groups": [
+                {"slug": "propias", "label": "Documentos propios", "tags": [tag_otra.slug]},
+                {"slug": "contexto", "label": "Contexto país", "tags": [
+                    "ndc", "nap", "lts", "comunicacion-adaptacion", "nbsap", "pancd",
+                    "inventario-gei", "ley-cambio-climatico", "reporte-nacional",
+                ]},
+            ],
+            "evaluation": {"framework": "", "criteria": []},
+        }
+        otra.save(update_fields=["config", "updated_at"])
+        # Lo sembrado tiene que cumplir el contrato, igual que lo que entra por la API.
+        from apps.user.institution_config import validate_config
+
+        for organization in (Organization.objects.get(pk=caf.pk), otra):
+            _, errors = validate_config(organization.config, organization)
+            if errors:
+                raise CommandError(f"La configuración sembrada de {organization.slug} no es válida: {errors}")
         if not SkillExecution.objects.filter(project=op_otra).exists():
             SkillExecution.objects.create(
                 skill=skill_otra, owner=otra_member, project=op_otra, status=ExecutionStatus.COMPLETED,
@@ -176,3 +206,4 @@ class Command(BaseCommand):
             w(f"{user.email:<31} {level:<25} {sees}")
         w("")
         w("Nadie salvo el superadmin ve local-plataforma. evaluation-records exige ?organization=<slug>.")
+        w("Configuración: GET /api/organizations/me/config/ (caf: la de CAF; otra: borrador → revisión → cerrada).")
