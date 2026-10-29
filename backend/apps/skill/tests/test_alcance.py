@@ -262,3 +262,25 @@ class ScopeCommandsTestCase(TestCase):
         self.assertRegex(institution, r"m@a.org\s+último login: nunca\s+operaciones: 2")
         self.assertIn("persona@gmail.com", public)
         self.assertNotIn("persona@gmail.com", institution)
+
+
+class SembrarContratoLocalTestCase(TestCase):
+    def test_seeds_every_level_and_is_idempotent(self):
+        call_command("sembrar_contrato_local", stdout=StringIO())
+        call_command("sembrar_contrato_local", stdout=StringIO())
+        self.assertEqual(User.objects.filter(email__endswith="@local.test").count(), 5)
+        self.assertEqual(Project.objects.filter(slug__startswith="local-").count(), 3)
+        caf = Organization.objects.get(slug="caf")
+        self.assertTrue(Skill.objects.filter(slug__startswith="caf-", organization=caf).exists())
+        self.assertEqual(EvidenceTag.objects.get(slug="ido").organization, caf)
+        self.assertTrue(User.objects.get(email="caf-miembro@local.test").check_password("ecofilia-local"))
+
+    def test_refuses_production(self):
+        from unittest.mock import patch
+
+        from django.core.management.base import CommandError
+
+        with patch.dict("os.environ", {"DJANGO_SETTINGS_MODULE": "main.settings.prod"}):
+            with self.assertRaises(CommandError):
+                call_command("sembrar_contrato_local", stdout=StringIO())
+        self.assertFalse(User.objects.filter(email__endswith="@local.test").exists())

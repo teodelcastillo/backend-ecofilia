@@ -312,6 +312,25 @@ python manage.py listar_skills_alcance --hacer-publicas slug1,slug2 --dry-run
 python manage.py listar_usuarios_por_nivel
 ```
 
+### Probar el contrato en local (nunca contra producción)
+
+```bash
+cd backend && cp docker/template.env docker/.env    # DEBUG=True, POSTGRES_HOST=db
+docker compose -f docker-compose.dev.yml up --build  # API en http://localhost:8000
+docker exec -it ecofilia-backend-dev ./manage.py sembrar_contrato_local
+python scripts/verificar_contrato_local.py http://localhost:8000/api
+```
+
+`sembrar_contrato_local` crea CAF y otra institución, un usuario por nivel
+(`superadmin@`, `caf-admin@`, `caf-miembro@`, `otra-miembro@`, `publico@` en
+`local.test`, clave `ecofilia-local`) y reaplica las migraciones de datos de la
+fase 0 como quedarían en producción. Se niega a correr con settings de prod o
+contra RDS.
+
+> El frontend cae a `https://api.ecofilia.site/api` si no tiene
+> `NEXT_PUBLIC_API_URL`: en local hay que definirla siempre
+> (`NEXT_PUBLIC_API_URL=http://localhost:8000/api` en `.env.local`).
+
 ---
 
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
