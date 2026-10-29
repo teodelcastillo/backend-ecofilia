@@ -6,8 +6,8 @@ M Mitigación), categoría (B.1), subcategoría (B.1.1) y actividad (B.1.1.1). E
 código que se informa por componente es siempre el de la actividad.
 
 Vive en ``data/caf_actividades_elegibles.json``, tal como lo pasó CAF (sin las
-marcas de nota al pie). El catálogo trae dos actividades distintas con el código
-``M.8.1.2``: se conservan las dos, con el mismo código, hasta que CAF lo aclare.
+marcas de nota al pie). El documento repetía ``M.8.1.2``: la actividad de zonas
+o instalaciones públicas es ``M.8.1.3`` (confirmado).
 
 Los pasos de la IET que lo usan (C.1 y S.2, y el C.1 del guiado) lo reciben
 como texto de referencia en sus instrucciones (``skill/0047``).
