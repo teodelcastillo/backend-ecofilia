@@ -9,10 +9,10 @@ cambia, se cambia en este archivo, en el mismo PR que lo implementa.
 |---|---|---|
 | 0 | Aislamiento entre instituciones | **Implementado** (PR #7) |
 | 1 | Configuración de cada institución en datos | **Implementado** (PR de `fase-1-backend`) |
-| 2 | Consola del superadmin | Pendiente |
-| 3 | Portal genérico `/{institución}` | Pendiente |
-| 4 | Plantilla pública `/app` y portal base sólo superadmin | Pendiente |
-| 5 | Alta de instituciones | Pendiente |
+| 2 | Consola del superadmin | **Escrito**, en implementación (`fase-2-backend`) |
+| 3 | Portal genérico `/{institución}` | **Escrito**, en implementación (`fase-3-backend`) |
+| 4 | Plantilla pública `/app` y portal base sólo superadmin | **Escrito**, en implementación (`fase-4-backend`) |
+| 5 | Alta de instituciones | **Escrito**, en implementación (`fase-5-backend`) |
 
 ---
 
@@ -494,18 +494,331 @@ Así se ve una institución que no es CAF.
 
 `PUT .../config/`: 200 sólo para el superadmin; 403 para el resto.
 
+## Decisiones que tomó el back y hay que confirmar (fases 2 a 5)
+
+1. **Copias de skills al dar de alta (fase 5).** Una institución nueva puede
+   arrancar con copias propias de skills de **Ecofilia** (alcance `public` o
+   `platform`). **No** puede copiar skills de otra institución: copiar un
+   workflow de CAF sería darle a otra institución información de CAF. Si CAF
+   acepta compartir uno, el superadmin lo pasa primero a `platform`.
+2. **Dos configuraciones de plataforma (fase 4).** La **pública** rige `/app`:
+   usuarios sin institución y operaciones sin institución. La **plantilla** es
+   el «portal base», sólo para el superadmin, y es de donde sale la
+   configuración de una institución nueva.
+3. **A dónde va cada uno al entrar (fase 3).** Lo dice el back
+   (`home_path` en `/api/auth/me/`):
+   - el superadmin, a `/admin`;
+   - un miembro, a `/{slug de su institución}`;
+   - el público, a `/app`.
+
+---
+
 ## Fase 2 — Consola del superadmin
 
-*Pendiente.*
+Todo lo de `/api/admin/` es **sólo del superadmin**
+(`is_ecofilia_admin`); cualquier otro recibe **403**.
+
+### Resumen
+
+```
+GET /api/admin/overview/
+```
+
+```json
+{
+  "levels": {"superadmin": 1, "organization": 3, "public": 1},
+  "skills_by_scope": {"platform": 12, "public": 1, "organization": 6, "user": 1},
+  "organizations": [ { "…item de institución, ver abajo…" } ]
+}
+```
+
+### Instituciones
+
+```
+GET   /api/admin/organizations/
+GET   /api/admin/organizations/{slug}/
+PATCH /api/admin/organizations/{slug}/
+```
+
+Cada item del listado:
+
+```json
+{
+  "slug": "caf",
+  "name": "CAF",
+  "restricted": true,
+  "has_config": true,
+  "members_count": 2,
+  "operations_count": 1,
+  "own_skills_count": 5,
+  "own_tags_count": 11,
+  "created_at": "2026-10-29T17:00:00Z"
+}
+```
+
+El detalle suma:
+
+```json
+{
+  "enabled_features": ["projects", "library", "chat"],
+  "enabled_skill_slugs": ["caf-iet-datbc-evaluacion-tecnica"],
+  "default_skill_slugs": ["caf-iet-datbc-evaluacion-tecnica"]
+}
+```
+
+`PATCH` acepta cualquiera de estos campos: `name`, `restricted`,
+`enabled_features`, `enabled_skill_slugs` y `default_skill_slugs`.
+
+| Caso | Respuesta |
+|---|---|
+| válido | **200** con el detalle |
+| `enabled_features` con una sección desconocida | **400**. Las conocidas: `projects`, `library`, `repositories`, `chat`, `skills`, `evaluations`, `tableros`, `inventories` |
+| una skill de `enabled_skill_slugs` / `default_skill_slugs` que no es `public` ni de esta institución | **400** |
+| `default_skill_slugs` con una que no está en `enabled_skill_slugs` | **400** |
+| `name` repetido | **400** |
+| institución inexistente | **404** |
+
+El `slug` no se cambia: está en las URLs del portal (`/{slug}`). La
+configuración se edita con `PUT /api/organizations/{slug}/config/` (fase 1).
+
+### Usuarios
+
+```
+GET   /api/admin/users/?level=superadmin|organization|public&organization=<slug>&q=<texto>
+PATCH /api/admin/users/{id}/
+```
+
+Todos los filtros son opcionales. `q` busca en email, nombre y apellido.
+Orden: por email.
+
+```json
+{
+  "id": 7,
+  "email": "m@caf.org",
+  "first_name": "",
+  "last_name": "",
+  "level": "organization",
+  "organization_slug": "caf",
+  "role": "member",
+  "is_active": true,
+  "email_verified": true,
+  "last_login": "2026-10-29T17:00:00Z",
+  "date_joined": "2026-10-01T12:00:00Z",
+  "operations_count": 1
+}
+```
+
+`level` ∈ `superadmin` · `organization` · `public` (la misma regla que
+`listar_usuarios_por_nivel`).
+
+`PATCH` acepta `organization_slug` (slug o `null`), `role`
+(`member` · `manager` · `admin`) e `is_active`.
+
+| Caso | Respuesta |
+|---|---|
+| válido | **200** con el usuario |
+| darle institución a un usuario `is_staff` o `is_superuser` | **400**: tendría acceso a todas las instituciones |
+| el superadmin cambiándose a sí mismo `organization_slug`, `role` o `is_active` | **400**: no puede quitarse el acceso por error |
+| un cambio que dejaría a alguien como superadmin: `role=admin` sin institución, por ejemplo sacarle la institución a un admin de institución o darle `admin` a un público | **400**. La consola no crea superadmins; eso se decide en el admin de Django. Para sacar de su institución a un admin, mandá también `"role": "member"` |
+| institución inexistente | **400** |
+| usuario inexistente | **404** |
+
+Cambiar a alguien de institución **no mueve sus operaciones**: siguen siendo de
+la institución en la que se crearon.
+
+### Skills por alcance
+
+- `GET /api/skills/` acepta `?scope=<alcance>` y `?organization=<slug>` (las
+  de alcance institución de esa institución). Se aplican sobre lo que cada uno
+  ve; para el superadmin, sobre todas.
+- Cambio de alcance en lote (lo mismo que `listar_skills_alcance --hacer-publicas`):
+
+```
+POST /api/admin/skills/scope/
+{"slugs": ["ecofilia-qa-brief", "ecofilia-document-summary"], "scope": "public"}
+{"slugs": ["x"], "scope": "organization", "organization_slug": "caf"}
+```
+
+| Caso | Respuesta |
+|---|---|
+| válido | **200** `[{"slug", "scope", "organization_slug"}]` |
+| algún slug inexistente | **400** con los que faltan; no cambia ninguno |
+| `scope="organization"` sin `organization_slug`, o con uno inexistente | **400** |
+
+### Etiquetas
+
+El superadmin puede mover una etiqueta de institución:
+`PATCH /api/document/evidence-tags/{slug}/?organization=<de dónde>` con
+`{"organization_slug": "<a dónde>" | null}`. Si el slug ya existe dentro de lo
+que ve la institución de destino, **400**. El resto de la edición de
+etiquetas no cambia.
+
+---
 
 ## Fase 3 — Portal genérico `/{institución}`
 
-*Pendiente.*
+El portal `/caf` pasa a ser `/{slug}`: el mismo portal para cualquier
+institución, armado con su configuración (fase 1). Del lado del back hacen
+falta tres cosas: decir a dónde va cada uno, listar los portales que puede
+abrir y que ningún endpoint asuma CAF.
+
+### A dónde va cada uno
+
+`GET /api/auth/me/` (y el `user` del login) suma `home_path`:
+
+| Quién | `home_path` |
+|---|---|
+| superadmin | `"/admin"` |
+| miembro de una institución | `"/{slug}"` (p. ej. `"/caf"`) |
+| público | `"/app"` |
+
+### Qué portales puede abrir
+
+```
+GET /api/organizations/
+```
+
+```json
+[{"slug": "caf", "name": "CAF", "restricted": true, "display_name": "CAF", "logo_url": "/images/caf-logo.png"}]
+```
+
+| Quién | Recibe |
+|---|---|
+| superadmin | todas |
+| miembro | sólo la suya |
+| público | `[]` |
+
+Entrar a `/{slug}` es poder leer `GET /api/organizations/{slug}/config/`: si da
+404, ese usuario no tiene ese portal.
+
+### Endpoints que ya no asumen CAF
+
+| Endpoint | Antes | Ahora |
+|---|---|---|
+| `POST /api/projects/historical-report/` | sin `organization` usaba `caf` | `organization` es obligatorio: **400** sin él |
+| `analysis_running` del listado de operaciones | miraba sólo el IET de CAF | mira el workflow `report` de la configuración de la institución de cada operación |
+
+Los listados de un portal ya se piden con `?organization=<slug>`. Son
+operaciones, informes emitidos, registro de evaluación e historial de
+alineación, y siguen igual.
+
+---
 
 ## Fase 4 — Plantilla pública `/app` y portal base sólo superadmin
 
-*Pendiente.*
+Dos configuraciones de plataforma, con la misma forma que la de una institución
+(fase 1).
+
+| Configuración | Para qué | Quién la lee | Quién la escribe |
+|---|---|---|---|
+| **pública** | `/app`: usuarios sin institución y operaciones sin institución | cualquier usuario autenticado | superadmin |
+| **plantilla** | portal base: punto de partida de una institución nueva (fase 5) | sólo superadmin | superadmin |
+
+```
+GET /api/platform/config/public/        → {"config": {...}}
+PUT /api/platform/config/public/        {"config": {...}}
+GET /api/platform/config/template/      → {"config": {...}}
+PUT /api/platform/config/template/      {"config": {...}}
+```
+
+| Caso | Respuesta |
+|---|---|
+| `GET public` | **200** para cualquiera autenticado |
+| `GET template` sin ser superadmin | **403** |
+| `PUT` sin ser superadmin | **403** |
+| `PUT` inválido | **400** `{"config": [...]}`. Las dos se validan como «sin institución»: sólo skills `public` y etiquetas globales |
+| `PUT` válido | **200** con la configuración guardada |
+
+- Sin configuración pública guardada rige la base de la fase 1. La pública es
+  la que devuelve `GET /api/organizations/me/config/` a un usuario sin
+  institución.
+- Sin plantilla guardada, la plantilla es la base de la fase 1.
+- El «portal base» del front es el portal genérico de la fase 3, armado con la
+  plantilla: sirve para que el superadmin vea cómo arranca una institución
+  nueva antes de darla de alta.
+
+---
 
 ## Fase 5 — Alta de instituciones
 
-*Pendiente.*
+```
+POST /api/admin/organizations/
+```
+
+```json
+{
+  "name": "Banco del Sur",
+  "slug": "banco-del-sur",
+  "restricted": false,
+  "enabled_features": ["projects", "library", "chat"],
+  "from_template": true,
+  "clone_skills": ["ecofilia-qa-brief"],
+  "members": [{"email": "ana@bancodelsur.org", "role": "admin"}]
+}
+```
+
+Sólo `name` y `slug` son obligatorios. Por defecto: `restricted=false`,
+`enabled_features=[]`, `from_template=true`, `clone_skills=[]`, `members=[]`.
+
+Qué hace, todo o nada (si algo falla, no se crea nada):
+
+1. **Crea la institución.**
+2. **Copia las skills de `clone_skills`.** Tienen que ser `public` o
+   `platform`. Cada copia:
+   - es de la institución nueva (`scope="organization"`) y se llama
+     `{slug}-{slug original}`;
+   - lleva sus pasos y parámetros;
+   - queda en `enabled_skills`, y en `default_project_skills` si corre sobre
+     operaciones.
+3. **Arma la configuración.** Con `from_template`, es la plantilla (fase 4); si
+   no, queda vacía y rige la base. Si la plantilla nombra una skill que se
+   copió, la configuración apunta a la copia. Se valida para la institución
+   nueva, como un `PUT` de la fase 1.
+4. **Agrega a los miembros.**
+   - Un email que no existe crea el usuario y le manda una invitación. El
+     usuario queda aprobado, sin contraseña y con el email sin verificar.
+   - Un usuario existente sin institución pasa a la nueva.
+   - El email llega cuando se confirma el alta.
+
+| Caso | Respuesta |
+|---|---|
+| válido | **201**: el detalle de la fase 2 más `"cloned_skills": [{"from", "slug"}]` y `"members": [{"email", "id", "created", "invited"}]` |
+| `slug` con formato inválido, repetido o reservado | **400** |
+| `name` repetido | **400** |
+| una skill de `clone_skills` inexistente o de una institución | **400** |
+| la configuración resultante inválida | **400** `{"config": [...]}` |
+| un miembro que ya es de otra institución, o que es `is_staff` / `is_superuser` | **400** |
+| no superadmin | **403** |
+
+**Slugs reservados** (chocan con rutas del front o de la API): `admin`, `api`,
+`app`, `auth`, `base`, `demo`, `evaluations`, `forgot-password`, `home`,
+`library`, `login`, `me`, `my-library`, `platform`, `projects`,
+`reset-password`, `signup`.
+
+### Sumar miembros a una institución existente
+
+```
+POST /api/admin/organizations/{slug}/members/
+{"email": "juan@bancodelsur.org", "role": "member"}
+```
+
+Mismas reglas que `members` en el alta. **201** con
+`{"email", "id", "created", "invited"}`.
+
+### La invitación
+
+El email lleva un enlace a
+`{FRONTEND_BASE_URL}/auth/reset-password?uid=…&token=…&invite=1`, la misma
+pantalla de restablecer contraseña. Con `invite=1` el front puede titularla
+«Elegí tu contraseña».
+
+Cambio en `POST /api/auth/password/reset/confirm/`: si el email todavía no
+estaba verificado, queda verificado. El enlace llegó a ese email, así que la
+persona demostró que es suyo. Sin esto, alguien invitado nunca podría entrar.
+
+### Datos de prueba
+
+`seed_local_instituciones` suma una plantilla con las etapas
+`inicio` → `analisis` → `cierre`, sin lanzamientos, y una configuración
+pública con las etapas `borrador` → `listo`. Así `/app` y el portal base se ven
+distintos de CAF y de `otra`.
