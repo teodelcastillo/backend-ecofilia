@@ -211,7 +211,13 @@ class PasswordResetConfirmView(APIView):
         user.set_password(serializer.validated_data["new_password"])
         user.mfa_enabled = False
         user.mfa_secret = ""
-        user.save(update_fields=["password", "last_password_change", "mfa_enabled", "mfa_secret"])
+        fields = ["password", "last_password_change", "mfa_enabled", "mfa_secret"]
+        # El enlace llegó a este email: quien lo abrió demostró que es suyo. Sin
+        # esto, alguien invitado a una institución (fase 5) nunca podría entrar.
+        if not user.email_verified:
+            user.email_verified = True
+            fields += ["email_verified", "email_verified_at"]
+        user.save(update_fields=fields)
         return Response({"detail": _("Contraseña actualizada")})
 
 

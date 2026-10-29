@@ -62,3 +62,9 @@ for who in ("superadmin", "caf-admin", "caf-miembro", "otra-miembro", "publico")
     print("  config propia:", org["slug"] if org else None, "| etapas:", stages)
     print("  GET config caf / otra:",
           call("/organizations/caf/config/", token)[0], call("/organizations/otra/config/", token)[0])
+    # Fase 2: consola. Fase 3: a dónde va y qué portales abre. Fase 4: /app y plantilla.
+    print("  GET /admin/overview/:", call("/admin/overview/", token)[0])
+    print("  home_path:", (call("/auth/me/", token)[1] or {}).get("home_path"),
+          "| portales:", [p["slug"] for p in call("/organizations/", token)[1] or []])
+    public_stages = [s["slug"] for s in (call("/platform/config/public/", token)[1] or {}).get("config", {}).get("stages", [])]
+    print("  config pública:", public_stages, "| plantilla:", call("/platform/config/template/", token)[0])
