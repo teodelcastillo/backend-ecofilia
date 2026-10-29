@@ -312,24 +312,18 @@ python manage.py listar_skills_alcance --hacer-publicas slug1,slug2 --dry-run
 python manage.py listar_usuarios_por_nivel
 ```
 
-### Probar el contrato en local (nunca contra producción)
+### Contrato y prueba local
 
-```bash
-cd backend && cp docker/template.env docker/.env    # DEBUG=True, POSTGRES_HOST=db
-docker compose -f docker-compose.dev.yml up --build  # API en http://localhost:8000
-docker exec -it ecofilia-backend-dev ./manage.py sembrar_contrato_local
-python scripts/verificar_contrato_local.py http://localhost:8000/api
-```
+El contrato de API de todo el plan de instituciones (fases 0 a 5) vive en
+`backend/docs/contrato-instituciones.md`, con una sección por fase. Se escribe
+**antes** de implementar cada fase y la sesión del frontend programa contra
+ese archivo: si algo cambia, se cambia ahí.
 
-`sembrar_contrato_local` crea CAF y otra institución, un usuario por nivel
-(`superadmin@`, `caf-admin@`, `caf-miembro@`, `otra-miembro@`, `publico@` en
-`local.test`, clave `ecofilia-local`) y reaplica las migraciones de datos de la
-fase 0 como quedarían en producción. Se niega a correr con settings de prod o
-contra RDS.
+Ramas: `main` es producción y no recibe nada hasta la salida. Todo el plan va
+por PR a `instituciones` (en este repo y en el del front).
 
-> El frontend cae a `https://api.ecofilia.site/api` si no tiene
-> `NEXT_PUBLIC_API_URL`: en local hay que definirla siempre
-> (`NEXT_PUBLIC_API_URL=http://localhost:8000/api` en `.env.local`).
+Cómo levantar el backend local, el comando de datos de prueba
+(`seed_local_instituciones`) y los usuarios: ver el contrato.
 
 ---
 

@@ -1,7 +1,7 @@
 """
 Recorre el contrato de aislamiento por HTTP, como lo haría el frontend.
 
-Requiere un backend LOCAL con la base sembrada (``manage.py sembrar_contrato_local``):
+Requiere un backend LOCAL con la base sembrada (``manage.py seed_local_instituciones``):
 
     python scripts/verificar_contrato_local.py                       # http://localhost:8000/api
     python scripts/verificar_contrato_local.py http://localhost:8000/api

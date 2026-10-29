@@ -11,7 +11,7 @@ from django.apps import apps as django_apps
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -264,10 +264,11 @@ class ScopeCommandsTestCase(TestCase):
         self.assertNotIn("persona@gmail.com", institution)
 
 
-class SembrarContratoLocalTestCase(TestCase):
+@override_settings(DEBUG=True)
+class SeedLocalInstitucionesTestCase(TestCase):
     def test_seeds_every_level_and_is_idempotent(self):
-        call_command("sembrar_contrato_local", stdout=StringIO())
-        call_command("sembrar_contrato_local", stdout=StringIO())
+        call_command("seed_local_instituciones", stdout=StringIO())
+        call_command("seed_local_instituciones", stdout=StringIO())
         self.assertEqual(User.objects.filter(email__endswith="@local.test").count(), 5)
         self.assertEqual(Project.objects.filter(slug__startswith="local-").count(), 3)
         caf = Organization.objects.get(slug="caf")
@@ -282,5 +283,7 @@ class SembrarContratoLocalTestCase(TestCase):
 
         with patch.dict("os.environ", {"DJANGO_SETTINGS_MODULE": "main.settings.prod"}):
             with self.assertRaises(CommandError):
-                call_command("sembrar_contrato_local", stdout=StringIO())
+                call_command("seed_local_instituciones", stdout=StringIO())
+        with self.settings(DEBUG=False), self.assertRaises(CommandError):
+            call_command("seed_local_instituciones", stdout=StringIO())
         self.assertFalse(User.objects.filter(email__endswith="@local.test").exists())

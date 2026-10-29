@@ -2,11 +2,14 @@
 Siembra una base LOCAL con todo lo necesario para probar a mano el contrato de
 aislamiento entre instituciones (fase 0) desde el frontend.
 
-    python manage.py sembrar_contrato_local
-    python manage.py sembrar_contrato_local --password otra-clave
+    python manage.py seed_local_instituciones
+    python manage.py seed_local_instituciones --password otra-clave
 
-Se niega a correr contra producción: con settings de prod o con una base en
-RDS corta sin tocar nada, y no hay forma de saltearlo.
+Se niega a correr contra producción: con ``DEBUG`` falso, con settings de prod
+o con una base en RDS corta sin tocar nada, y no hay forma de saltearlo.
+
+Los usuarios, la clave y lo que debería ver cada uno están documentados en
+``backend/docs/contrato-instituciones.md``: si cambia algo acá, cambia allá.
 
 Deja la base como quedaría producción después de las migraciones de la fase 0:
 crea la institución CAF y vuelve a aplicar las migraciones de datos
@@ -43,10 +46,15 @@ DOMAIN = "local.test"
 def _refuse_production() -> None:
     module = os.environ.get("DJANGO_SETTINGS_MODULE", "")
     host = str(settings.DATABASES["default"].get("HOST") or "")
-    if module.endswith(".prod") or "rds.amazonaws.com" in host or getattr(settings, "ENVIRONMENT_NAME", "") == "production":
+    if (
+        not settings.DEBUG
+        or module.endswith(".prod")
+        or "rds.amazonaws.com" in host
+        or getattr(settings, "ENVIRONMENT_NAME", "") == "production"
+    ):
         raise CommandError(
-            "sembrar_contrato_local es sólo para una base local. "
-            f"Settings={module or '?'}, host={host or '?'}: no se tocó nada."
+            "seed_local_instituciones es sólo para una base local con DEBUG=True. "
+            f"DEBUG={settings.DEBUG}, settings={module or '?'}, host={host or '?'}: no se tocó nada."
         )
 
 
