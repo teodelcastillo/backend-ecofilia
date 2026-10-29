@@ -50,6 +50,9 @@ class ProfileSerializer(serializers.ModelSerializer):
     # ``is_organization_admin`` manda dentro de su institución.
     is_ecofilia_admin = serializers.SerializerMethodField()
     is_organization_admin = serializers.SerializerMethodField()
+    # A dónde va al entrar (fase 3): la consola, el portal de su institución o
+    # el portal público. Lo decide el back para que el front no lo deduzca.
+    home_path = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -66,6 +69,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "organization",
             "is_ecofilia_admin",
             "is_organization_admin",
+            "home_path",
         )
         read_only_fields = (
             "id",
@@ -78,7 +82,13 @@ class ProfileSerializer(serializers.ModelSerializer):
             "organization",
             "is_ecofilia_admin",
             "is_organization_admin",
+            "home_path",
         )
+
+    def get_home_path(self, obj) -> str:
+        from apps.user.access import home_path
+
+        return home_path(obj)
 
     def get_is_ecofilia_admin(self, obj) -> bool:
         from apps.user.access import is_ecofilia_admin

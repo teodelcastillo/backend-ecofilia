@@ -93,7 +93,8 @@ class HistoricoTestCase(_ReportBase):
         with patch(DELAY) as delay, self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 "/api/projects/historical-report/",
-                {"document_slug": "iet-2024", "name": "Puerto 2024", "pais": "Chile", "fecha_informe": "2024-05-10"},
+                {"document_slug": "iet-2024", "name": "Puerto 2024", "pais": "Chile", "fecha_informe": "2024-05-10",
+                 "organization": "caf"},
                 format="json",
             )
         return response, delay

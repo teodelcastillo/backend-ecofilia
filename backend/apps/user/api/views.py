@@ -9,6 +9,8 @@ La configuración de cada institución (fase 1). Contrato en
   revela que la institución existe.
 - ``PUT /api/organizations/{slug}/config/``: la reemplaza entera. Sólo
   superadmin; inválida, 400 con todos los errores.
+- ``GET /api/organizations/`` (fase 3): los portales que puede abrir quien
+  pide. El superadmin, todos; un miembro, el suyo; el público, ninguno.
 """
 from __future__ import annotations
 
@@ -33,6 +35,32 @@ def config_payload(organization) -> dict:
         ),
         "config": institution_config.effective_config(organization),
     }
+
+
+class PortalsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if is_ecofilia_admin(user):
+            organizations = Organization.objects.order_by("name")
+        elif user.organization_id:
+            organizations = Organization.objects.filter(pk=user.organization_id)
+        else:
+            organizations = Organization.objects.none()
+        out = []
+        for org in organizations:
+            branding = institution_config.effective_config(org)["branding"]
+            out.append(
+                {
+                    "slug": org.slug,
+                    "name": org.name,
+                    "restricted": org.restricted,
+                    "display_name": branding["display_name"],
+                    "logo_url": branding["logo_url"],
+                }
+            )
+        return Response(out)
 
 
 class MyOrganizationConfigView(APIView):
