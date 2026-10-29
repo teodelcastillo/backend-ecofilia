@@ -116,16 +116,22 @@ class ProjectDocumentTagsSerializer(serializers.Serializer):
         return attrs
 
     def validate_tags(self, slugs):
-        from apps.document.models import EvidenceTag
+        from apps.document.services import evidence_tags_for_organization, resolve_evidence_tags
 
         unique = list(dict.fromkeys(slugs))
-        found = EvidenceTag.objects.filter(slug__in=unique)
-        missing = set(unique) - set(found.values_list("slug", flat=True))
+        # Dentro de las globales más las de la institución de la operación: una
+        # etiqueta de otra institución no existe para esta operación.
+        project = self.context.get("project")
+        organization_id = getattr(project, "organization_id", None)
+        found = resolve_evidence_tags(
+            unique, evidence_tags_for_organization(organization_id), organization_id
+        )
+        missing = set(unique) - set(found)
         if missing:
             raise serializers.ValidationError(
                 f"Etiquetas inexistentes: {', '.join(sorted(missing))}."
             )
-        self.context["resolved_tags"] = list(found)
+        self.context["resolved_tags"] = [found[slug] for slug in unique]
         return unique
 
 

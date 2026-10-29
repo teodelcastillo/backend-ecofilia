@@ -71,6 +71,62 @@ def accessible_library_documents(user) -> QuerySet[Document]:
 
 
 
+# ---------------------------------------------------------------------------
+# Etiquetas de evidencia por institución
+#
+# Una etiqueta sin institución es global (los instrumentos de país: NDC, NAP…);
+# con institución, es de esa institución y ninguna otra la ve. El slug es único
+# dentro de «las globales más las de una institución», así que resolver un slug
+# siempre es resolverlo en ese conjunto.
+# ---------------------------------------------------------------------------
+
+def evidence_tags_for_organization(organization_id) -> QuerySet[EvidenceTag]:
+    """Las etiquetas que ve una institución: las globales más las suyas."""
+    visible = Q(organization__isnull=True)
+    if organization_id:
+        visible |= Q(organization_id=organization_id)
+    return EvidenceTag.objects.filter(visible)
+
+
+def visible_evidence_tags(user) -> QuerySet[EvidenceTag]:
+    """Las del catálogo que ve ``user``: el superadmin, todas."""
+    from apps.user.access import is_ecofilia_admin
+
+    if user is None:
+        return EvidenceTag.objects.all()
+    if getattr(user, "is_staff", False) or is_ecofilia_admin(user):
+        return EvidenceTag.objects.all()
+    return evidence_tags_for_organization(getattr(user, "organization_id", None))
+
+
+def resolve_evidence_tags(
+    slugs: Iterable[str],
+    queryset: QuerySet[EvidenceTag],
+    prefer_organization_id=None,
+) -> dict[str, EvidenceTag]:
+    """``{slug: etiqueta}`` de los ``slugs`` que existen en ``queryset``.
+
+    Si un slug aparece más de una vez (sólo pasa en la vista del superadmin,
+    que ve todas), gana la de ``prefer_organization_id``, después la global y
+    después la más vieja: nunca una elección al azar.
+    """
+    slugs = list(dict.fromkeys(slugs))
+    found: dict[str, EvidenceTag] = {}
+
+    def rank(tag: EvidenceTag) -> tuple:
+        return (
+            0 if prefer_organization_id and tag.organization_id == prefer_organization_id else 1,
+            0 if tag.organization_id is None else 1,
+            tag.pk,
+        )
+
+    for tag in queryset.filter(slug__in=slugs):
+        current = found.get(tag.slug)
+        if current is None or rank(tag) < rank(current):
+            found[tag.slug] = tag
+    return found
+
+
 def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
     """
     Etiquetas que sugieren los temas (``topics``) de ``document``.
@@ -95,9 +151,17 @@ def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
     topics = _document_topic_keys(document.topics)
     if not topics:
         return []
+    # Sólo las que ve la institución del dueño: un documento no puede quedar
+    # con la etiqueta de otra institución.
+    from django.contrib.auth import get_user_model
+
+    owner_org = (
+        get_user_model().objects.filter(pk=document.owner_id)
+        .values_list("organization_id", flat=True).first()
+    )
     return [
         tag
-        for tag in EvidenceTag.objects.exclude(source_topics=[])
+        for tag in evidence_tags_for_organization(owner_org).exclude(source_topics=[])
         if _tag_matches(tag.source_topics, topics)
     ]
 

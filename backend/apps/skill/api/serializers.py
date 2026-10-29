@@ -19,6 +19,7 @@ from apps.skill.models import (
     SkillExecutionVersion,
     SkillParameter,
     SkillParameterType,
+    SkillScope,
     SkillStep,
     SkillStepType,
     SkillTier,
@@ -170,8 +171,84 @@ def _is_superadmin(serializer) -> bool:
     return bool(request and is_ecofilia_admin(request.user))
 
 
+SCOPE_FORBIDDEN_MESSAGE = "Sólo un superadmin decide el alcance de un asistente."
+
+
+def resolve_scope(serializer, attrs: dict, instance: Skill | None) -> dict:
+    """Valida ``scope`` / ``organization_slug`` y los traduce a campos del modelo.
+
+    - Sólo un superadmin los cambia. Quien no lo es puede, a lo sumo, repetir
+      ``scope="user"`` sin institución: es lo que ya tiene todo lo que crea.
+    - ``scope="organization"`` exige ``organization_slug``; los demás alcances
+      dejan la institución en null.
+
+    Ausentes los dos, no se toca nada.
+    """
+    from apps.user.models import Organization
+
+    has_scope = "scope" in attrs
+    has_org = "organization_slug" in attrs
+    if not (has_scope or has_org):
+        return attrs
+    scope = attrs.get("scope") or (instance.scope if instance else SkillScope.USER)
+    org_slug = attrs.pop("organization_slug", None) if has_org else None
+    if not has_org and instance is not None and scope == instance.scope:
+        org_slug = instance.organization.slug if instance.organization_id else None
+
+    if not _is_superadmin(serializer):
+        if scope == SkillScope.USER and not org_slug and (
+            instance is None or instance.scope == SkillScope.USER
+        ):
+            attrs["scope"] = SkillScope.USER
+            return attrs
+        raise PermissionDenied(SCOPE_FORBIDDEN_MESSAGE)
+
+    if scope == SkillScope.ORGANIZATION:
+        if not org_slug:
+            raise serializers.ValidationError(
+                {"organization_slug": "Un asistente de alcance institución necesita su institución."}
+            )
+        organization = Organization.objects.filter(slug=org_slug).first()
+        if organization is None:
+            raise serializers.ValidationError(
+                {"organization_slug": f"No existe la institución «{org_slug}»."}
+            )
+        attrs["organization"] = organization
+    else:
+        attrs["organization"] = None
+    attrs["scope"] = scope
+    return attrs
+
+
+class SkillScopeSerializer(serializers.ModelSerializer):
+    """PATCH /api/skills/{slug}/ con sólo ``scope`` / ``organization_slug`` (superadmin).
+
+    Cambiar quién ve un asistente no revalida ni toca su definición. Responde
+    con la skill entera, igual que cualquier otra edición.
+    """
+
+    scope = serializers.ChoiceField(choices=SkillScope.choices, required=False)
+    organization_slug = serializers.SlugField(
+        required=False, allow_null=True, allow_blank=True, write_only=True,
+    )
+
+    class Meta:
+        model = Skill
+        fields = ("scope", "organization_slug")
+
+    def validate(self, attrs):
+        return resolve_scope(self, attrs, self.instance)
+
+    def to_representation(self, instance):
+        return SkillSerializer(instance, context=self.context).data
+
+
 class SkillSerializer(serializers.ModelSerializer):
     owner_email = serializers.EmailField(source="owner.email", read_only=True, allow_null=True)
+    # Quién lo ve (ver ``apps.skill.visibility``). La institución viaja por slug.
+    organization_slug = serializers.SlugField(
+        source="organization.slug", read_only=True, allow_null=True, default=None,
+    )
     # A qué organizaciones está asignado. Sólo para superadmins: a un usuario
     # de un cliente no le corresponde ver qué otros clientes tienen el asistente.
     organization_slugs = serializers.SerializerMethodField()
@@ -197,11 +274,13 @@ class SkillSerializer(serializers.ModelSerializer):
             "research_phase_enabled", "research_queries",
             "parameters",
             "is_template", "is_default_enabled",
+            "scope", "organization_slug",
             "owner", "owner_email", "steps",
             "created_at", "updated_at",
         )
         read_only_fields = (
             "id", "slug", "is_template", "is_default_enabled",
+            "scope", "organization_slug",
             "owner", "owner_email", "created_at", "updated_at",
         )
 
@@ -267,13 +346,17 @@ class SkillStepWriteSerializer(serializers.Serializer):
         quedaría escrito pidiendo algo que nunca va a existir, y el autor se
         enteraría recién al leer una sección vacía.
         """
-        from apps.document.models import EvidenceTag
+        from apps.document.services import visible_evidence_tags
 
         unique = list(dict.fromkeys(slugs or []))
         if not unique:
             return []
+        # Las que ve quien escribe el workflow: una etiqueta de otra
+        # institución no existe para él.
+        request = self.context.get("request")
         known = set(
-            EvidenceTag.objects.filter(slug__in=unique).values_list("slug", flat=True)
+            visible_evidence_tags(request.user if request else None)
+            .filter(slug__in=unique).values_list("slug", flat=True)
         )
         missing = [s for s in unique if s not in known]
         if missing:
@@ -415,6 +498,11 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         required=False,
         default=ExecutionOutputMode.TEXT,
     )
+    # Alcance: sólo superadmin (ver ``resolve_scope``). Ausentes, no se toca.
+    scope = serializers.ChoiceField(choices=SkillScope.choices, required=False)
+    organization_slug = serializers.SlugField(
+        required=False, allow_null=True, allow_blank=True, write_only=True,
+    )
 
     class Meta:
         model = Skill
@@ -437,6 +525,8 @@ class SkillWriteSerializer(serializers.ModelSerializer):
             "organization_slugs",
             "default_organization_slugs",
             "enable_on_existing_operations",
+            "scope",
+            "organization_slug",
         )
 
     _ORGANIZATION_FIELDS = (
@@ -517,6 +607,7 @@ class SkillWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         existing = self.instance
+        attrs = resolve_scope(self, attrs, existing)
         skill_type = attrs.get(
             "skill_type",
             existing.skill_type if existing else SkillType.QUICK,
@@ -643,17 +734,17 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         """
         Resolve a linked_skill_slug to a QUICK Skill the user can reference.
         Only quick skills can be used as workflow sub-steps; copilot skills
-        would recurse. Templates and the user's own skills are allowed.
+        would recurse. Only skills the user sees (``apps.skill.visibility``).
         """
         if not slug:
             return None
         request = self.context.get("request")
         user = request.user if request else None
-        from django.db.models import Q
+        from apps.skill.visibility import visible_skills
 
         qs = Skill.objects.filter(slug=slug, skill_type=SkillType.QUICK)
         if user is not None and not user.is_staff:
-            qs = qs.filter(Q(owner__isnull=True) | Q(owner=user))
+            qs = visible_skills(user, qs)
         skill = qs.first()
         if skill is None:
             raise serializers.ValidationError(
@@ -861,12 +952,16 @@ class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
 
     skill_slug = serializers.SlugField(source="skill.slug", read_only=True)
     executions_count = serializers.SerializerMethodField()
+    informed_by_organization_slug = serializers.SlugField(
+        source="informed_by_organization.slug", read_only=True, allow_null=True, default=None,
+    )
 
     class Meta:
         model = SkillDefinitionVersion
         fields = (
             "id", "skill_slug", "version_number", "fingerprint",
-            "schema", "definition", "executions_count", "created_at",
+            "schema", "definition", "executions_count",
+            "informed_by_organization_slug", "created_at",
         )
         read_only_fields = fields
 

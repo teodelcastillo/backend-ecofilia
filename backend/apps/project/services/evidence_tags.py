@@ -15,9 +15,10 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 
 from apps.document.models import EvidenceTag
+from apps.document.services import evidence_tags_for_organization, resolve_evidence_tags
 from apps.project.models import ProjectDocument
 
 
@@ -35,6 +36,20 @@ def effective_tag_slugs(link: ProjectDocument) -> list[str]:
     return [t.slug for t in effective_tags(link)]
 
 
+def project_evidence_tags(project_id: int) -> QuerySet[EvidenceTag]:
+    """Las etiquetas que valen en la operación: globales más las de su institución.
+
+    Una etiqueta de otra institución no cuenta acá aunque un documento
+    vinculado la tenga: los slugs se resuelven siempre en este conjunto.
+    """
+    from apps.project.models import Project
+
+    organization_id = (
+        Project.objects.filter(pk=project_id).values_list("organization_id", flat=True).first()
+    )
+    return evidence_tags_for_organization(organization_id)
+
+
 def tagged_in_project_q(project_id: int, slugs: Iterable[str]) -> Q:
     """Filtro de ``Document`` para los que en la operación cuentan con ``slugs``.
 
@@ -42,17 +57,20 @@ def tagged_in_project_q(project_id: int, slugs: Iterable[str]) -> Q:
     las dos relaciones: son dos muchos-a-muchos distintos, y cruzarlos en un
     mismo JOIN matchearía un documento heredado por la etiqueta de otro
     vínculo sobreescrito.
+
+    Los slugs se resuelven dentro de las etiquetas de la operación (globales
+    más las de su institución, ver ``project_evidence_tags``).
     """
-    slugs = list(slugs)
+    tags = project_evidence_tags(project_id).filter(slug__in=list(slugs)).values("pk")
     inherited = ProjectDocument.objects.filter(
         project_id=project_id,
         tags_overridden=False,
-        document__evidence_tags__slug__in=slugs,
+        document__evidence_tags__in=tags,
     ).values("document_id")
     overridden = ProjectDocument.objects.filter(
         project_id=project_id,
         tags_overridden=True,
-        tags__slug__in=slugs,
+        tags__in=tags,
     ).values("document_id")
     return Q(id__in=inherited) | Q(id__in=overridden)
 
@@ -104,7 +122,9 @@ def ensure_principal_stage_tag(project, link: ProjectDocument | None = None) -> 
     current = effective_tags(link)
     if any(tag.slug in principal_tag_slugs() for tag in current):
         return ""
-    tag = EvidenceTag.objects.filter(slug=slug).first()
+    tag = resolve_evidence_tags(
+        [slug], evidence_tags_for_organization(project.organization_id), project.organization_id
+    ).get(slug)
     if tag is None:
         return ""
     override_tags(link, [*current, tag])

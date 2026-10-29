@@ -14,8 +14,13 @@ from __future__ import annotations
 
 from django.db.models import F
 
-from apps.document.models import Document, EvidenceTag
-from apps.document.services import accessible_library_documents, normalize_topic
+from apps.document.models import Document
+from apps.document.services import (
+    accessible_library_documents,
+    evidence_tags_for_organization,
+    normalize_topic,
+    resolve_evidence_tags,
+)
 from apps.project.models import Project, ProjectDocument
 from apps.project.services.evidence_tags import effective_tags, override_tags
 
@@ -39,7 +44,7 @@ COUNTRY_INSTRUMENT_TAG_SLUGS = [
 
 
 def country_instrument_documents(
-    user, region: str, tag_slugs=COUNTRY_INSTRUMENT_TAG_SLUGS
+    user, region: str, tag_slugs=COUNTRY_INSTRUMENT_TAG_SLUGS, organization_id=None
 ) -> dict[str, list[Document]]:
     """
     Documentos de ``region`` accesibles para ``user`` etiquetados con cada
@@ -58,9 +63,13 @@ def country_instrument_documents(
     wanted_region = normalize_topic(region or "")
     if not wanted_region:
         return result
+    # Las etiquetas se resuelven en las de la institución de la operación
+    # (globales más las suyas); la de otra institución no cuenta.
+    tags = evidence_tags_for_organization(organization_id).filter(slug__in=tag_slugs)
+    tag_ids = set(tags.values_list("pk", flat=True))
     candidates = (
         accessible_library_documents(user)
-        .filter(evidence_tags__slug__in=tag_slugs, region__isnull=False)
+        .filter(evidence_tags__in=tags, region__isnull=False)
         .prefetch_related("evidence_tags")
         .order_by(F("year").desc(nulls_last=True), "-created_at")
         .distinct()
@@ -69,7 +78,7 @@ def country_instrument_documents(
         if normalize_topic(doc.region or "") != wanted_region:
             continue
         for tag in doc.evidence_tags.all():
-            if tag.slug in result:
+            if tag.pk in tag_ids and doc not in result[tag.slug]:
                 result[tag.slug].append(doc)
     return result
 
@@ -98,8 +107,14 @@ def sync_country_instrument_documents(project: Project) -> dict[str, Document]:
     if not isinstance(region, str) or not region.strip():
         return {}
 
-    by_tag = country_instrument_documents(project.owner, region.strip())
-    tags_by_slug = {t.slug: t for t in EvidenceTag.objects.filter(slug__in=by_tag.keys())}
+    by_tag = country_instrument_documents(
+        project.owner, region.strip(), organization_id=project.organization_id
+    )
+    tags_by_slug = resolve_evidence_tags(
+        by_tag.keys(),
+        evidence_tags_for_organization(project.organization_id),
+        project.organization_id,
+    )
 
     assigned: dict[str, Document] = {}
     for slug, docs in by_tag.items():
