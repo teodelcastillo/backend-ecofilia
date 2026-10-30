@@ -206,3 +206,29 @@ class PrincipalStageTagTestCase(APITestCase):
     def test_a_document_that_is_not_the_principal_is_left_alone(self):
         response = self.client.put(self.tags_url, {"tags": ["ias"]}, format="json")
         self.assertEqual(response.data["tags"], ["ias"])
+
+
+class ContextoPaisExistenteTestCase(APITestCase):
+    """La ley de cambio climático y el reporte nacional que ya estaban en la
+    biblioteca se etiquetan (document/0023) y se vinculan por país."""
+
+    def _migrar(self):
+        from importlib import import_module
+
+        from django.apps import apps as django_apps
+
+        import_module("apps.document.migrations.0023_contexto_pais_en_la_biblioteca").aplicar(django_apps, None)
+
+    def test_existing_law_and_national_report_get_their_tags(self):
+        from apps.document.models import Document
+
+        owner = User.objects.create_user(email="lib@example.com", password="x")
+        ley = Document.objects.create(owner=owner, name="Ley N° 30754 — Ley Marco sobre Cambio Climático", slug="ley-pe", region="Perú")
+        btr = Document.objects.create(owner=owner, name="Primer BTR del Perú", slug="btr-pe", region="Perú")
+        cn = Document.objects.create(owner=owner, name="Documento", slug="cn-pe", region="Perú", topics=["comunicaciones nacionales"])
+        otro = Document.objects.create(owner=owner, name="Estudio sectorial", slug="otro-pe", region="Perú")
+        self._migrar()
+        self.assertEqual([t.slug for t in ley.evidence_tags.all()], ["ley-cambio-climatico"])
+        self.assertEqual([t.slug for t in btr.evidence_tags.all()], ["reporte-nacional"])
+        self.assertEqual([t.slug for t in cn.evidence_tags.all()], ["reporte-nacional"])
+        self.assertFalse(otro.evidence_tags.exists())
