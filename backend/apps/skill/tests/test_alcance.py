@@ -158,7 +158,7 @@ class ScopeDataMigrationTestCase(TestCase):
         )
 
     def _apply(self):
-        _migration("skill", "0049_asignar_alcance_skills").asignar(django_apps, None)
+        _migration("skill", "0050_asignar_alcance_skills").asignar(django_apps, None)
         for skill in (self.caf_iet, self.owned, self.template):
             skill.refresh_from_db()
 
@@ -176,13 +176,13 @@ class ScopeDataMigrationTestCase(TestCase):
         self.assertEqual(self.owned.scope, SkillScope.USER)
         self.assertEqual(self.template.scope, SkillScope.PLATFORM)
 
-        _migration("skill", "0049_asignar_alcance_skills").revertir(django_apps, None)
+        _migration("skill", "0050_asignar_alcance_skills").revertir(django_apps, None)
         self.caf_iet.refresh_from_db()
         self.assertEqual((self.caf_iet.scope, self.caf_iet.organization_id), (SkillScope.PLATFORM, None))
         self.assertIsNone(self.caf_iet.definition_versions.get().informed_by_organization_id)
 
     def test_caf_operation_tags_go_to_caf_and_country_tags_stay_global(self):
-        tags = _migration("document", "0024_etiquetas_de_operacion_caf")
+        tags = _migration("document", "0025_etiquetas_de_operacion_caf")
         for slug in ("ido", "ias", "ndc", "nap"):
             EvidenceTag.objects.update_or_create(slug=slug, organization=None, defaults={"name": slug})
         tags.asignar(django_apps, None)  # sin CAF: no toca nada
@@ -203,7 +203,7 @@ class ScopeDataMigrationTestCase(TestCase):
 
         caf = Organization.objects.create(name="CAF", slug="caf")
         EvidenceTag.objects.update_or_create(slug="ido", organization=None, defaults={"name": "IDO"})
-        _migration("document", "0024_etiquetas_de_operacion_caf").asignar(django_apps, None)
+        _migration("document", "0025_etiquetas_de_operacion_caf").asignar(django_apps, None)
         member = User.objects.create_user(email="m@caf.org", password="x", organization=caf)
         caf_op = Project.objects.create(owner=member, name="Op CAF")
         other_op = Project.objects.create(owner=self.owner, name="Op pública")
@@ -220,7 +220,7 @@ class CafOwnTagsTestCase(APITestCase):
     def setUp(self):
         for slug in (*self.CAF_ONLY, "ndc"):
             EvidenceTag.objects.update_or_create(slug=slug, organization=None, defaults={"name": slug})
-        self.migration = _migration("document", "0025_metodologia_y_salvaguardas_de_caf")
+        self.migration = _migration("document", "0026_metodologia_y_salvaguardas_de_caf")
 
     def _slugs(self, user):
         self.client.force_authenticate(user)

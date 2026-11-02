@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("document", "0022_seed_otros_tag"),
+        ("document", "0023_contexto_pais_en_la_biblioteca"),
         ("user", "0007_seed_caf_default_project_skills"),
     ]
 

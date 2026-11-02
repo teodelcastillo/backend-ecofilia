@@ -13,7 +13,7 @@ BEFORE = [("project", "0011_evidence_tags_on_document"), ("document", "0018_evid
 # tiene columnas que la tabla en 0018 no tiene (``EvidenceTag.organization``).
 AFTER = [
     ("project", "0012_move_evidence_tags_to_documents"),
-    ("document", "0024_etiquetas_de_operacion_caf"),
+    ("document", "0025_etiquetas_de_operacion_caf"),
 ]
 
 

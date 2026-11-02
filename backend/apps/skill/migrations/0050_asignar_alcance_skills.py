@@ -1,7 +1,7 @@
 """
 El alcance de los asistentes que ya existen (fase 0: aislamiento).
 
-Hasta acá un asistente sin dueño lo veía cualquiera. Desde ``0048`` decide
+Hasta acá un asistente sin dueño lo veía cualquiera. Desde ``0049`` decide
 ``Skill.scope``, y esta migración lo fija para lo que ya hay:
 
 1. ``caf-*`` → de la institución CAF. Si la base no tiene la institución CAF
@@ -16,7 +16,7 @@ Las versiones de definición de los asistentes de CAF quedan informadas por CAF
 (``SkillDefinitionVersion.informed_by_organization``).
 
 Reversible: al volver, todo queda en ``platform`` sin institución, que es lo
-que ``0048`` deja al revertirse de todos modos.
+que ``0049`` deja al revertirse de todos modos.
 """
 from django.db import migrations
 
@@ -58,7 +58,7 @@ def revertir(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("skill", "0048_skill_scope_y_organizacion"),
+        ("skill", "0049_skill_scope_y_organizacion"),
         ("user", "0007_seed_caf_default_project_skills"),
     ]
 
