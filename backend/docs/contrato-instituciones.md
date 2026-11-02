@@ -856,3 +856,12 @@ Detalle y evidencia en `backend/docs/seguridad.md`.
 | Una institución con miembros u operaciones no se puede borrar | La consola no ofrece borrar; dar de baja a los miembros primero |
 | `GET /api/admin/audit/?action=&organization=&actor=&since=&limit=` (superadmin con MFA) | Pantalla de auditoría en la consola. Cada evento trae `created_at`, `actor_email`, `action`, `organization_slug`, `target_type`, `target_id`, `data` e `ip` |
 | Crear evaluaciones o documentos sobre una operación ajena responde «no encontrado», igual que si no existiera | Nada |
+
+### Revisión del front (2 de noviembre de 2026)
+
+| Cambio | Qué tiene que hacer el front |
+|---|---|
+| **El registro responde lo mismo exista o no el email**: `201` con `{"detail": "Revisa tu correo para confirmar tu cuenta."}` y **sin `user`**. A quien ya tenía cuenta le llega «Ya tenés una cuenta en Ecofilia» con el enlace de restablecer (`/auth/reset-password?uid=&token=`). Una contraseña débil sigue dando `400` con `password`, en los dos casos | No leer `user` de la respuesta del registro, ni mostrar «ese email ya existe»: siempre «revisá tu correo» |
+| **Restablecer la contraseña ya no apaga el MFA** | Después del restablecer, el login sigue pidiendo el código si la cuenta tenía MFA. Quien perdió su app de MFA: «pedile a un administrador de Ecofilia que te lo reinicie» |
+| **`is_staff` solo no da alcance global.** Un staff que no es superadmin es, para la API, un usuario público: `is_ecofilia_admin: false`, `home_path: "/app"` | Nada: el front ya decide por `is_ecofilia_admin` y `home_path` |
+| El secreto MFA se guarda cifrado | Nada: `setup` devuelve el secreto y el `otpauth_url` como antes |

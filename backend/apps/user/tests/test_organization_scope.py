@@ -69,8 +69,17 @@ class OrganizationScopeTestCase(APITestCase):
         self.assertEqual(self.caf_admin.first_name, "Ana")
         self.assertTrue(self.caf_admin.is_staff, "el alcance de la API no debe tocar la base")
 
-    def test_ecofilia_staff_keeps_global_access(self):
+    def test_staff_alone_is_not_global_access(self):
+        # Acceso global es ser superadmin; ``is_staff`` sólo abre el admin de
+        # Django. Antes un staff veía todas las instituciones.
         self._as(self.ecofilia_staff)
+        self.assertFalse({self.caf_op.slug, self.other_op.slug} & self._project_slugs())
+
+    def test_staff_that_is_superadmin_keeps_global_access(self):
+        # El staff de Ecofilia que tiene que ver todo es superadmin: role=admin
+        # sin institución (o superusuario), con MFA.
+        User.objects.filter(pk=self.ecofilia_staff.pk).update(role="admin")
+        self._as(User.objects.get(pk=self.ecofilia_staff.pk))
         self.assertTrue({self.caf_op.slug, self.other_op.slug} <= self._project_slugs())
 
     def test_admin_refuses_staff_with_organization(self):

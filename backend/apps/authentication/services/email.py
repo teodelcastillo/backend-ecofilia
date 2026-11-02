@@ -52,6 +52,26 @@ class EmailService:
         cls._send(f"Te invitaron a {organization.name} — Ecofilia", text, html, user.email)
 
     @classmethod
+    def send_account_exists_email(cls, user, reset_url: str) -> None:
+        """A quien intenta registrarse con un email que ya tiene cuenta.
+
+        Es lo que permite que el registro responda igual exista o no el email
+        sin dejar perdida a la persona real.
+        """
+        first_name = user.first_name or user.email
+        text = (
+            f"Hola {first_name},\n\n"
+            "Alguien intentó crear una cuenta en Ecofilia con este email, pero ya tenés una. "
+            f"Si olvidaste tu contraseña, podés restablecerla acá:\n{reset_url}\n\n"
+            "Si no fuiste vos, ignorá este correo: tu cuenta no cambió."
+        )
+        html = render_to_string(
+            "emails/account_exists.html",
+            {"first_name": first_name, "reset_url": reset_url, "recipient_email": user.email},
+        )
+        cls._send("Ya tenés una cuenta en Ecofilia", text, html, user.email)
+
+    @classmethod
     def send_password_reset_email(cls, user, reset_url: str) -> None:
         first_name = user.first_name or user.email
         context = {

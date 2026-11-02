@@ -60,11 +60,13 @@ sobre `fase-5-backend`.
 | M6 | Media (permisos) | Al habilitar skills en operaciones y repositorios quedaba la regla anterior a la fase 0 (`owner` nulo = visible), que permitía habilitar skills de plataforma o de otra institución. | **Corregido**: usa `apps.skill.visibility` |
 | M7 | Media (dependencias) | PyPDF2 3.0.1 (PYSEC-2026-1835): un PDF armado se cuelga en un bucle infinito y traba un worker de ingesta. PyPDF2 está abandonado. | **Corregido**: reemplazado por `pypdf` |
 | M8 | Media (permisos) | La consola de la fase 2 podía crear superadmins sin querer: `role=admin` sin institución es superadmin de toda la plataforma. | **Corregido** en la fase 2: 400 |
+| H10 | **Alta** (autenticación) | Restablecer la contraseña **apagaba el MFA**. Con acceso al email de alguien se le cambiaba la clave y se le sacaba el segundo factor: el MFA no protegía contra un email robado, que es justo para lo que está. Lo reportó el front. | **Corregido**: el restablecer no toca el MFA. Quien perdió su app de MFA lo recupera con un superadmin (ver [Lo que depende de la operación](#lo-que-depende-de-la-operación)) |
+| M9 | Media (enumeración) | El registro con un email que ya tenía cuenta respondía «A user with this email already exists»: probando emails se sabía quién usa Ecofilia, y de qué institución. Lo reportó el front. | **Corregido**: la respuesta es la misma exista o no el email, también en el tiempo (se hashea la contraseña igual), y a la cuenta existente le llega un email con el enlace para restablecer |
 | B1 | Baja (enumeración) | Crear evaluaciones o documentos sobre una operación ajena respondía «No tienes acceso», distinto de «no encontrado»: confirmaba que el slug existía. | **Corregido**: mismo mensaje |
 | B2 | Baja | El email de restablecer contraseña decía «1 hora» y el enlace valía 3 días (default de Django). | **Corregido**: 24 horas, configurable, y el email lo dice |
-| P1 | Media | `mfa_secret` se guarda en claro en la base. | **Pendiente**, ver [Riesgos que quedan](#riesgos-que-quedan) |
-| P2 | Media | Dos nociones de acceso global: `is_staff` y superadmin (`is_ecofilia_admin`). | **Pendiente**, mitigado |
-| P3 | Media | No hay archivo de lock de dependencias (`poetry.lock`). | **Pendiente** |
+| P1 | Media | `mfa_secret` se guardaba en claro en la base: cualquier lectura de la base (un backup, un volcado) anulaba el MFA de todos. | **Corregido**: cifrado con Fernet (`apps/authentication/services/secret_box.py`, `MFA_ENCRYPTION_KEYS`); la migración `user/0014` cifra los existentes |
+| P2 | Media | Dos nociones de acceso global: `is_staff` y superadmin (`is_ecofilia_admin`). Un `is_staff` que no era superadmin veía todas las instituciones. | **Corregido**: para la API, `is_staff` solo no da alcance global (`staff_is_not_global`); sólo lo conserva quien además es superadmin |
+| P3 | Media | No había archivo de lock de dependencias (`poetry.lock`); además, el `.gitignore` lo excluía. | **Corregido**: `poetry.lock` versionado, CI corre `poetry check --lock`, `pip-audit` sobre el lock sin vulnerabilidades conocidas |
 | P4 | Baja | Sin Content-Security-Policy. | Aceptado: la API sólo responde JSON |
 
 ---
@@ -92,6 +94,11 @@ sobre `fase-5-backend`.
   autenticar (`apps.authentication.org_scope`): un miembro de una institución
   nunca llega a una vista con `is_staff` o `is_superuser`, aunque los tenga
   cargados por error.
+- **`is_staff` no es un nivel.** Muchos chequeos viejos usan `is_staff` como
+  «ve todo». Para la API, sólo lo conserva un superadmin con MFA
+  (`staff_is_not_global`, que corre al autenticar y en el perfil del login);
+  un staff que no es superadmin es un usuario público. `is_staff` queda para lo
+  que es de Django: entrar al admin, con MFA.
 
 ### Autenticación
 
@@ -103,6 +110,9 @@ sobre `fase-5-backend`.
 | MFA (TOTP) | Opcional para miembros y público; obligatorio para superadmin, staff y el admin de Django | `PrivilegedNeedsMFATestCase`, `DjangoAdminTestCase` |
 | Código MFA de un solo uso | `MFAService.verify` guarda el paso aceptado (`User.mfa_last_step`) | `MFATestCase` |
 | El MFA no se apaga sin código | `MFASetupView` responde 400 con MFA activo | `MFATestCase` |
+| Restablecer la contraseña no apaga el MFA | `PasswordResetConfirmView` cambia sólo la contraseña (y verifica el email) | `PasswordResetKeepsMFATestCase` |
+| Secreto MFA cifrado en reposo | Fernet con `MFA_ENCRYPTION_KEYS` (la primera cifra, todas descifran: se rota agregando la nueva adelante). Lo viejo en claro se sigue leyendo; `user/0014` lo cifra | `MFASecretIsEncryptedTestCase` |
+| El registro no revela qué emails tienen cuenta | Misma respuesta y mismo trabajo (hash de la contraseña) para un email nuevo y uno existente; al existente le llega «Ya tenés una cuenta» | `test_api` (`test_register_duplicate_email_does_not_reveal_the_account`) |
 | Bloqueo por cuenta | 10 fallos (contraseña o MFA) → 15 minutos (`LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`). El error es el mismo que una contraseña equivocada: no confirma que la cuenta existe | `LockoutTestCase` |
 | Throttle por IP | DRF: 30/min anónimo, 120/min autenticado, 20/min refresco | (existente) |
 | Contraseñas | Validadores de Django: largo, comunes, numéricas, similares al usuario | (existente) |
@@ -181,6 +191,11 @@ sobre `fase-5-backend`.
 - `pip-audit`: PyPDF2 reemplazado por `pypdf` (M7). La otra alerta,
   `setuptools`, viene de la imagen base y no de la aplicación; se resuelve
   actualizando la imagen.
+- **Lock de dependencias.** `backend/poetry.lock` está versionado; CI, el
+  `Dockerfile` y el `Dockerfile.prod` instalan desde él. `pip-audit` sobre todo
+  el lock: sin vulnerabilidades conocidas (2 de noviembre de 2026). **Al tocar
+  `pyproject.toml` hay que regenerarlo** (`poetry lock`, que no sube versiones
+  salvo que se le pida): si no, CI corta en `poetry check --lock`.
 
 ---
 
@@ -188,9 +203,9 @@ sobre `fase-5-backend`.
 
 | # | Riesgo | Por qué no se resolvió acá | Mitigación y siguiente paso |
 |---|---|---|---|
-| P1 | `mfa_secret` en claro en la base | Cifrarlo pide gestión de claves (KMS o una variable en Secrets Manager) y migrar los secretos existentes; un error deja sin MFA a todos | La base cifrada en reposo (RDS) mitiga lectura de disco, y el admin ya no muestra el secreto. Siguiente paso: cifrado a nivel campo con una clave de Secrets Manager |
-| P2 | `is_staff` sin superadmin también ve todo | Unificarlo cambia decenas de chequeos existentes | `listar_usuarios_por_nivel` marca a esos usuarios. Política: `is_staff` sólo para el equipo de Ecofilia, revisado en cada revisión de accesos |
-| P3 | Sin lock de dependencias | Cada build instala la última versión compatible: no es reproducible y una versión nueva comprometida entraría sola | Generar y versionar `poetry.lock`, y correr `pip-audit` en CI |
+| P5 | Sin `MFA_ENCRYPTION_KEYS`, la clave del MFA se deriva de `SECRET_KEY` | Funciona, pero ata los secretos MFA a esa clave: rotar `SECRET_KEY` sin más deja sin MFA a todos | Definir `MFA_ENCRYPTION_KEYS` en Secrets Manager antes del deploy (ver [Antes del deploy](#antes-del-deploy)) |
+| P6 | Sin códigos de recuperación del MFA | Es una funcionalidad nueva, con su pantalla en el front | Quien pierde su app de MFA lo recupera con un superadmin, que se lo apaga en el admin de Django tras verificar su identidad por otro canal. Queda en el `LogEntry` del admin |
+| P7 | `pip-audit` no corre en CI | Necesita red en CI y una política para las alertas | Correrlo a mano antes de cada salida, sobre el lock |
 | P4 | Sin CSP | La API no sirve HTML (sólo el admin) | El front debe definir su propia CSP |
 | — | Retención y borrado de datos personales (GDPR, Ley 25.326) | Es una decisión de política | Definir la retención de `AuditEvent` y de datos de usuarios, y el procedimiento de borrado a pedido |
 
@@ -215,6 +230,8 @@ verificarlos en AWS y en los procesos:
       con reglas administradas.
 - [ ] **Revisión de accesos trimestral:** `listar_usuarios_por_nivel`, y
       superadmins con MFA (`mfa_enabled`).
+- [ ] **Recuperación del MFA:** quién la autoriza y cómo se verifica la
+      identidad (no por el mismo email: es justo lo que el MFA protege).
 - [ ] **Respuesta a incidentes:** quién decide y cómo se revocan accesos
       (desactivar el usuario invalida sus tokens).
 - [ ] **Prueba de penetración externa** antes de abrir a instituciones nuevas.
@@ -232,22 +249,35 @@ verificarlos en AWS y en los procesos:
 2. **Al desplegar, todos los usuarios vuelven a iniciar sesión una vez.**
    `CHECK_REVOKE_TOKEN` invalida los tokens emitidos sin el sello nuevo.
 3. Entran las migraciones `user/0011_seguridad_login`, `user/0012_audit_event`,
-   `user/0013_institucion_protegida` y `project/0019_institucion_protegida`.
-4. El volumen de `superadmin.access` crece con el uso de la consola: definir su
+   `user/0013_institucion_protegida`, `user/0014_cifrar_secretos_mfa` y
+   `project/0019_institucion_protegida`.
+4. **Antes de esas migraciones, definir `MFA_ENCRYPTION_KEYS`** en
+   `ecofilia/prod`: una clave Fernet
+   (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
+   `user/0014` cifra con la clave que haya en ese momento. Si se agrega
+   después: `migrate user 0013` sin la variable (descifra) y `migrate` con ella
+   (vuelve a cifrar).
+5. **Staff que no es superadmin.** `listar_usuarios_por_nivel` los marca
+   «is_staff sin alcance global». Si alguno tiene que seguir viendo todo, hacerlo
+   superadmin (`role=admin`, sin institución) con MFA.
+6. El volumen de `superadmin.access` crece con el uso de la consola: definir su
    retención (ver [Riesgos que quedan](#riesgos-que-quedan)).
 
 ---
 
 ## Evidencia
 
-- `apps/user/tests/test_seguridad.py`: 41 tests, uno o más por control,
-  incluidos los cuatro puntos que reportó el front (borrar una institución,
-  Basic auth, salir de una institución, auditoría de cambios y lecturas, MFA
-  obligatorio).
+- `apps/user/tests/test_seguridad.py`: 50 tests, uno o más por control,
+  incluidos los puntos que reportó el front (borrar una institución, Basic
+  auth, salir de una institución, auditoría de cambios y lecturas, MFA
+  obligatorio, restablecer sin apagar el MFA, secreto MFA cifrado, `is_staff`
+  sin alcance global). El registro uniforme está en `apps/authentication/tests`.
 - **Pruebas de mutación:**
   - quitar la regla de «público dentro de su institución» hace fallar el
     barrido y el test de evaluaciones;
   - quitar el MFA de la consola hace fallar el test de privilegios;
+  - devolverle el alcance global a `is_staff`, apagar el MFA en el restablecer
+    o guardar el secreto en claro hacen fallar, cada uno, su test;
   - en la fase 0, romper la visibilidad de skills hacía fallar 9 de 26 tests
     de aislamiento.
 - **Suite completa** (`apps.project apps.skill apps.document apps.user

@@ -3,6 +3,7 @@ from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -48,6 +49,36 @@ class RegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        """Alta de una cuenta. Responde lo mismo exista o no el email.
+
+        Antes, un email con cuenta devolvía «A user with this email already
+        exists»: probando emails se averiguaba quién usa Ecofilia (por ejemplo,
+        quién de una institución). Ahora la respuesta es siempre la misma, y a
+        quien ya tiene cuenta le llega un email que se lo dice.
+        """
+        email = str(request.data.get("email") or "").strip()
+        existing = User.objects.filter(email__iexact=email).first() if email else None
+        if existing is not None:
+            # La contraseña se valida igual que en un alta nueva: si no, una
+            # contraseña débil daría 400 sólo para los emails sin cuenta.
+            data = request.data.dict() if hasattr(request.data, "dict") else dict(request.data)
+            serializer = RegisterSerializer(data={**data, "email": f"x{existing.pk}@invalid.example"})
+            serializer.is_valid(raise_exception=True)
+            # El alta nueva hashea la contraseña (cientos de ms): sin esto, el
+            # tiempo de respuesta volvería a delatar qué emails tienen cuenta.
+            make_password(serializer.validated_data["password"])
+            try:
+                # El mismo enlace que manda «olvidé mi contraseña»: cualquiera
+                # puede pedir ese email, así que esto no abre nada nuevo.
+                reset_url = build_frontend_url(
+                    "/auth/reset-password",
+                    {"uid": TokenService.make_uid(existing), "token": TokenService.generate_token(existing)},
+                )
+                EmailService.send_account_exists_email(existing, reset_url)
+            except Exception:
+                logger.exception("Failed to send account-exists email to user=%s", existing.pk)
+            return Response({"detail": _("Revisa tu correo para confirmar tu cuenta.")}, status=status.HTTP_201_CREATED)
+
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
@@ -60,13 +91,7 @@ class RegisterView(APIView):
         except Exception:
             logger.exception("Failed to send verification email to %s", user.email)
 
-        return Response(
-            {
-                "user": ProfileSerializer(user).data,
-                "detail": _("Revisa tu correo para confirmar tu cuenta."),
-            },
-            status=status.HTTP_201_CREATED,
-        )
+        return Response({"detail": _("Revisa tu correo para confirmar tu cuenta.")}, status=status.HTTP_201_CREATED)
 
 
 class VerifyEmailView(APIView):
@@ -210,9 +235,12 @@ class PasswordResetConfirmView(APIView):
             return Response({"detail": _("Token inválido o expirado.")}, status=status.HTTP_400_BAD_REQUEST)
 
         user.set_password(serializer.validated_data["new_password"])
-        user.mfa_enabled = False
-        user.mfa_secret = ""
-        fields = ["password", "last_password_change", "mfa_enabled", "mfa_secret"]
+        # El MFA no se toca. Antes el restablecer lo apagaba: con acceso al email
+        # de alguien se le cambiaba la clave y se le sacaba el segundo factor, o
+        # sea que el MFA no protegía contra lo que más importa (un email robado).
+        # Quien perdió su app de MFA lo recupera con un superadmin, que se lo
+        # apaga desde el admin de Django (y queda registrado).
+        fields = ["password", "last_password_change"]
         # El enlace llegó a este email: quien lo abrió demostró que es suyo. Sin
         # esto, alguien invitado a una institución (fase 5) nunca podría entrar.
         if not user.email_verified:
@@ -260,7 +288,7 @@ class MFASetupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         secret = MFAService.generate_secret()
-        user.mfa_secret = secret
+        MFAService.store_secret(user, secret)  # cifrado en reposo
         user.mfa_enabled = False
         user.save(update_fields=["mfa_secret", "mfa_enabled"])
         data = MFASetupSerializer({"secret": secret, "otpauth_url": MFAService.provisioning_uri(user.email, secret)}).data

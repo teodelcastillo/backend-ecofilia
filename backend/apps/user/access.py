@@ -80,6 +80,23 @@ def is_privileged(user) -> bool:
     )
 
 
+def staff_is_not_global(user):
+    """Le quita, sólo en memoria, el alcance global a un ``is_staff`` que no es superadmin.
+
+    Había dos nociones de «ve todo»: superadmin (``is_ecofilia_admin``) e
+    ``is_staff``, chequeado en decenas de lugares. Un staff que no era
+    superadmin veía todas las instituciones sin ninguna de las reglas del
+    superadmin. Para la API, acceso global es ser superadmin; ``is_staff``
+    queda para lo que es de Django (entrar al admin).
+    """
+    if user is None or not getattr(user, "is_staff", False) or is_ecofilia_admin(user):
+        return user
+    if getattr(user, "_unscoped_flags", None) is None:
+        user._unscoped_flags = (user.is_staff, user.is_superuser)
+    user.is_staff = False
+    return user
+
+
 def require_mfa_for_privileges(user):
     """Le quita, sólo en memoria, el alcance de plataforma a quien no tiene MFA.
 

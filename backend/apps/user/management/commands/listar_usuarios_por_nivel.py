@@ -8,8 +8,10 @@ De cada uno: email, último login y cuántas operaciones tiene (como dueño).
 
 Superadmin es ``apps.user.access.is_ecofilia_admin``: superusuario o
 ``role=admin``, sin institución. Un ``is_staff`` sin institución que no es
-ninguna de las dos cosas cae en público, pero se marca: ``is_staff`` abre la
-plataforma entera en varios chequeos y conviene revisarlo.
+ninguna de las dos cosas cae en público, y se marca: desde la revisión de
+seguridad ``is_staff`` solo ya no le da a la API alcance global
+(``staff_is_not_global``). Si es alguien del equipo que tiene que ver todo,
+hay que hacerlo superadmin (``role=admin``) con MFA.
 """
 from __future__ import annotations
 
@@ -55,7 +57,7 @@ class Command(BaseCommand):
             last_login = user.last_login.strftime("%Y-%m-%d %H:%M") if user.last_login else "nunca"
             marks = []
             if user.is_staff and not is_ecofilia_admin(user):
-                marks.append("is_staff")
+                marks.append("is_staff sin alcance global")
             if not user.is_active:
                 marks.append("inactivo")
             suffix = f"  [{', '.join(marks)}]" if marks else ""

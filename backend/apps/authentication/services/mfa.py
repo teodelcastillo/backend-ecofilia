@@ -20,6 +20,20 @@ class MFAService:
         return pyotp.totp.TOTP(secret).provisioning_uri(name=email, issuer_name=issuer)
 
     @staticmethod
+    def secret_of(user) -> str:
+        """El secreto TOTP en claro (en la base está cifrado, ver ``secret_box``)."""
+        from apps.authentication.services.secret_box import decrypt
+
+        return decrypt(user.mfa_secret or "")
+
+    @staticmethod
+    def store_secret(user, secret: str) -> None:
+        """Guarda el secreto cifrado en ``user.mfa_secret`` (sin hacer ``save``)."""
+        from apps.authentication.services.secret_box import encrypt
+
+        user.mfa_secret = encrypt(secret)
+
+    @staticmethod
     def verify(user, code: str) -> bool:
         """Si ``code`` es válido para ``user``, y lo consume.
 
@@ -27,9 +41,10 @@ class MFAService:
         acepta ese ni uno anterior. Sin esto, un código visto (por encima del
         hombro, en un log) servía para entrar durante su ventana de 30-90 s.
         """
-        if not user.mfa_secret or not code:
+        secret = MFAService.secret_of(user)
+        if not secret or not code:
             return False
-        totp = pyotp.TOTP(user.mfa_secret)
+        totp = pyotp.TOTP(secret)
         now = time.time()
         code = str(code).strip()
         for offset in (0, -1, 1):

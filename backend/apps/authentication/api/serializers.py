@@ -218,9 +218,11 @@ class TokenObtainPairWithMFASerializer(TokenObtainPairSerializer):
         logger.info("Login success for user=%s", user.pk)
         # El perfil que recibe el front es el que va a ver la API: un superadmin
         # sin MFA llega como usuario común y con ``mfa_required``.
-        from apps.user.access import require_mfa_for_privileges, scope_to_organization
+        from apps.user.access import require_mfa_for_privileges, scope_to_organization, staff_is_not_global
 
-        data["user"] = ProfileSerializer(require_mfa_for_privileges(scope_to_organization(user))).data
+        data["user"] = ProfileSerializer(
+            staff_is_not_global(require_mfa_for_privileges(scope_to_organization(user)))
+        ).data
         return data
 
 

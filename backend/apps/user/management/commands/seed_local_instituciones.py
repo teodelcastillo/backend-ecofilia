@@ -32,6 +32,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from apps.authentication.services.secret_box import encrypt
 from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument, ProjectStageReport, ProjectStageReportOrigin
 from apps.project.services.stages import INSUMO_SLUG
@@ -138,7 +139,7 @@ class Command(BaseCommand):
 
         superadmin = self._user(
             f"superadmin@{DOMAIN}", password, is_superuser=True, is_staff=True,
-            mfa_enabled=True, mfa_secret=LOCAL_MFA_SECRET, mfa_last_step=None,
+            mfa_enabled=True, mfa_secret=encrypt(LOCAL_MFA_SECRET), mfa_last_step=None,
             failed_login_attempts=0, locked_until=None,
         )
         caf_admin = self._user(f"caf-admin@{DOMAIN}", password, organization=caf, role=UserRole.ADMIN)

@@ -245,6 +245,11 @@ LOGIN_LOCKOUT_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_MINUTES", "15"))
 # biblioteca pública, admin de Django) exige que el superadmin tenga MFA activo.
 ADMIN_REQUIRE_MFA = _env_bool("ADMIN_REQUIRE_MFA", "True")
 
+# Claves Fernet para cifrar los secretos MFA en reposo, separadas por coma: la
+# primera cifra, todas descifran (rotación). Sin definir se derivan de SECRET_KEY;
+# ver ``apps/authentication/services/secret_box.py``.
+MFA_ENCRYPTION_KEYS = _env_list("MFA_ENCRYPTION_KEYS")
+
 # Cada pedido a la API de un superadmin o del staff, lecturas incluidas, queda
 # en el registro de auditoría (``main.middleware.PrivilegedAccessAuditMiddleware``).
 AUDIT_PRIVILEGED_ACCESS = _env_bool("AUDIT_PRIVILEGED_ACCESS", "True")

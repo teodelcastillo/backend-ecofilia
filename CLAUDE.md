@@ -157,6 +157,7 @@ Backend configurado con `django-ses`. Templates HTML en `apps/authentication/tem
 - `verification.html` — confirmación de cuenta al registrarse
 - `password_reset.html` — restablecimiento de contraseña
 - `invitation.html` — invitación a una institución (fase 5): lleva a elegir la contraseña
+- `account_exists.html` — a quien intenta registrarse con un email que ya tiene cuenta
 
 **Variables de entorno necesarias en ECS (Secrets Manager o task definition):**
 ```
@@ -354,6 +355,16 @@ esencial al tocar código:
 - **Sin MFA no hay poder de plataforma.** Un superadmin o un staff sin MFA es un
   usuario común para la API (`require_mfa_for_privileges`) y para el admin de
   Django (`admin_login.py`). Interruptor de emergencia: `ADMIN_REQUIRE_MFA`.
+- **`is_staff` solo no es acceso global.** Muchos chequeos usan `is_staff` como
+  «ve todo»; al autenticar, `staff_is_not_global` se lo saca en memoria a quien
+  no es superadmin. Para ver todo hay que ser superadmin, con MFA.
+- **El secreto MFA va cifrado** (`services/secret_box.py`, `MFA_ENCRYPTION_KEYS`
+  en Secrets Manager): leerlo y escribirlo sólo con `MFAService.secret_of` /
+  `store_secret`, nunca `user.mfa_secret` a mano.
+- **Restablecer la contraseña no toca el MFA**, y el registro responde lo mismo
+  exista o no el email (con el mismo trabajo, para no delatarlo por tiempo).
+- **`backend/poetry.lock` está versionado** y CI corre `poetry check --lock`: al
+  cambiar `pyproject.toml`, regenerarlo con `poetry lock`.
 - **Toda acción privilegiada se audita** con `apps.user.audit.record`, dentro de
   su transacción. Cada pedido de un superadmin queda como `superadmin.access`.
   `AuditEvent` no se edita ni se borra.
@@ -383,7 +394,7 @@ Cómo levantar el backend local, el comando de datos de prueba
 
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
 
-`SECRET_KEY`, `JWT_SIGNING_KEY`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+`SECRET_KEY`, `JWT_SIGNING_KEY`, `MFA_ENCRYPTION_KEYS`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
 
 Variables de configuración (en task definition ECS):
 `DJANGO_SETTINGS_MODULE=main.settings.prod`, `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`, `SQS_QUEUE_URL`, `AWS_STORAGE_BUCKET_NAME`

@@ -18,6 +18,7 @@ from datetime import timedelta
 
 import pyotp
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import override_settings
 from django.urls import URLPattern, URLResolver, get_resolver
 from django.utils import timezone
@@ -49,6 +50,9 @@ def _code(offset_steps: int = 0) -> str:
 
 class _Base(APITestCase):
     def setUp(self):
+        # El throttle de anónimos (30/min) vive en el caché, que dura todo el
+        # proceso de tests: sin esto, el resultado depende del orden.
+        cache.clear()
         self.org_a = Organization.objects.create(name="A", slug="inst-a", config=caf_config())
         self.org_b = Organization.objects.create(name="B", slug="inst-b")
         self.member_a = User.objects.create_user(
@@ -528,3 +532,124 @@ class SuperadminAccessIsAuditedTestCase(_Base):
         self._bearer(self.member_a)
         self.client.get("/api/projects/")
         self.assertFalse(AuditEvent.objects.filter(action="superadmin.access").exists())
+
+
+class PasswordResetKeepsMFATestCase(_Base):
+    """Revisión del front: el restablecer apagaba el MFA. Con el email de
+    alguien se le cambiaba la clave *y* se le sacaba el segundo factor."""
+
+    def test_the_reset_does_not_turn_off_mfa(self):
+        from apps.authentication.services.tokens import TokenService
+
+        User.objects.filter(pk=self.member_a.pk).update(mfa_enabled=True, mfa_secret=SECRET)
+        user = User.objects.get(pk=self.member_a.pk)
+        response = self.client.post(
+            "/api/auth/password/reset/confirm/",
+            {
+                "uid": TokenService.make_uid(user),
+                "token": TokenService.generate_token(user),
+                "new_password": "Clave-nueva-2027",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("Clave-nueva-2027"))
+        self.assertTrue(user.mfa_enabled)
+        # Con la clave nueva sola no alcanza: sigue pidiendo el código.
+        self.assertEqual(self._login("m@a.org", password="Clave-nueva-2027").status_code, 401)
+        self.assertEqual(self._login("m@a.org", password="Clave-nueva-2027", otp=_code()).status_code, 200)
+
+
+class MFASecretIsEncryptedTestCase(_Base):
+    """Revisión del front: el secreto TOTP estaba en claro en la base."""
+
+    def test_setup_stores_it_encrypted_and_it_still_verifies(self):
+        from apps.authentication.services.secret_box import is_encrypted
+
+        self._bearer(self.member_a)
+        response = self.client.post("/api/auth/mfa/setup/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        secret = response.data["secret"]
+        stored = User.objects.get(pk=self.member_a.pk).mfa_secret
+        self.assertTrue(is_encrypted(stored))
+        self.assertNotIn(secret, stored)
+
+        response = self.client.post("/api/auth/mfa/verify/", {"code": pyotp.TOTP(secret).now()}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertTrue(User.objects.get(pk=self.member_a.pk).mfa_enabled)
+
+    def test_an_old_plaintext_secret_keeps_working(self):
+        User.objects.filter(pk=self.member_a.pk).update(mfa_enabled=True, mfa_secret=SECRET)
+        self.assertEqual(self._login("m@a.org", otp=_code()).status_code, 200)
+
+    def test_the_migration_encrypts_and_reverts(self):
+        import importlib
+
+        from django.apps import apps as registry
+
+        from apps.authentication.services.secret_box import decrypt, is_encrypted
+
+        migration = importlib.import_module("apps.user.migrations.0014_cifrar_secretos_mfa")
+        User.objects.filter(pk=self.member_a.pk).update(mfa_enabled=True, mfa_secret=SECRET)
+
+        migration.cifrar(registry, None)
+        stored = User.objects.get(pk=self.member_a.pk).mfa_secret
+        self.assertTrue(is_encrypted(stored))
+        self.assertEqual(decrypt(stored), SECRET)
+        migration.cifrar(registry, None)  # idempotente: no lo cifra dos veces
+        self.assertEqual(User.objects.get(pk=self.member_a.pk).mfa_secret, stored)
+        self.assertEqual(self._login("m@a.org", otp=_code()).status_code, 200)
+
+        migration.descifrar(registry, None)
+        self.assertEqual(User.objects.get(pk=self.member_a.pk).mfa_secret, SECRET)
+
+    def test_keys_rotate(self):
+        from cryptography.fernet import Fernet
+
+        from apps.authentication.services.secret_box import decrypt, encrypt
+
+        old, new = Fernet.generate_key().decode(), Fernet.generate_key().decode()
+        with self.settings(MFA_ENCRYPTION_KEYS=[old]):
+            stored = encrypt(SECRET)
+        with self.settings(MFA_ENCRYPTION_KEYS=[new, old]):
+            self.assertEqual(decrypt(stored), SECRET)
+        with self.settings(MFA_ENCRYPTION_KEYS=[new]), self.assertRaises(Exception):
+            decrypt(stored)
+
+
+class StaffIsNotGlobalTestCase(_Base):
+    """Revisión del front: ``is_staff`` sin ser superadmin veía todo."""
+
+    def setUp(self):
+        super().setUp()
+        self.staff = User.objects.create_user(
+            email="staff@ecofilia.site", password="Clave-larga-2026", email_verified=True,
+            is_staff=True, mfa_enabled=True, mfa_secret=SECRET,
+        )
+        self.op_b = Project.objects.create(owner=self.member_b, name="Op de B")
+
+    def test_staff_sees_nothing_of_the_institutions(self):
+        self._bearer(self.staff)
+        self.assertEqual(self.client.get(f"/api/projects/{self.op_b.slug}/").status_code, status.HTTP_404_NOT_FOUND)
+        response = self.client.get("/api/projects/")
+        data = response.data
+        slugs = [p["slug"] for p in (data["results"] if isinstance(data, dict) else data)]
+        self.assertNotIn(self.op_b.slug, slugs)
+        self.assertEqual(self.client.get("/api/admin/organizations/").status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_the_login_profile_says_the_same(self):
+        response = self._login("staff@ecofilia.site", otp=_code())
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual((response.data["user"]["is_ecofilia_admin"], response.data["user"]["home_path"]), (False, "/app"))
+
+    def test_a_superadmin_keeps_global_access(self):
+        self._bearer(self.superadmin)
+        self.assertEqual(self.client.get(f"/api/projects/{self.op_b.slug}/").status_code, status.HTTP_200_OK)
+
+    def test_nothing_is_persisted(self):
+        self._bearer(self.staff)
+        self.client.patch("/api/auth/me/", {"first_name": "Sol"}, format="json")
+        self.staff.refresh_from_db()
+        self.assertTrue(self.staff.is_staff)
+        self.assertEqual(self.staff.first_name, "Sol")

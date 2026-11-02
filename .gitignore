@@ -151,7 +151,8 @@ cython_debug/
 # Test database
 *.db
 
-# poetry
+# poetry — el lock SÍ se commitea: CI y las imágenes Docker instalan desde él.
 poetry*
+!backend/poetry.lock
 # requirements.txt
 .DS_Store
