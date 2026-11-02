@@ -1,12 +1,12 @@
 """
 ``metodologia-caf`` y ``salvaguardas-cesas`` también son de CAF (fase 0).
 
-``0024`` pasó a CAF las etiquetas de operación y dejó globales las de país.
+``0025`` pasó a CAF las etiquetas de operación y dejó globales las de país.
 Estas dos no estaban en ninguna de las dos listas y quedaron globales, así que
 cualquier institución veía «Metodología y guías sectoriales CAF» y las
 salvaguardas de CAF en su catálogo. Son de CAF.
 
-Migración aparte y no un cambio a ``0024``: las bases que ya la aplicaron (las
+Migración aparte y no un cambio a ``0025``: las bases que ya la aplicaron (las
 locales del front, por ejemplo) la reciben con el próximo ``migrate``.
 
 Si no existe la institución ``caf``, no hace nada. Reversible.
@@ -52,7 +52,7 @@ def revertir(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("document", "0024_etiquetas_de_operacion_caf"),
+        ("document", "0025_etiquetas_de_operacion_caf"),
     ]
 
     operations = [
