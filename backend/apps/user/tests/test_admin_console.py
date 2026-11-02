@@ -9,7 +9,7 @@ from apps.document.models import EvidenceTag
 from apps.project.models import Project
 from apps.skill.models import Skill, SkillScope, SkillType
 from apps.user.models import Organization
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 
@@ -25,7 +25,7 @@ class _ConsoleBase(APITestCase):
     def setUp(self):
         self.caf = Organization.objects.create(name="CAF", slug="caf", restricted=True, config=caf_config())
         self.other = Organization.objects.create(name="Otra", slug="otra")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.caf_admin = User.objects.create_user(
             email="admin@caf.org", password="x", organization=self.caf, role="admin"
         )

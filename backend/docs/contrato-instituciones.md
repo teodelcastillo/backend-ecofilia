@@ -52,6 +52,10 @@ docker exec -it ecofilia-backend-dev ./manage.py seed_local_instituciones
   workflows además necesitan una cola: sin ella el encolado falla y la corrida
   responde 503.
 - Para empezar de cero: `docker compose -f docker-compose.dev.yml down -v`.
+- **Si la base local se migró con estas ramas antes del 2 de noviembre de 2026**, hay
+  que recrearla una vez (`down -v` y de nuevo `up` + `seed_local_instituciones`).
+  Las migraciones de la fase 0 se renumeraron para ir detrás de las que ya están
+  en producción. Producción no se ve afectada: nunca aplicó los nombres viejos.
 
 Verificación rápida por HTTP, sin frontend:
 
@@ -86,7 +90,7 @@ institución, un usuario público y un superadmin.
 
 | Email | Nivel | Institución |
 |---|---|---|
-| `superadmin@local.test` | superadmin de Ecofilia | — |
+| `superadmin@local.test` | superadmin de Ecofilia, **con MFA**: secreto TOTP `JBSWY3DPEHPK3PXP` (el login pide `otp`; cada código sirve una vez) | — |
 | `caf-admin@local.test` | administrador de institución (`role=admin`) | `caf` (restringida) |
 | `caf-miembro@local.test` | miembro | `caf` (restringida) |
 | `otra-miembro@local.test` | miembro | `otra` (sin restricciones) |
@@ -829,3 +833,26 @@ persona demostró que es suyo. Sin esto, alguien invitado nunca podría entrar.
 `inicio` → `analisis` → `cierre`, sin lanzamientos, y una configuración
 pública con las etapas `borrador` → `listo`. Así `/app` y el portal base se ven
 distintos de CAF y de `otra`.
+
+---
+
+## Seguridad — lo que cambia para el front
+
+Detalle y evidencia en `backend/docs/seguridad.md`.
+
+| Cambio | Qué tiene que hacer el front |
+|---|---|
+| La API acepta **sólo** `Authorization: Bearer` (sin Basic ni sesión) | Nada: ya manda Bearer |
+| **MFA obligatorio para superadmin y staff.** Sin MFA, la API los trata como usuarios comunes, y `/api/auth/me/` y el `user` del login traen `mfa_required: true`, `is_ecofilia_admin: false` y `home_path: "/app"` | Con `mfa_required`, mostrar la activación de MFA (`POST /api/auth/mfa/setup/` → mostrar el QR de `otpauth_url` → `POST /api/auth/mfa/verify/` con el código) y pedir un login nuevo |
+| Acciones de superadmin sin MFA: **403** con un mensaje que nombra el MFA | Llevar a la activación de MFA |
+| **Bloqueo** tras 10 fallos de login (contraseña o código), por 15 minutos. El error es el mismo que una contraseña equivocada | Nada. Opcional: decir «si fallaste varias veces, esperá unos minutos» |
+| Un **código MFA sirve una sola vez** | Si el login con código falla justo después de otro, pedir el código siguiente |
+| `POST /api/auth/mfa/setup/` con MFA activo: **400** | Para reconfigurar, primero `POST /api/auth/mfa/disable/` con un código |
+| **Cambiar o restablecer la contraseña invalida los tokens**, también el actual | Después de cambiar la contraseña, volver al login |
+| **Al desplegar, todos vuelven a iniciar sesión una vez** | Nada: el refresh falla y el front ya manda al login |
+| Publicar una evaluación (`visibility: "public"`) es del superadmin: **403** para el resto | Ocultar «pública» para quien no es superadmin |
+| Lo que un miembro marcó público antes sólo lo ve su institución | Nada |
+| Quien sale de una institución deja de ver lo que creó ahí: **404** | Nada |
+| Una institución con miembros u operaciones no se puede borrar | La consola no ofrece borrar; dar de baja a los miembros primero |
+| `GET /api/admin/audit/?action=&organization=&actor=&since=&limit=` (superadmin con MFA) | Pantalla de auditoría en la consola. Cada evento trae `created_at`, `actor_email`, `action`, `organization_slug`, `target_type`, `target_id`, `data` e `ip` |
+| Crear evaluaciones o documentos sobre una operación ajena responde «no encontrado», igual que si no existiera | Nada |

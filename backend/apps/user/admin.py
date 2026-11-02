@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjUserAdmin
 from django.utils.translation import gettext_lazy as _
 
-from .models import Organization, User
+from .models import AuditEvent, Organization, User
 
 
 @admin.register(Organization)
@@ -32,9 +32,13 @@ class UserAdmin(DjUserAdmin):
                     "approved",
                     "email_verified",
                     "email_verified_at",
+                    # ``mfa_secret`` no se muestra: quien lo lee genera los
+                    # códigos de esa persona. Para recuperar a alguien que
+                    # perdió su app alcanza con apagar ``mfa_enabled``.
                     "mfa_enabled",
-                    "mfa_secret",
                     "last_password_change",
+                    "failed_login_attempts",
+                    "locked_until",
                 )
             },
         ),
@@ -73,7 +77,26 @@ class UserAdmin(DjUserAdmin):
     list_filter = ("organization", "role", "email_verified", "mfa_enabled", "is_active")
     search_fields = ("email", "first_name", "last_name")
     ordering = ("email",)
-    readonly_fields = ("email_verified_at", "last_password_change")
+    readonly_fields = ("email_verified_at", "last_password_change", "failed_login_attempts")
 
 
 admin.site.register(User, UserAdmin)
+
+
+@admin.register(AuditEvent)
+class AuditEventAdmin(admin.ModelAdmin):
+    """Sólo lectura: el registro de auditoría no se crea, edita ni borra a mano."""
+
+    list_display = ("created_at", "actor_email", "action", "organization", "target_type", "target_id", "ip")
+    list_filter = ("action", "organization")
+    search_fields = ("actor_email", "action", "target_id")
+    date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

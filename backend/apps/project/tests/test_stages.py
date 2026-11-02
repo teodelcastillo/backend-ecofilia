@@ -40,9 +40,13 @@ class _StageBase(APITestCase):
         # configuración de la institución (fase 1).
         self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
         self.owner = User.objects.create_user(email="owner@example.com", password="x", organization=self.caf)
-        self.editor = User.objects.create_user(email="editor@example.com", password="x")
-        self.viewer = User.objects.create_user(email="viewer@example.com", password="x")
-        self.staff = User.objects.create_user(email="staff@example.com", password="x", is_staff=True)
+        # Una operación de CAF se comparte sólo con gente de CAF.
+        self.editor = User.objects.create_user(email="editor@example.com", password="x", organization=self.caf)
+        self.viewer = User.objects.create_user(email="viewer@example.com", password="x", organization=self.caf)
+        # Sin MFA, el staff no tiene alcance de plataforma (ADMIN_REQUIRE_MFA).
+        self.staff = User.objects.create_user(
+            email="staff@example.com", password="x", is_staff=True, mfa_enabled=True
+        )
         self.project = Project.objects.create(
             owner=self.owner,
             name="Operación",

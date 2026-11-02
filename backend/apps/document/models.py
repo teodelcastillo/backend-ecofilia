@@ -166,11 +166,19 @@ class Document(models.Model):
                 pass
         super().save(*args, **kwargs)
 
+    def _owned_by(self, user) -> bool:
+        """Dueño, y el documento no es de una institución de la que ya no es parte."""
+        from apps.document.services import foreign_institution_document_ids
+
+        return self.owner_id == user.id and not Document.objects.filter(
+            pk=self.pk, id__in=foreign_institution_document_ids(user)
+        ).exists()
+
     def can_view(self, user) -> bool:
         """Verifica si el usuario puede ver el documento"""
         from apps.user.access import administers_member
 
-        if user.is_staff or self.owner_id == user.id:
+        if user.is_staff or self._owned_by(user):
             return True
         if self.is_public:
             return True
@@ -190,7 +198,7 @@ class Document(models.Model):
         """Verifica si el usuario puede editar el documento"""
         from apps.user.access import administers_member
 
-        if user.is_staff or self.owner_id == user.id:
+        if user.is_staff or self._owned_by(user):
             return True
         # El administrador de una institución trabaja los documentos de sus
         # miembros (clasificar, etiquetar). Los públicos no: son de Ecofilia.
@@ -220,7 +228,7 @@ class Document(models.Model):
 
         return (
             user.is_staff
-            or self.owner_id == user.id
+            or self._owned_by(user)
             or (not self.is_public and administers_member(user, self.owner))
         )
 

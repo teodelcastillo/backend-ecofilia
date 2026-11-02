@@ -1,6 +1,7 @@
 from django.urls import path
 
 from apps.user.api.admin_views import (
+    AdminAuditView,
     AdminOrganizationDetailView,
     AdminOrganizationMembersView,
     AdminOrganizationsView,
@@ -22,4 +23,5 @@ urlpatterns = [
     path("users/", AdminUsersView.as_view(), name="admin-users"),
     path("users/<int:pk>/", AdminUserDetailView.as_view(), name="admin-user"),
     path("skills/scope/", AdminSkillScopeView.as_view(), name="admin-skills-scope"),
+    path("audit/", AdminAuditView.as_view(), name="admin-audit"),
 ]

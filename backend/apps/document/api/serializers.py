@@ -245,6 +245,10 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         except Project.DoesNotExist:
             raise serializers.ValidationError("Project not found.")
         request = self.context.get('request')
+        # Quien no la ve recibe lo mismo que si no existiera: no confirmar
+        # operaciones de otra institución.
+        if request and not project.can_view(request.user):
+            raise serializers.ValidationError("Project not found.")
         if request and not project.can_edit(request.user):
             raise serializers.ValidationError(
                 "You do not have permission to add documents to this project."
@@ -372,6 +376,10 @@ class DocumentBulkCreateSerializer(serializers.Serializer):
         except Project.DoesNotExist:
             raise serializers.ValidationError("Project not found.")
         request = self.context.get('request')
+        # Quien no la ve recibe lo mismo que si no existiera: no confirmar
+        # operaciones de otra institución.
+        if request and not project.can_view(request.user):
+            raise serializers.ValidationError("Project not found.")
         if request and not project.can_edit(request.user):
             raise serializers.ValidationError(
                 "You do not have permission to add documents to this project."

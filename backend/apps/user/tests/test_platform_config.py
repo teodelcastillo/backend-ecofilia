@@ -11,7 +11,7 @@ from apps.project.services.stages import stage_order, stage_workflow_slugs
 from apps.skill.models import Skill, SkillScope, SkillType
 from apps.user import institution_config
 from apps.user.models import Organization, PlatformConfig
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 
@@ -34,7 +34,7 @@ def _config(stages, launches=()):
 class PlatformConfigTestCase(APITestCase):
     def setUp(self):
         self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.member = User.objects.create_user(email="m@caf.org", password="x", organization=self.caf)
         self.public = User.objects.create_user(email="persona@gmail.com", password="x")
         self.open_skill = Skill.objects.create(

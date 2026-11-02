@@ -25,7 +25,7 @@ from apps.project.services.stages import IET_SLUG, stage_workflow_slugs
 from apps.skill.models import Skill, SkillScope, SkillType
 from apps.user import institution_config
 from apps.user.models import Organization
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 DELAY = "apps.skill.dispatch.run_skill_task.delay"
@@ -147,7 +147,7 @@ class OrganizationConfigAPITestCase(APITestCase):
         self.caf_member = User.objects.create_user(email="m@caf.org", password="x", organization=self.caf)
         self.other_member = User.objects.create_user(email="m@otra.org", password="x", organization=self.other)
         self.public = User.objects.create_user(email="persona@gmail.com", password="x")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
 
     def _as(self, user):
         token = RefreshToken.for_user(user).access_token
@@ -245,7 +245,7 @@ class StagesFromConfigTestCase(APITestCase):
         tag = EvidenceTag.objects.create(slug="propia", name="Propia", organization=self.other)
         self.other.config = other_config(self.other_skill.slug, tag.slug)
         self.other.save()
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
 
     def _project(self, organization, estado):
         owner = User.objects.create_user(

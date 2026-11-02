@@ -30,8 +30,14 @@ class OrganizationScopeTestCase(APITestCase):
         self.caf_member = User.objects.create_user(email="m@caf.com", password="x", organization=self.caf)
         self.caf_admin = User.objects.create_user(email="admin@caf.com", password="x", organization=self.caf, role="admin")
         self.other_member = User.objects.create_user(email="m@otro.com", password="x", organization=self.other)
-        self.ecofilia_admin = User.objects.create_user(email="admin@ecofilia.site", password="x", role="admin")
-        self.ecofilia_staff = User.objects.create_user(email="staff@ecofilia.site", password="x", is_staff=True)
+        # Las acciones de plataforma exigen MFA activo (ADMIN_REQUIRE_MFA).
+        self.ecofilia_admin = User.objects.create_user(
+            email="admin@ecofilia.site", password="x", role="admin", mfa_enabled=True
+        )
+        # Sin MFA, el staff no tiene alcance de plataforma (ADMIN_REQUIRE_MFA).
+        self.ecofilia_staff = User.objects.create_user(
+            email="staff@ecofilia.site", password="x", is_staff=True, mfa_enabled=True
+        )
 
         self.caf_op = Project.objects.create(owner=self.caf_member, name="Operación CAF")
         self.other_op = Project.objects.create(owner=self.other_member, name="Operación de otro cliente")

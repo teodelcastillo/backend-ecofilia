@@ -202,6 +202,9 @@ def resolve_scope(serializer, attrs: dict, instance: Skill | None) -> dict:
             attrs["scope"] = SkillScope.USER
             return attrs
         raise PermissionDenied(SCOPE_FORBIDDEN_MESSAGE)
+    from apps.user.access import ensure_privileged_mfa
+
+    ensure_privileged_mfa(serializer.context["request"].user)
 
     if scope == SkillScope.ORGANIZATION:
         if not org_slug:
@@ -563,6 +566,10 @@ class SkillWriteSerializer(serializers.ModelSerializer):
                 "Sólo un superadmin decide quién ejecuta un asistente y a qué "
                 "organizaciones está asignado."
             )
+        if slugs or "members_can_run" in validated_data:
+            from apps.user.access import ensure_privileged_mfa
+
+            ensure_privileged_mfa(self.context["request"].user)
         return {key: self._organizations(value, key) for key, value in slugs.items()}
 
     def _apply_availability(self, skill: Skill, availability: dict) -> None:
@@ -580,6 +587,15 @@ class SkillWriteSerializer(serializers.ModelSerializer):
         """
         from apps.project.services.organization_operations import organization_operations
 
+        if availability:
+            from apps.user import audit
+
+            audit.record(
+                "skill.availability.changed",
+                request=self.context.get("request"),
+                target=skill,
+                data={key: sorted(o.slug for o in orgs) for key, orgs in availability.items()},
+            )
         if "organization_slugs" in availability:
             orgs = availability["organization_slugs"]
             skill.enabled_for_organizations.set(orgs)

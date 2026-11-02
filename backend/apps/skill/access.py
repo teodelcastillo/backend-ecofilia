@@ -15,17 +15,22 @@ def executions_queryset_for_user(user) -> QuerySet[SkillExecution]:
 
     project_ids = Project.objects.for_user(user).values_list("pk", flat=True)
     repo_ids = Repository.objects.for_user(user).values_list("pk", flat=True)
+    # Las propias que no son de una operación; las de una operación, sólo si la
+    # operación se ve. Si no, quien sale de una institución seguiría leyendo
+    # los informes que corrió ahí.
     return SkillExecution.objects.filter(
-        Q(owner=user)
+        Q(owner=user, project__isnull=True)
         | Q(project_id__in=project_ids)
         | Q(repository_id__in=repo_ids)
     ).distinct()
 
 
 def user_can_view_execution(user, execution: SkillExecution) -> bool:
-    if user.is_staff or execution.owner_id == user.id:
+    if user.is_staff:
         return True
-    if execution.project_id and execution.project.can_view(user):
+    if execution.project_id:
+        return execution.project.can_view(user)
+    if execution.owner_id == user.id:
         return True
     if execution.repository_id and execution.repository.can_view(user):
         return True
@@ -35,8 +40,10 @@ def user_can_view_execution(user, execution: SkillExecution) -> bool:
 def user_can_mutate_execution(user, execution: SkillExecution) -> bool:
     """Relanzar, reanudar o borrar una corrida: quien la lanzó, el staff, o
     quien administra la institución de la operación."""
-    if user.is_staff or execution.owner_id == user.id:
+    if user.is_staff:
         return True
+    if execution.owner_id == user.id:
+        return not execution.project_id or execution.project.can_view(user)
     return bool(execution.project_id and execution.project.is_administered_by(user))
 
 
@@ -69,6 +76,7 @@ def user_can_run_assistants(user) -> bool:
 
     return bool(
         getattr(user, "is_authenticated", False)
+        and not getattr(user, "_privileged_without_mfa", False)
         and (user.is_superuser or getattr(user, "role", None) == UserRole.ADMIN)
     )
 

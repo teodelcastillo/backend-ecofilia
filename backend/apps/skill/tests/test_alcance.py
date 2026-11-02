@@ -26,6 +26,7 @@ from apps.skill.models import (
     SkillType,
 )
 from apps.user.models import Organization
+from apps.user.tests.fixtures import make_superadmin
 
 User = get_user_model()
 
@@ -40,7 +41,7 @@ def _quick(slug, **extra):
 class SkillScopeWriteTestCase(APITestCase):
     def setUp(self):
         self.org_a = Organization.objects.create(name="A", slug="inst-a")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.member = User.objects.create_user(email="m@a.org", password="x", organization=self.org_a)
         self.skill = _quick("asistente", scope=SkillScope.PUBLIC)
 
@@ -103,7 +104,7 @@ class DefinitionVersionInformedByTestCase(APITestCase):
     def setUp(self):
         self.org_a = Organization.objects.create(name="A", slug="inst-a")
         self.org_b = Organization.objects.create(name="B", slug="inst-b")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.skill = _quick("de-a", scope=SkillScope.ORGANIZATION, organization=self.org_a)
 
     def test_a_version_of_an_institution_skill_is_informed_by_it(self):
@@ -257,7 +258,7 @@ class ScopeCommandsTestCase(TestCase):
         self.org_a = Organization.objects.create(name="A", slug="inst-a")
         self.member = User.objects.create_user(email="m@a.org", password="x", organization=self.org_a)
         self.public = User.objects.create_user(email="persona@gmail.com", password="x")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         Project.objects.create(owner=self.member, name="Op 1")
         Project.objects.create(owner=self.member, name="Op 2")
         self.platform = _quick("de-plataforma")

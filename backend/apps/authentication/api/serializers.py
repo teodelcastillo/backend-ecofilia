@@ -53,6 +53,9 @@ class ProfileSerializer(serializers.ModelSerializer):
     # A dónde va al entrar (fase 3): la consola, el portal de su institución o
     # el portal público. Lo decide el back para que el front no lo deduzca.
     home_path = serializers.SerializerMethodField()
+    # Superadmin o staff sin MFA: hasta activarlo, la API lo trata como un
+    # usuario común (``ADMIN_REQUIRE_MFA``). El front le pide que lo active.
+    mfa_required = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -70,6 +73,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "is_ecofilia_admin",
             "is_organization_admin",
             "home_path",
+            "mfa_required",
         )
         read_only_fields = (
             "id",
@@ -83,7 +87,19 @@ class ProfileSerializer(serializers.ModelSerializer):
             "is_ecofilia_admin",
             "is_organization_admin",
             "home_path",
+            "mfa_required",
         )
+
+    def get_mfa_required(self, obj) -> bool:
+        from django.conf import settings
+
+        from apps.user.access import is_privileged
+
+        if not getattr(settings, "ADMIN_REQUIRE_MFA", True) or obj.mfa_enabled:
+            return False
+        if getattr(obj, "_privileged_without_mfa", False):
+            return True
+        return is_privileged(obj)
 
     def get_home_path(self, obj) -> str:
         from apps.user.access import home_path
@@ -151,7 +167,33 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class TokenObtainPairWithMFASerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
-        data = super().validate(attrs)
+        from apps.authentication.services import login_guard
+        from apps.user import audit
+
+        email = attrs.get(self.username_field)
+        candidate = User.objects.filter(email__iexact=email).first() if email else None
+        # Bloqueada: el mismo error que una contraseña equivocada, para no
+        # confirmar que la cuenta existe.
+        request = self.context.get("request")
+        if candidate is not None and login_guard.is_locked(candidate):
+            logger.warning("Login blocked for user=%s reason=locked", candidate.pk)
+            audit.record("auth.login.failure", request=request, actor=candidate, data={"reason": "locked"})
+            raise AuthenticationFailed(
+                self.error_messages["no_active_account"], code="no_active_account"
+            )
+        try:
+            data = super().validate(attrs)
+        except AuthenticationFailed:
+            audit.record(
+                "auth.login.failure",
+                request=request,
+                actor=candidate,
+                data={"reason": "credentials", "email": str(email or "")[:254]},
+            )
+            if candidate is not None and login_guard.register_failure(candidate):
+                logger.warning("Account locked user=%s reason=too_many_failures", candidate.pk)
+                audit.record("auth.account.locked", request=request, actor=candidate)
+            raise
         user = self.user
         if not user.email_verified:
             logger.warning("Login blocked for user=%s reason=email_not_verified", user.pk)
@@ -164,10 +206,21 @@ class TokenObtainPairWithMFASerializer(TokenObtainPairSerializer):
                 raise AuthenticationFailed(detail=_("Ingresa el código MFA"), code="mfa_required")
             if not MFAService.verify(user, otp):
                 logger.warning("Invalid MFA attempt for user=%s", user.pk)
+                audit.record("auth.login.failure", request=request, actor=user, data={"reason": "mfa"})
+                if login_guard.register_failure(user):
+                    logger.warning("Account locked user=%s reason=too_many_mfa_failures", user.pk)
+                    audit.record("auth.account.locked", request=request, actor=user)
                 raise AuthenticationFailed(detail=_("Código MFA inválido"), code="mfa_invalid")
 
+        login_guard.register_success(user)
+        audit.record("auth.login.success", request=request, actor=user, data={"mfa": bool(user.mfa_enabled)})
+
         logger.info("Login success for user=%s", user.pk)
-        data["user"] = ProfileSerializer(user).data
+        # El perfil que recibe el front es el que va a ver la API: un superadmin
+        # sin MFA llega como usuario común y con ``mfa_required``.
+        from apps.user.access import require_mfa_for_privileges, scope_to_organization
+
+        data["user"] = ProfileSerializer(require_mfa_for_privileges(scope_to_organization(user))).data
         return data
 
 

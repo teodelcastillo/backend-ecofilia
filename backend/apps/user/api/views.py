@@ -21,8 +21,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.user import institution_config
-from apps.user.access import is_ecofilia_admin
+from django.db import transaction
+
+from apps.user import audit, institution_config
+from apps.user.access import ensure_privileged_mfa, is_ecofilia_admin
 from apps.user.models import Organization, PlatformConfig
 
 
@@ -91,13 +93,23 @@ class OrganizationConfigView(APIView):
             # Un miembro sabe que su institución existe; al resto, 404 igual que el GET.
             self._organization(request, slug)
             raise PermissionDenied("Sólo un superadmin cambia la configuración de una institución.")
+        ensure_privileged_mfa(request.user)
         organization = self._organization(request, slug)
         raw = request.data.get("config") if isinstance(request.data, dict) else None
         config, errors = institution_config.validate_config(raw, organization)
         if errors:
             return Response({"config": errors}, status=status.HTTP_400_BAD_REQUEST)
-        organization.config = config
-        organization.save(update_fields=["config", "updated_at"])
+        with transaction.atomic():
+            before = organization.config
+            organization.config = config
+            organization.save(update_fields=["config", "updated_at"])
+            audit.record(
+                "config.organization.updated",
+                request=request,
+                organization=organization,
+                target=organization,
+                data={"before": before, "after": config},
+            )
         return Response(config_payload(organization))
 
 
@@ -119,9 +131,15 @@ class PlatformConfigView(APIView):
     def put(self, request, key: str):
         if not is_ecofilia_admin(request.user):
             raise PermissionDenied("Sólo un superadmin cambia las configuraciones de la plataforma.")
+        ensure_privileged_mfa(request.user)
         raw = request.data.get("config") if isinstance(request.data, dict) else None
         config, errors = institution_config.validate_config(raw, None)
         if errors:
             return Response({"config": errors}, status=status.HTTP_400_BAD_REQUEST)
-        PlatformConfig.objects.update_or_create(key=key, defaults={"config": config})
+        with transaction.atomic():
+            before = institution_config.platform_config(key)
+            PlatformConfig.objects.update_or_create(key=key, defaults={"config": config})
+            audit.record(
+                "config.platform.updated", request=request, data={"key": key, "before": before, "after": config}
+            )
         return Response({"config": institution_config.platform_config(key)})

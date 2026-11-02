@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import IntegerField, Prefetch, Q
 from django.db.models.expressions import RawSQL
 from django.db.models.fields.json import KT
@@ -68,7 +68,15 @@ from apps.skill.dispatch import dispatch_execution
 from apps.skill.launch import create_execution, resolve_effective_output
 from apps.skill.tasks import run_skill_task
 from apps.skill.visibility import user_can_see_skill, visible_skills
+from apps.user import audit
 
+
+
+def _scope_of(skill) -> dict:
+    return {
+        "scope": skill.scope,
+        "organization_slug": skill.organization.slug if skill.organization_id else None,
+    }
 
 
 def _ensure_can_run(user, skill) -> None:
@@ -178,7 +186,16 @@ class SkillViewSet(viewsets.ModelViewSet):
         extra = {}
         if "scope" not in serializer.validated_data:
             extra["scope"] = SkillScope.USER
-        serializer.save(owner=self.request.user, is_template=False, **extra)
+        with transaction.atomic():
+            skill = serializer.save(owner=self.request.user, is_template=False, **extra)
+            if skill.scope != SkillScope.USER:
+                audit.record(
+                    "skill.scope.changed",
+                    request=self.request,
+                    organization=skill.organization,
+                    target=skill,
+                    data={"before": None, "after": _scope_of(skill)},
+                )
 
     def perform_update(self, serializer):
         skill = self.get_object()
@@ -191,7 +208,17 @@ class SkillViewSet(viewsets.ModelViewSet):
                 raise PermissionDenied(SCOPE_FORBIDDEN_MESSAGE)
         elif not skill.can_edit(self.request.user):
             raise PermissionDenied("You cannot edit this skill.")
-        serializer.save()
+        before = _scope_of(skill)
+        with transaction.atomic():
+            skill = serializer.save()
+            if _scope_of(skill) != before:
+                audit.record(
+                    "skill.scope.changed",
+                    request=self.request,
+                    organization=skill.organization,
+                    target=skill,
+                    data={"before": before, "after": _scope_of(skill)},
+                )
 
     def perform_destroy(self, instance):
         if not instance.can_edit(self.request.user):
@@ -411,6 +438,9 @@ class SkillViewSet(viewsets.ModelViewSet):
 
         if not is_ecofilia_admin(request.user):
             raise PermissionDenied("Sólo un superadmin edita las versiones de un asistente.")
+        from apps.user.access import ensure_privileged_mfa
+
+        ensure_privileged_mfa(request.user)
         skill = self.get_object()
         version = skill.definition_versions.filter(version_number=int(version_number)).first()
         if version is None:
@@ -429,9 +459,22 @@ class SkillViewSet(viewsets.ModelViewSet):
                     {"informed_by_organization_slug": f"No existe la institución «{org_slug}»."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+        previous = version.informed_by_organization.slug if version.informed_by_organization_id else None
         version.informed_by_organization = organization
         try:
-            version.save(update_fields=["informed_by_organization"])
+            with transaction.atomic():
+                version.save(update_fields=["informed_by_organization"])
+                audit.record(
+                    "skill.version.informed_by",
+                    request=request,
+                    organization=organization,
+                    target=skill,
+                    data={
+                        "version": version.version_number,
+                        "before": previous,
+                        "after": organization.slug if organization else None,
+                    },
+                )
         except DjangoValidationError as exc:
             return Response(
                 {"informed_by_organization_slug": exc.message_dict.get("informed_by_organization", exc.messages)},

@@ -298,9 +298,24 @@ class DocumentBulkPublicAPIView(APIView):
         slugs = list(dict.fromkeys(raw_slugs))
         is_public = serializer.validated_data["is_public"]
 
+        from apps.user import audit
+        from apps.user.access import ensure_privileged_mfa
+
+        ensure_privileged_mfa(request.user)
         qs = Document.objects.filter(slug__in=slugs)
-        matched = qs.count()
-        updated = qs.update(is_public=is_public)
+        with transaction.atomic():
+            matched = qs.count()
+            # Publicar es sacar un documento de su institución: queda quién y qué.
+            affected = list(qs.values_list("slug", "owner__organization__slug"))
+            updated = qs.update(is_public=is_public)
+            audit.record(
+                "document.visibility.changed",
+                request=request,
+                data={
+                    "is_public": is_public,
+                    "documents": [{"slug": s, "organization": o} for s, o in affected],
+                },
+            )
 
         return Response(
             {
@@ -1204,6 +1219,9 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
 
         user = self.request.user
         if self._is_superadmin():
+            from apps.user.access import ensure_privileged_mfa
+
+            ensure_privileged_mfa(user)
             slug = (self.request.data or {}).get("organization_slug")
             if not slug:
                 return None
@@ -1223,7 +1241,11 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
         return user.organization_id
 
     def perform_create(self, serializer):
-        serializer.save(organization_id=serializer.context.get("target_organization_id"))
+        from apps.user import audit
+
+        with transaction.atomic():
+            tag = serializer.save(organization_id=serializer.context.get("target_organization_id"))
+            audit.record("tag.created", request=self.request, organization=tag.organization, target=tag)
 
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
@@ -1231,12 +1253,29 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
         return EvidenceTagSerializer
 
     def perform_update(self, serializer):
+        from apps.user import audit
+        from apps.user.access import ensure_privileged_mfa
+
         if not self._is_superadmin():
             raise PermissionDenied(
                 "Editar una etiqueta cambia lo que piden todos los workflows "
                 "que la usan. Sólo staff puede hacerlo."
             )
-        serializer.save()
+        ensure_privileged_mfa(self.request.user)
+        before = serializer.instance.organization.slug if serializer.instance.organization_id else None
+        with transaction.atomic():
+            tag = serializer.save()
+            audit.record(
+                "tag.updated",
+                request=self.request,
+                organization=tag.organization,
+                target=tag,
+                data={
+                    "fields": sorted(serializer.validated_data),
+                    "organization_before": before,
+                    "organization_after": tag.organization.slug if tag.organization_id else None,
+                },
+            )
 
     def perform_destroy(self, instance):
         if not self.request.user.is_staff:

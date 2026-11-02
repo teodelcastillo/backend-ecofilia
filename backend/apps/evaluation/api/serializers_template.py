@@ -101,7 +101,7 @@ class RunEvaluationCreateSerializer(serializers.Serializer):
         if not project:
             raise serializers.ValidationError({"project_id": "Proyecto no encontrado."})
         if not project.can_view(self.context["request"].user):
-            raise serializers.ValidationError({"project_id": "No tienes acceso a este proyecto."})
+            raise serializers.ValidationError({"project_id": "Proyecto no encontrado."})
 
         if not EvaluationTemplate.objects.filter(pk=template_id).exists():
             raise serializers.ValidationError({"template_id": "Plantilla de evaluación no encontrada."})

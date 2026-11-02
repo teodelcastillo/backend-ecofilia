@@ -13,7 +13,7 @@ from apps.document.models import Document
 from apps.project.models import Project
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillScope, SkillType
 from apps.user.models import Organization
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 
@@ -22,7 +22,7 @@ class PortalTestCase(APITestCase):
     def setUp(self):
         self.caf = Organization.objects.create(name="CAF", slug="caf", restricted=True, config=caf_config())
         self.other = Organization.objects.create(name="Otra institución", slug="otra")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.caf_member = User.objects.create_user(email="m@caf.org", password="x", organization=self.caf)
         self.other_member = User.objects.create_user(email="m@otra.org", password="x", organization=self.other)
         self.public = User.objects.create_user(email="persona@gmail.com", password="x")

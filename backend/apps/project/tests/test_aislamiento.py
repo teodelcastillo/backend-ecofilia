@@ -34,7 +34,7 @@ from apps.project.models import (
 from apps.project.services.evidence_tags import tagged_in_project_q
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillScope, SkillType
 from apps.user.models import Organization
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 
@@ -59,7 +59,7 @@ class AislamientoEntreInstitucionesTestCase(APITestCase):
         )
         cls.member_b = User.objects.create_user(email="m@b.org", password="x", organization=cls.org_b)
         cls.public = User.objects.create_user(email="persona@gmail.com", password="x")
-        cls.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        cls.superadmin = make_superadmin()
 
         # ── Asistentes ────────────────────────────────────────────────────
         def skill(slug, scope, organization=None, owner=None):
@@ -443,7 +443,7 @@ class AlcanceDeEtiquetasYSkillsQueSeCreanTestCase(APITestCase):
         self.org_a = Organization.objects.create(name="Institución A", slug="inst-a")
         self.member_a = User.objects.create_user(email="m@a.org", password="x", organization=self.org_a)
         self.public = User.objects.create_user(email="persona@gmail.com", password="x")
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
 
     def _as(self, user):
         token = RefreshToken.for_user(user).access_token

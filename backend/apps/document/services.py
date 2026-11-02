@@ -35,8 +35,11 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     # Las operaciones que el usuario ve: las suyas, las compartidas con él y,
     # si administra una institución, todas las de ella.
     project_ids = Project.objects.for_user(user).values("pk")
+    # Lo propio, salvo lo que es de una institución de la que ya no es parte:
+    # quien sale de una institución no se lleva los documentos de sus
+    # operaciones.
     visible = (
-        Q(**{f"{prefix}owner": user})
+        (Q(**{f"{prefix}owner": user}) & ~Q(**{f"{prefix}id__in": foreign_institution_document_ids(user)}))
         | Q(**{f"{prefix}is_public": True})
         | Q(**{f"{prefix}shares__user": user})
         | Q(**{f"{prefix}projects__id__in": project_ids})
@@ -46,6 +49,19 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     if is_organization_admin(user):
         visible |= Q(**{f"{prefix}owner__organization_id": user.organization_id})
     return visible
+
+
+def foreign_institution_document_ids(user):
+    """Ids de documentos vinculados a operaciones de otra institución que la de ``user``."""
+    from apps.project.models import ProjectDocument
+    from apps.user.access import is_ecofilia_admin
+
+    if is_ecofilia_admin(user):
+        return ProjectDocument.objects.none().values("document_id")
+    links = ProjectDocument.objects.filter(project__organization__isnull=False)
+    if getattr(user, "organization_id", None):
+        links = links.exclude(project__organization_id=user.organization_id)
+    return links.values("document_id")
 
 
 def accessible_documents_for(user, slugs: Iterable[str]) -> QuerySet[Document]:

@@ -58,6 +58,7 @@ class EmailService:
             "first_name": first_name,
             "reset_url": reset_url,
             "recipient_email": user.email,
+            "hours": max(1, settings.PASSWORD_RESET_TIMEOUT // 3600),
         }
         html = render_to_string("emails/password_reset.html", context)
         text = (

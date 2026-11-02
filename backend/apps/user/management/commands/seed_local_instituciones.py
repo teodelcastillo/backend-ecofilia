@@ -41,6 +41,10 @@ from apps.user.models import Organization, UserRole
 User = get_user_model()
 
 DOMAIN = "local.test"
+# El superadmin necesita MFA (ADMIN_REQUIRE_MFA): sin él, la API lo trata como
+# un usuario común. Secreto conocido, sólo para la base local; el código de cada
+# momento sale de ``pyotp.TOTP(LOCAL_MFA_SECRET).now()``.
+LOCAL_MFA_SECRET = "JBSWY3DPEHPK3PXP"
 
 
 def _refuse_production() -> None:
@@ -132,7 +136,11 @@ class Command(BaseCommand):
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 
-        superadmin = self._user(f"superadmin@{DOMAIN}", password, is_superuser=True, is_staff=True)
+        superadmin = self._user(
+            f"superadmin@{DOMAIN}", password, is_superuser=True, is_staff=True,
+            mfa_enabled=True, mfa_secret=LOCAL_MFA_SECRET, mfa_last_step=None,
+            failed_login_attempts=0, locked_until=None,
+        )
         caf_admin = self._user(f"caf-admin@{DOMAIN}", password, organization=caf, role=UserRole.ADMIN)
         caf_member = self._user(f"caf-miembro@{DOMAIN}", password, organization=caf)
         otra_member = self._user(f"otra-miembro@{DOMAIN}", password, organization=otra)
@@ -241,4 +249,5 @@ class Command(BaseCommand):
             w(f"{user.email:<31} {level:<25} {sees}")
         w("")
         w("Nadie salvo el superadmin ve local-plataforma. evaluation-records exige ?organization=<slug>.")
+        w(f"El superadmin tiene MFA: secreto TOTP {LOCAL_MFA_SECRET} (código: pyotp.TOTP(secreto).now()).")
         w("Configuración: GET /api/organizations/me/config/ (caf: la de CAF; otra: borrador → revisión → cerrada).")

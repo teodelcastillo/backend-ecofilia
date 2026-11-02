@@ -16,6 +16,7 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.user import audit
 from apps.user.access import is_ecofilia_admin
 from apps.user.models import KNOWN_FEATURES, Organization, UserRole
 
@@ -26,7 +27,14 @@ class IsEcofiliaAdmin(BasePermission):
     message = "La consola es sólo del superadmin de Ecofilia."
 
     def has_permission(self, request, view):
-        return is_ecofilia_admin(request.user)
+        from apps.user.access import PRIVILEGED_MFA_MESSAGE, privileged_mfa_missing
+
+        if not is_ecofilia_admin(request.user):
+            return False
+        if privileged_mfa_missing(request.user):
+            self.message = PRIVILEGED_MFA_MESSAGE
+            return False
+        return True
 
 
 class AdminView(APIView):
@@ -137,7 +145,20 @@ class AdminOrganizationsView(AdminView):
         from apps.user.onboarding import OnboardingError, create_institution
 
         try:
-            result = create_institution(request.data if isinstance(request.data, dict) else {})
+            with transaction.atomic():
+                result = create_institution(request.data if isinstance(request.data, dict) else {})
+                audit.record(
+                    "admin.organization.created",
+                    request=request,
+                    organization=result.organization,
+                    target=result.organization,
+                    data={
+                        "name": result.organization.name,
+                        "restricted": result.organization.restricted,
+                        "cloned_skills": result.cloned_skills,
+                        "members": [{"email": m["email"], "created": m["created"]} for m in result.members],
+                    },
+                )
         except OnboardingError as exc:
             return _bad(exc.errors)
         return Response(
@@ -200,6 +221,13 @@ class AdminOrganizationDetailView(AdminView):
         if errors:
             return _bad(errors)
 
+        before = {
+            "name": org.name,
+            "restricted": org.restricted,
+            "enabled_features": list(org.enabled_features or []),
+            "enabled_skill_slugs": sorted(org.enabled_skills.values_list("slug", flat=True)),
+            "default_skill_slugs": sorted(org.default_project_skills.values_list("slug", flat=True)),
+        }
         with transaction.atomic():
             fields = []
             if "name" in data:
@@ -217,7 +245,18 @@ class AdminOrganizationDetailView(AdminView):
                 org.enabled_skills.set(enabled)
             if default is not None:
                 org.default_project_skills.set(default)
-        return Response(organization_detail(org))
+            after = organization_detail(org)
+            audit.record(
+                "admin.organization.updated",
+                request=request,
+                organization=org,
+                target=org,
+                data={
+                    "before": {k: v for k, v in before.items() if k in data},
+                    "after": {k: after[k] for k in before if k in data},
+                },
+            )
+        return Response(after)
 
 
 class AdminOrganizationMembersView(AdminView):
@@ -229,6 +268,13 @@ class AdminOrganizationMembersView(AdminView):
         try:
             with transaction.atomic():
                 member = add_member(org, data.get("email"), data.get("role") or UserRole.MEMBER)
+                audit.record(
+                    "admin.member.added",
+                    request=request,
+                    organization=org,
+                    target=org,
+                    data={**member, "role": data.get("role") or UserRole.MEMBER},
+                )
         except OnboardingError as exc:
             return _bad(exc.errors)
         return Response(member, status=status.HTTP_201_CREATED)
@@ -336,6 +382,11 @@ class AdminUserDetailView(AdminView):
         if errors:
             return _bad(errors)
 
+        before = {
+            "organization_slug": user.organization.slug if user.organization_id else None,
+            "role": user.role,
+            "is_active": user.is_active,
+        }
         fields = []
         if "organization_slug" in data:
             user.organization = organization
@@ -347,7 +398,19 @@ class AdminUserDetailView(AdminView):
             user.is_active = data["is_active"]
             fields.append("is_active")
         if fields:
-            user.save(update_fields=fields)
+            with transaction.atomic():
+                user.save(update_fields=fields)
+                audit.record(
+                    "admin.user.updated",
+                    request=request,
+                    organization=organization or (Organization.objects.filter(slug=before["organization_slug"]).first()),
+                    target=user,
+                    data={
+                        "email": user.email,
+                        "before": {k: v for k, v in before.items() if k in data},
+                        "after": {k: data[k] for k in before if k in data},
+                    },
+                )
         return Response(user_item(_users_queryset().get(pk=user.pk)))
 
 
@@ -386,9 +449,20 @@ class AdminSkillScopeView(AdminView):
         with transaction.atomic():
             for slug in dict.fromkeys(slugs):
                 skill = found[slug]
+                before = {
+                    "scope": skill.scope,
+                    "organization_slug": skill.organization.slug if skill.organization_id else None,
+                }
                 skill.scope = scope
                 skill.organization = organization
                 skill.save(update_fields=["scope", "organization", "updated_at"])
+                audit.record(
+                    "skill.scope.changed",
+                    request=request,
+                    organization=organization,
+                    target=skill,
+                    data={"before": before, "after": {"scope": scope, "organization_slug": organization.slug if organization else None}},
+                )
         return Response(
             [
                 {
@@ -397,5 +471,55 @@ class AdminSkillScopeView(AdminView):
                     "organization_slug": organization.slug if organization else None,
                 }
                 for s in dict.fromkeys(slugs)
+            ]
+        )
+
+
+# ---------------------------------------------------------------------------
+# Registro de auditoría
+# ---------------------------------------------------------------------------
+
+class AdminAuditView(AdminView):
+    """``GET /api/admin/audit/?action=&organization=&actor=&since=&limit=``.
+
+    Los eventos más nuevos primero. ``action`` acepta un prefijo
+    (``auth.`` trae todos los de autenticación); ``since`` es una fecha ISO.
+    """
+
+    def get(self, request):
+        from django.utils.dateparse import parse_datetime
+
+        from apps.user.models import AuditEvent
+
+        qs = AuditEvent.objects.select_related("organization")
+        if action := request.query_params.get("action"):
+            qs = qs.filter(action__startswith=action)
+        if org := request.query_params.get("organization"):
+            qs = qs.filter(organization__slug=org)
+        if actor := request.query_params.get("actor"):
+            qs = qs.filter(actor_email__iexact=actor)
+        if since := request.query_params.get("since"):
+            moment = parse_datetime(since)
+            if moment is None:
+                return _bad({"since": ["Tiene que ser una fecha ISO 8601."]})
+            qs = qs.filter(created_at__gte=moment)
+        try:
+            limit = max(1, min(int(request.query_params.get("limit", 200)), 1000))
+        except ValueError:
+            return _bad({"limit": ["Tiene que ser un número."]})
+        return Response(
+            [
+                {
+                    "id": e.pk,
+                    "created_at": e.created_at,
+                    "actor_email": e.actor_email,
+                    "action": e.action,
+                    "organization_slug": e.organization.slug if e.organization_id else None,
+                    "target_type": e.target_type,
+                    "target_id": e.target_id,
+                    "data": e.data,
+                    "ip": e.ip,
+                }
+                for e in qs[:limit]
             ]
         )

@@ -9,7 +9,7 @@ no pasa por DRF y no cambia: es donde se corrige un usuario mal configurado.
 from rest_framework.authentication import BasicAuthentication, SessionAuthentication
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.user.access import scope_to_organization
+from apps.user.access import require_mfa_for_privileges, scope_to_organization
 
 
 class _OrganizationScopeMixin:
@@ -18,7 +18,9 @@ class _OrganizationScopeMixin:
         if result is None:
             return None
         user, auth = result
-        return scope_to_organization(user), auth
+        # Primero el alcance de institución; después, sin MFA no hay alcance de
+        # plataforma (``ADMIN_REQUIRE_MFA``).
+        return require_mfa_for_privileges(scope_to_organization(user)), auth
 
 
 class OrgScopedJWTAuthentication(_OrganizationScopeMixin, JWTAuthentication):

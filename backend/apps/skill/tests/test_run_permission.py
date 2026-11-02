@@ -146,8 +146,9 @@ class AssignToOrganizationTestCase(APITestCase):
         from apps.user.models import Organization
 
         self.org = Organization.objects.create(name="CAF", slug="caf", restricted=True)
+        # Asignar a organizaciones es de superadmin y exige MFA (ADMIN_REQUIRE_MFA).
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="x", username="admin", role="admin"
+            email="admin@example.com", password="x", username="admin", role="admin", mfa_enabled=True
         )
         self.member = User.objects.create_user(
             email="m@example.com", password="x", username="m", organization=self.org

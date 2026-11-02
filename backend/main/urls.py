@@ -8,7 +8,6 @@ from main.health import health_check
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', health_check, name='health-check'),
-    path('api-auth/', include('rest_framework.urls')),
     path('api/document/', include('apps.document.api.urls')),
     path('api/chat/', include('apps.chat.api.urls')),
     path('api/projects/', include('apps.project.api.urls')),
@@ -22,6 +21,9 @@ urlpatterns = [
     path('api/auth/', include('apps.authentication.api.urls')),
 ]
 if settings.DEBUG:
+    # El login de la API navegable sólo existe en local: en producción sería un
+    # login por sesión sin MFA (ver REST_FRAMEWORK en ``settings/base.py``).
+    urlpatterns += [path('api-auth/', include('rest_framework.urls'))]
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 if getattr(settings, "SERVE_DJANGO_STATIC", False):
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)

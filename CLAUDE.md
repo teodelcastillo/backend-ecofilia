@@ -156,6 +156,7 @@ Backend configurado con `django-ses`. Templates HTML en `apps/authentication/tem
 **Emails implementados:**
 - `verification.html` — confirmación de cuenta al registrarse
 - `password_reset.html` — restablecimiento de contraseña
+- `invitation.html` — invitación a una institución (fase 5): lleva a elegir la contraseña
 
 **Variables de entorno necesarias en ECS (Secrets Manager o task definition):**
 ```
@@ -343,6 +344,27 @@ python manage.py listar_skills_alcance --hacer-publicas slug1,slug2 --dry-run
 # Usuarios por nivel (superadmin / institución / público)
 python manage.py listar_usuarios_por_nivel
 ```
+
+### Seguridad: roles, permisos y protección de la información
+
+Detalle, evidencia y lo que depende de AWS en `backend/docs/seguridad.md`. Lo
+esencial al tocar código:
+- **La API acepta sólo JWT.** Basic y sesión salteaban MFA, email verificado y
+  bloqueo; la sesión existe sólo en `dev.py`.
+- **Sin MFA no hay poder de plataforma.** Un superadmin o un staff sin MFA es un
+  usuario común para la API (`require_mfa_for_privileges`) y para el admin de
+  Django (`admin_login.py`). Interruptor de emergencia: `ADMIN_REQUIRE_MFA`.
+- **Toda acción privilegiada se audita** con `apps.user.audit.record`, dentro de
+  su transacción. Cada pedido de un superadmin queda como `superadmin.access`.
+  `AuditEvent` no se edita ni se borra.
+- **«Público» no sale de su institución** (`public_reach_q`), y **lo de una
+  institución sólo lo ve quien es de ella**, aunque lo haya creado
+  (`institution_boundary_q`).
+- **Una institución con miembros u operaciones no se borra** (`PROTECT`), y quien
+  pierde su institución siendo `admin` baja a `member`. Con `role=admin` y sin
+  institución, es superadmin.
+- `apps/user/tests/test_seguridad.py` tiene un barrido de todas las rutas GET:
+  una ruta nueva que filtre datos de otra institución lo hace fallar.
 
 ### Contrato y prueba local
 

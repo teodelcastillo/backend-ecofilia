@@ -30,6 +30,7 @@ from apps.authentication.api.serializers import (
 from apps.authentication.services.email import EmailService
 from apps.authentication.services.mfa import MFAService
 from apps.authentication.services.tokens import TokenService
+from apps.user import audit
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -218,6 +219,7 @@ class PasswordResetConfirmView(APIView):
             user.email_verified = True
             fields += ["email_verified", "email_verified_at"]
         user.save(update_fields=fields)
+        audit.record("auth.password.reset", request=request, actor=user)
         return Response({"detail": _("Contraseña actualizada")})
 
 
@@ -230,6 +232,9 @@ class PasswordChangeView(APIView):
         user = request.user
         user.set_password(serializer.validated_data["new_password"])
         user.save(update_fields=["password", "last_password_change"])
+        audit.record("auth.password.change", request=request, actor=user)
+        # Con CHECK_REVOKE_TOKEN, los tokens emitidos antes del cambio (este
+        # incluido) dejan de valer: el front vuelve a pedir el login.
         return Response({"detail": _("Contraseña actualizada")})
 
 
@@ -246,6 +251,14 @@ class MFASetupView(APIView):
 
     def post(self, request):
         user = request.user
+        # Con MFA activo, volver a configurarlo lo apagaba sin pedir el código:
+        # con un token robado alguien podía sacarle el MFA a la cuenta. Primero
+        # se desactiva, con un código válido.
+        if user.mfa_enabled:
+            return Response(
+                {"detail": _("El MFA ya está activo. Para configurarlo de nuevo, desactivalo primero con un código.")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         secret = MFAService.generate_secret()
         user.mfa_secret = secret
         user.mfa_enabled = False
@@ -265,6 +278,7 @@ class MFAVerifyView(APIView):
             return Response({"detail": _("Código MFA inválido")}, status=status.HTTP_400_BAD_REQUEST)
         user.mfa_enabled = True
         user.save(update_fields=["mfa_enabled"])
+        audit.record("auth.mfa.enabled", request=request, actor=user)
         return Response({"detail": _("MFA activado")})
 
 
@@ -280,5 +294,6 @@ class MFADisableView(APIView):
         user.mfa_enabled = False
         user.mfa_secret = ""
         user.save(update_fields=["mfa_enabled", "mfa_secret"])
+        audit.record("auth.mfa.disabled", request=request, actor=user)
         return Response({"detail": _("MFA desactivado")})
 

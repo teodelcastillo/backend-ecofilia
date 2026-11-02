@@ -458,11 +458,14 @@ class ProjectWriteSerializer(ProjectSerializer):
 
     def validate_enabled_skill_slugs(self, slugs):
         request = self.context["request"]
-        allowed = Skill.objects.filter(
-            Q(owner__isnull=True) | Q(owner=request.user),
+        from apps.skill.visibility import visible_skills
+
+        # Las que el usuario ve (fase 0), no ``owner`` nulo: con la regla vieja
+        # se podía habilitar una skill de plataforma o de otra institución.
+        allowed = visible_skills(request.user, Skill.objects.filter(
             Q(allowed_contexts__contains=["project"]) | Q(allowed_contexts__contains=["any"]),
             slug__in=slugs,
-        )
+        ))
         found_slugs = set(allowed.values_list("slug", flat=True))
         missing = [slug for slug in slugs if slug not in found_slugs]
         if missing:

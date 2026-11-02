@@ -9,7 +9,7 @@ from rest_framework.test import APITestCase
 from apps.authentication.services.tokens import TokenService
 from apps.skill.models import Skill, SkillParameter, SkillScope, SkillStep, SkillType
 from apps.user.models import Organization, PlatformConfig
-from apps.user.tests.fixtures import caf_config
+from apps.user.tests.fixtures import caf_config, make_superadmin
 
 User = get_user_model()
 URL = "/api/admin/organizations/"
@@ -32,7 +32,7 @@ def _template(launches=(), report=None):
 class _OnboardingBase(APITestCase):
     def setUp(self):
         self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
-        self.superadmin = User.objects.create_superuser(email="root@ecofilia.site", password="x")
+        self.superadmin = make_superadmin()
         self.client.force_authenticate(self.superadmin)
         self.workflow = Skill.objects.create(
             name="Informe Ecofilia", slug="informe-ecofilia", skill_type=SkillType.COPILOT,

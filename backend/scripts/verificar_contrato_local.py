@@ -36,8 +36,16 @@ def rows(data):
     return data["results"] if isinstance(data, dict) and "results" in data else (data or [])
 
 
+# El superadmin sembrado tiene MFA con un secreto conocido (seed_local_instituciones).
+LOCAL_MFA_SECRET = "JBSWY3DPEHPK3PXP"
+
 for who in ("superadmin", "caf-admin", "caf-miembro", "otra-miembro", "publico"):
-    status, tokens = call("/auth/login/", method="POST", body={"email": f"{who}@local.test", "password": PASSWORD})
+    body = {"email": f"{who}@local.test", "password": PASSWORD}
+    if who == "superadmin":
+        import pyotp
+
+        body["otp"] = pyotp.TOTP(LOCAL_MFA_SECRET).now()
+    status, tokens = call("/auth/login/", method="POST", body=body)
     token = (tokens or {}).get("access")
     print(f"\n## {who} (login {status})")
     if not token:
