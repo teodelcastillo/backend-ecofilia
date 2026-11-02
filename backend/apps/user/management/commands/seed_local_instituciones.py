@@ -42,8 +42,9 @@ from apps.user.models import Organization, UserRole
 User = get_user_model()
 
 DOMAIN = "local.test"
-# El superadmin necesita MFA (ADMIN_REQUIRE_MFA): sin él, la API lo trata como
-# un usuario común. Secreto conocido, sólo para la base local; el código de cada
+# El superadmin tiene MFA activo, así se prueba ese camino aunque hoy no se
+# exija; con ADMIN_REQUIRE_MFA prendido lo necesita (sin él, la API lo trata
+# como un usuario común). Secreto conocido, sólo para la base local; el código de cada
 # momento sale de ``pyotp.TOTP(LOCAL_MFA_SECRET).now()``.
 LOCAL_MFA_SECRET = "JBSWY3DPEHPK3PXP"
 

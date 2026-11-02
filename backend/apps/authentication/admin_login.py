@@ -47,13 +47,16 @@ class AdminMFAAuthenticationForm(AdminAuthenticationForm):
                 "Un usuario de una institución no entra al admin: tendría acceso a todas.",
                 code="organization_member",
             )
-        if not settings.ADMIN_REQUIRE_MFA:
-            return
         if not user.mfa_enabled:
+            if not settings.ADMIN_REQUIRE_MFA:
+                login_guard.register_success(user)
+                return
             raise ValidationError(
                 "El admin exige MFA. Activalo desde tu perfil en la aplicación y volvé a entrar.",
                 code="mfa_required",
             )
+        # Quien activó el MFA lo usa siempre, se exija o no: si no, el admin
+        # sería una puerta sin segundo factor para una cuenta que sí lo tiene.
         if not MFAService.verify(user, self.cleaned_data.get("otp")):
             login_guard.register_failure(user)
             raise ValidationError("Código MFA inválido.", code="mfa_invalid")

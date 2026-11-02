@@ -241,9 +241,13 @@ PASSWORD_RESET_TIMEOUT = int(os.environ.get("PASSWORD_RESET_TIMEOUT", str(60 * 6
 LOGIN_MAX_FAILURES = int(os.environ.get("LOGIN_MAX_FAILURES", "10"))
 LOGIN_LOCKOUT_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_MINUTES", "15"))
 
-# Lo que es de toda la plataforma (consola, configuraciones, alcance de skills,
-# biblioteca pública, admin de Django) exige que el superadmin tenga MFA activo.
-ADMIN_REQUIRE_MFA = _env_bool("ADMIN_REQUIRE_MFA", "True")
+# Con esto prendido, lo que es de toda la plataforma (consola, configuraciones,
+# alcance de skills, biblioteca pública, admin de Django) exige que el
+# superadmin tenga MFA activo; sin MFA es un usuario común.
+# POR AHORA APAGADO (decisión de producto, 2 de noviembre de 2026): el MFA sigue
+# disponible para quien quiera activarlo y, quien lo tiene activo, lo usa en la
+# API y en el admin. Para exigirlo: ADMIN_REQUIRE_MFA=1, sin tocar código.
+ADMIN_REQUIRE_MFA = _env_bool("ADMIN_REQUIRE_MFA", "False")
 
 # Claves Fernet para cifrar los secretos MFA en reposo, separadas por coma: la
 # primera cifra, todas descifran (rotación). Sin definir se derivan de SECRET_KEY;

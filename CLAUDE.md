@@ -338,6 +338,10 @@ tests, una operación de CAF necesita esa configuración
   Ecofilia (nunca de otra institución), arma la configuración desde la plantilla e invita miembros. El
   enlace de la invitación es el de restablecer contraseña, que ahora también verifica el email.
 
+**Por ahora ninguna skill de Ecofilia es pública** (decisión de producto, 2 de
+noviembre de 2026): quedan en `platform` y `/app` no ofrece skills de Ecofilia.
+No correr `--hacer-publicas` hasta que se decida.
+
 ```bash
 # Qué skills hay en cada alcance, y abrir al público las confirmadas
 python manage.py listar_skills_alcance
@@ -352,12 +356,14 @@ Detalle, evidencia y lo que depende de AWS en `backend/docs/seguridad.md`. Lo
 esencial al tocar código:
 - **La API acepta sólo JWT.** Basic y sesión salteaban MFA, email verificado y
   bloqueo; la sesión existe sólo en `dev.py`.
-- **Sin MFA no hay poder de plataforma.** Un superadmin o un staff sin MFA es un
+- **MFA obligatorio: implementado y apagado por ahora** (`ADMIN_REQUIRE_MFA`,
+  default `False`, decisión de producto). Prendido: sin MFA no hay poder de
+  plataforma. Un superadmin o un staff sin MFA es un
   usuario común para la API (`require_mfa_for_privileges`) y para el admin de
   Django (`admin_login.py`). Interruptor de emergencia: `ADMIN_REQUIRE_MFA`.
 - **`is_staff` solo no es acceso global.** Muchos chequeos usan `is_staff` como
   «ve todo»; al autenticar, `staff_is_not_global` se lo saca en memoria a quien
-  no es superadmin. Para ver todo hay que ser superadmin, con MFA.
+  no es superadmin. Para ver todo hay que ser superadmin (con MFA, si se exige).
 - **El secreto MFA va cifrado** (`services/secret_box.py`, `MFA_ENCRYPTION_KEYS`
   en Secrets Manager): leerlo y escribirlo sólo con `MFAService.secret_of` /
   `store_secret`, nunca `user.mfa_secret` a mano.

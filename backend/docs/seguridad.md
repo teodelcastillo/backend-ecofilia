@@ -16,6 +16,15 @@ Revisión del backend antes de la salida a producción del plan de instituciones
 Fecha de la revisión: noviembre de 2026. Rama: `seguridad-backend`, apilada
 sobre `fase-5-backend`.
 
+> **Estado del MFA obligatorio: implementado y APAGADO por ahora** (decisión de
+> producto, 2 de noviembre de 2026). `ADMIN_REQUIRE_MFA` viene en `False`: un
+> superadmin sin MFA tiene su poder de plataforma con sólo la contraseña. El MFA
+> sigue disponible y, quien lo activa, lo usa siempre (API y admin de Django).
+> Para exigirlo: `ADMIN_REQUIRE_MFA=1` en la task definition, sin cambiar
+> código; los tests de esos controles corren con la exigencia prendida. Donde
+> este documento dice «con MFA» para el superadmin, vale sólo con la exigencia
+> prendida. Ver P8 en [Riesgos que quedan](#riesgos-que-quedan).
+
 ---
 
 ## Cómo se hizo
@@ -52,7 +61,7 @@ sobre `fase-5-backend`.
 | H7 | **Alta** (trazabilidad) | No había registro de auditoría: ni de quién cambiaba roles, permisos o configuraciones, ni de qué leía el superadmin. | **Corregido**: `AuditEvent`, append-only, con un evento por acción privilegiada y el rastro de cada pedido del superadmin o del staff |
 | H8 | **Alta** (acceso privilegiado) | Borrar una institución convertía a sus administradores en superadmins de toda la plataforma (`SET_NULL` deja `role=admin` sin institución) y dejaba sus operaciones «sin institución». Lo reportó el front. | **Corregido**: no se puede borrar una institución con miembros u operaciones (`PROTECT`), y quien pierde su institución siendo admin baja a `member` |
 | H9 | **Alta** (confidencialidad) | Quien salía de una institución seguía viendo las operaciones que creó ahí, con sus corridas, sus documentos, sus chats y sus evaluaciones. Lo reportó el front. | **Corregido**: lo de una institución sólo lo ve quien es de esa institución, aunque lo haya creado |
-| M1 | **Alta** (acceso privilegiado) | El MFA no era obligatorio para el superadmin. | **Corregido**: sin MFA activo, un superadmin o un staff es, para la API y para el admin de Django, un usuario común. `/api/auth/me/` lo marca con `mfa_required` |
+| M1 | **Alta** (acceso privilegiado) | El MFA no era obligatorio para el superadmin. | **Implementado, apagado por decisión de producto** (`ADMIN_REQUIRE_MFA`): prendido, un superadmin sin MFA es, para la API y para el admin de Django, un usuario común, y `/api/auth/me/` lo marca con `mfa_required`. Ver P8 |
 | M2 | Media (autenticación) | No había bloqueo por cuenta tras intentos fallidos; sólo throttle por IP. | **Corregido**: bloqueo tras 10 fallos, 15 minutos |
 | M3 | Media (autenticación) | Un código MFA servía varias veces dentro de su ventana. | **Corregido**: cada código sirve una sola vez |
 | M4 | Media (sesión) | Cambiar o restablecer la contraseña no invalidaba los access tokens ya emitidos. | **Corregido**: `CHECK_REVOKE_TOKEN` |
@@ -206,6 +215,7 @@ sobre `fase-5-backend`.
 | P5 | Sin `MFA_ENCRYPTION_KEYS`, la clave del MFA se deriva de `SECRET_KEY` | Funciona, pero ata los secretos MFA a esa clave: rotar `SECRET_KEY` sin más deja sin MFA a todos | Definir `MFA_ENCRYPTION_KEYS` en Secrets Manager antes del deploy (ver [Antes del deploy](#antes-del-deploy)) |
 | P6 | Sin códigos de recuperación del MFA | Es una funcionalidad nueva, con su pantalla en el front | Quien pierde su app de MFA lo recupera con un superadmin, que se lo apaga en el admin de Django tras verificar su identidad por otro canal. Queda en el `LogEntry` del admin |
 | P7 | `pip-audit` no corre en CI | Necesita red en CI y una política para las alertas | Correrlo a mano antes de cada salida, sobre el lock |
+| P8 | **MFA no obligatorio para el superadmin** (`ADMIN_REQUIRE_MFA` apagado) | Decisión de producto por ahora | Bloqueo por cuenta, auditoría de cada pedido del superadmin, contraseñas validadas y pocos superadmins. Quien activa el MFA lo usa siempre. **Prenderlo antes de abrir a instituciones internacionales**: ASVS L2 (2.2.x) e ISO 27001 (A.8.5) esperan MFA para cuentas privilegiadas |
 | P4 | Sin CSP | La API no sirve HTML (sólo el admin) | El front debe definir su propia CSP |
 | — | Retención y borrado de datos personales (GDPR, Ley 25.326) | Es una decisión de política | Definir la retención de `AuditEvent` y de datos de usuarios, y el procedimiento de borrado a pedido |
 
@@ -242,10 +252,11 @@ verificarlos en AWS y en los procesos:
 
 ## Antes del deploy
 
-1. **Todos los superadmins y el staff activan MFA**
-   (`POST /api/auth/mfa/setup/` → `POST /api/auth/mfa/verify/`). Sin MFA son
-   usuarios comunes: no ven otras instituciones ni usan la consola o el admin
-   de Django. Sólo en una emergencia: `ADMIN_REQUIRE_MFA=0`.
+1. **MFA obligatorio: apagado por ahora** (`ADMIN_REQUIRE_MFA` sin definir).
+   Cuando se decida prenderlo: primero todos los superadmins activan MFA
+   (`POST /api/auth/mfa/setup/` → `POST /api/auth/mfa/verify/`), después
+   `ADMIN_REQUIRE_MFA=1` y redeploy. Sin MFA serían usuarios comunes: no verían
+   otras instituciones ni usarían la consola o el admin de Django.
 2. **Al desplegar, todos los usuarios vuelven a iniciar sesión una vez.**
    `CHECK_REVOKE_TOKEN` invalida los tokens emitidos sin el sello nuevo.
 3. Entran las migraciones `user/0011_seguridad_login`, `user/0012_audit_event`,

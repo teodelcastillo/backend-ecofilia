@@ -166,6 +166,9 @@ class TokenRevocationTestCase(_Base):
         self.assertEqual(self.client.get("/api/auth/me/").status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+# La exigencia está apagada por defecto (decisión de producto); acá se prueba
+# prendida, para que el mecanismo siga listo.
+@override_settings(ADMIN_REQUIRE_MFA=True)
 class PrivilegedNeedsMFATestCase(_Base):
     def setUp(self):
         super().setUp()
@@ -201,6 +204,16 @@ class PrivilegedNeedsMFATestCase(_Base):
             response = getattr(self.client, method)(url, body, format="json")
             self.assertLess(response.status_code, 400, (url, getattr(response, "data", None)))
 
+    def test_the_requirement_is_off_by_default(self):
+        # Decisión de producto (2 de noviembre de 2026): implementado, apagado.
+        import os
+
+        if "ADMIN_REQUIRE_MFA" in os.environ:
+            self.skipTest("ADMIN_REQUIRE_MFA definida en el entorno")
+        from main.settings import base
+
+        self.assertFalse(base.ADMIN_REQUIRE_MFA)
+
     @override_settings(ADMIN_REQUIRE_MFA=False)
     def test_the_requirement_can_be_turned_off(self):
         self.client.force_authenticate(self.no_mfa)
@@ -217,6 +230,7 @@ class DjangoAdminTestCase(_Base):
     def _logged_in(self):
         return "_auth_user_id" in self.client.session
 
+    @override_settings(ADMIN_REQUIRE_MFA=True)
     def test_staff_without_mfa_cannot_enter(self):
         User.objects.create_superuser(email="sin-mfa@ecofilia.site", password="x")
         self._post("sin-mfa@ecofilia.site")
@@ -235,6 +249,21 @@ class DjangoAdminTestCase(_Base):
         )
         self._post("m@a.org", otp=_code())
         self.assertFalse(self._logged_in())
+
+    @override_settings(ADMIN_REQUIRE_MFA=False)
+    def test_with_the_requirement_off_staff_without_mfa_enters(self):
+        User.objects.create_superuser(email="sin-mfa@ecofilia.site", password="x")
+        self.assertEqual(self._post("sin-mfa@ecofilia.site").status_code, 302)
+        self.assertTrue(self._logged_in())
+
+    @override_settings(ADMIN_REQUIRE_MFA=False)
+    def test_with_the_requirement_off_who_has_mfa_still_needs_the_code(self):
+        # Si no, el admin sería una puerta sin segundo factor para una cuenta
+        # que sí lo activó.
+        self._post("root@ecofilia.site")
+        self.assertFalse(self._logged_in())
+        self._post("root@ecofilia.site", otp=_code())
+        self.assertTrue(self._logged_in())
 
     def test_the_mfa_secret_is_not_in_the_user_admin(self):
         self._post("root@ecofilia.site", otp=_code())
@@ -477,6 +506,7 @@ class LeavingAnInstitutionTestCase(_Base):
         self.assertNotIn(f'"id":{self.run.pk}', listing.replace(" ", ""))
 
 
+@override_settings(ADMIN_REQUIRE_MFA=True)
 class MFAIsMandatoryForSuperadminsTestCase(_Base):
     """Punto 5 del front: sin MFA, un superadmin no tiene ningún poder de plataforma."""
 

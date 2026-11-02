@@ -90,7 +90,7 @@ institución, un usuario público y un superadmin.
 
 | Email | Nivel | Institución |
 |---|---|---|
-| `superadmin@local.test` | superadmin de Ecofilia, **con MFA**: secreto TOTP `JBSWY3DPEHPK3PXP` (el login pide `otp`; cada código sirve una vez) | — |
+| `superadmin@local.test` | superadmin de Ecofilia, **con MFA**: secreto TOTP `JBSWY3DPEHPK3PXP` (el login pide `otp`, porque lo tiene activo; cada código sirve una vez). Así se prueba el camino del MFA aunque hoy no se exija | — |
 | `caf-admin@local.test` | administrador de institución (`role=admin`) | `caf` (restringida) |
 | `caf-miembro@local.test` | miembro | `caf` (restringida) |
 | `otra-miembro@local.test` | miembro | `otra` (sin restricciones) |
@@ -843,7 +843,7 @@ Detalle y evidencia en `backend/docs/seguridad.md`.
 | Cambio | Qué tiene que hacer el front |
 |---|---|
 | La API acepta **sólo** `Authorization: Bearer` (sin Basic ni sesión) | Nada: ya manda Bearer |
-| **MFA obligatorio para superadmin y staff.** Sin MFA, la API los trata como usuarios comunes, y `/api/auth/me/` y el `user` del login traen `mfa_required: true`, `is_ecofilia_admin: false` y `home_path: "/app"` | Con `mfa_required`, mostrar la activación de MFA (`POST /api/auth/mfa/setup/` → mostrar el QR de `otpauth_url` → `POST /api/auth/mfa/verify/` con el código) y pedir un login nuevo |
+| **MFA obligatorio para superadmin y staff — implementado y APAGADO por ahora** (`ADMIN_REQUIRE_MFA`). Mientras esté apagado, `mfa_required` es siempre `false` y no hay 403 por MFA; el MFA es opcional para todos y quien lo activa lo usa en el login. Prendido: sin MFA, la API los trata como usuarios comunes, y `/api/auth/me/` y el `user` del login traen `mfa_required: true`, `is_ecofilia_admin: false` y `home_path: "/app"` | Con `mfa_required`, mostrar la activación de MFA (`POST /api/auth/mfa/setup/` → mostrar el QR de `otpauth_url` → `POST /api/auth/mfa/verify/` con el código) y pedir un login nuevo |
 | Acciones de superadmin sin MFA: **403** con un mensaje que nombra el MFA | Llevar a la activación de MFA |
 | **Bloqueo** tras 10 fallos de login (contraseña o código), por 15 minutos. El error es el mismo que una contraseña equivocada | Nada. Opcional: decir «si fallaste varias veces, esperá unos minutos» |
 | Un **código MFA sirve una sola vez** | Si el login con código falla justo después de otro, pedir el código siguiente |
