@@ -102,6 +102,10 @@ class Skill(models.Model):
         max_length=20,
         choices=SkillScope.choices,
         default=SkillScope.PLATFORM,
+        # El código anterior a este campo no lo manda al crear un asistente: con
+        # el default en la base, una vuelta atrás del deploy sigue funcionando
+        # (ver docs/salida-instituciones.md). Lo creado así queda en plataforma.
+        db_default=SkillScope.PLATFORM,
         db_index=True,
         help_text=(
             "Quién ve el asistente: plataforma (sólo superadmin), público, una "

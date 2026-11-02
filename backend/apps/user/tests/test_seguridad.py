@@ -14,6 +14,7 @@ Roles, permisos y protección de la información. Cada clase cubre un control de
 - un barrido de aislamiento sobre todas las rutas de la API.
 """
 import base64
+from io import StringIO
 from datetime import timedelta
 
 import pyotp
@@ -620,7 +621,7 @@ class MFASecretIsEncryptedTestCase(_Base):
 
         from apps.authentication.services.secret_box import decrypt, is_encrypted
 
-        migration = importlib.import_module("apps.user.migrations.0014_cifrar_secretos_mfa")
+        migration = importlib.import_module("apps.user.migrations.0015_cifrar_secretos_mfa")
         User.objects.filter(pk=self.member_a.pk).update(mfa_enabled=True, mfa_secret=SECRET)
 
         migration.cifrar(registry, None)
@@ -646,6 +647,25 @@ class MFASecretIsEncryptedTestCase(_Base):
             self.assertEqual(decrypt(stored), SECRET)
         with self.settings(MFA_ENCRYPTION_KEYS=[new]), self.assertRaises(Exception):
             decrypt(stored)
+
+    def test_defining_the_key_later_breaks_nothing(self):
+        # Hoy no hay MFA_ENCRYPTION_KEYS: los secretos van con la clave derivada
+        # de SECRET_KEY. Definirla más adelante (p. ej. para una auditoría) no
+        # tiene que dejar a nadie sin MFA, y el comando los pasa a la nueva.
+        from django.core.management import call_command
+        from cryptography.fernet import Fernet
+
+        from apps.authentication.services.secret_box import PREFIX, encrypt
+
+        with self.settings(MFA_ENCRYPTION_KEYS=[]):
+            User.objects.filter(pk=self.member_a.pk).update(mfa_enabled=True, mfa_secret=encrypt(SECRET))
+        key = Fernet.generate_key().decode()
+        with self.settings(MFA_ENCRYPTION_KEYS=[key]):
+            self.assertEqual(self._login("m@a.org", otp=_code()).status_code, 200)
+            call_command("recifrar_secretos_mfa", stdout=StringIO())
+            stored = User.objects.get(pk=self.member_a.pk).mfa_secret
+            self.assertEqual(Fernet(key.encode()).decrypt(stored[len(PREFIX):].encode()).decode(), SECRET)
+            self.assertEqual(self._login("m@a.org", otp=_code(1)).status_code, 200)
 
 
 class StaffIsNotGlobalTestCase(_Base):

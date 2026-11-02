@@ -2,7 +2,9 @@
 Los secretos MFA que estaban en claro se cifran (ver
 ``apps/authentication/services/secret_box.py``).
 
-Reversible: al volver, quedan otra vez en claro. Idempotente: lo ya cifrado no
+Reversible: al volver, quedan otra vez en claro. Va última a propósito: en una
+vuelta atrás del deploy, ``migrate user 0014`` deshace sólo esto, y el código
+anterior (que lee el secreto tal cual) vuelve a validar los códigos MFA. Idempotente: lo ya cifrado no
 se toca.
 """
 from django.db import migrations
@@ -31,7 +33,7 @@ def descifrar(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("user", "0013_institucion_protegida"),
+        ("user", "0014_defaults_en_la_base"),
     ]
 
     operations = [

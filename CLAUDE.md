@@ -364,9 +364,14 @@ esencial al tocar código:
 - **`is_staff` solo no es acceso global.** Muchos chequeos usan `is_staff` como
   «ve todo»; al autenticar, `staff_is_not_global` se lo saca en memoria a quien
   no es superadmin. Para ver todo hay que ser superadmin (con MFA, si se exige).
-- **El secreto MFA va cifrado** (`services/secret_box.py`, `MFA_ENCRYPTION_KEYS`
-  en Secrets Manager): leerlo y escribirlo sólo con `MFAService.secret_of` /
-  `store_secret`, nunca `user.mfa_secret` a mano.
+- **El secreto MFA va cifrado** (`services/secret_box.py`): leerlo y escribirlo
+  sólo con `MFAService.secret_of` / `store_secret`, nunca `user.mfa_secret` a
+  mano. Hoy con una clave derivada de `SECRET_KEY` (**no rotarla**); antes de la
+  auditoría, `MFA_ENCRYPTION_KEYS` + `recifrar_secretos_mfa`.
+- **Columnas nuevas obligatorias llevan `db_default`.** Así el código anterior
+  sigue funcionando sobre el esquema nuevo y volver atrás un deploy es
+  redesplegar la imagen anterior. Salida y vuelta atrás:
+  `backend/docs/salida-instituciones.md`.
 - **Restablecer la contraseña no toca el MFA**, y el registro responde lo mismo
   exista o no el email (con el mismo trabajo, para no delatarlo por tiempo).
 - **`backend/poetry.lock` está versionado** y CI corre `poetry check --lock`: al
@@ -400,7 +405,8 @@ Cómo levantar el backend local, el comando de datos de prueba
 
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
 
-`SECRET_KEY`, `JWT_SIGNING_KEY`, `MFA_ENCRYPTION_KEYS`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+`SECRET_KEY`, `JWT_SIGNING_KEY`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+(`MFA_ENCRYPTION_KEYS` cuando se exija MFA)
 
 Variables de configuración (en task definition ECS):
 `DJANGO_SETTINGS_MODULE=main.settings.prod`, `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`, `SQS_QUEUE_URL`, `AWS_STORAGE_BUCKET_NAME`

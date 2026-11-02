@@ -73,7 +73,7 @@ sobre `fase-5-backend`.
 | M9 | Media (enumeración) | El registro con un email que ya tenía cuenta respondía «A user with this email already exists»: probando emails se sabía quién usa Ecofilia, y de qué institución. Lo reportó el front. | **Corregido**: la respuesta es la misma exista o no el email, también en el tiempo (se hashea la contraseña igual), y a la cuenta existente le llega un email con el enlace para restablecer |
 | B1 | Baja (enumeración) | Crear evaluaciones o documentos sobre una operación ajena respondía «No tienes acceso», distinto de «no encontrado»: confirmaba que el slug existía. | **Corregido**: mismo mensaje |
 | B2 | Baja | El email de restablecer contraseña decía «1 hora» y el enlace valía 3 días (default de Django). | **Corregido**: 24 horas, configurable, y el email lo dice |
-| P1 | Media | `mfa_secret` se guardaba en claro en la base: cualquier lectura de la base (un backup, un volcado) anulaba el MFA de todos. | **Corregido**: cifrado con Fernet (`apps/authentication/services/secret_box.py`, `MFA_ENCRYPTION_KEYS`); la migración `user/0014` cifra los existentes |
+| P1 | Media | `mfa_secret` se guardaba en claro en la base: cualquier lectura de la base (un backup, un volcado) anulaba el MFA de todos. | **Corregido**: cifrado con Fernet (`apps/authentication/services/secret_box.py`, `MFA_ENCRYPTION_KEYS`); la migración `user/0015` cifra los existentes |
 | P2 | Media | Dos nociones de acceso global: `is_staff` y superadmin (`is_ecofilia_admin`). Un `is_staff` que no era superadmin veía todas las instituciones. | **Corregido**: para la API, `is_staff` solo no da alcance global (`staff_is_not_global`); sólo lo conserva quien además es superadmin |
 | P3 | Media | No había archivo de lock de dependencias (`poetry.lock`); además, el `.gitignore` lo excluía. | **Corregido**: `poetry.lock` versionado, CI corre `poetry check --lock`, `pip-audit` sobre el lock sin vulnerabilidades conocidas |
 | P4 | Baja | Sin Content-Security-Policy. | Aceptado: la API sólo responde JSON |
@@ -120,7 +120,7 @@ sobre `fase-5-backend`.
 | Código MFA de un solo uso | `MFAService.verify` guarda el paso aceptado (`User.mfa_last_step`) | `MFATestCase` |
 | El MFA no se apaga sin código | `MFASetupView` responde 400 con MFA activo | `MFATestCase` |
 | Restablecer la contraseña no apaga el MFA | `PasswordResetConfirmView` cambia sólo la contraseña (y verifica el email) | `PasswordResetKeepsMFATestCase` |
-| Secreto MFA cifrado en reposo | Fernet con `MFA_ENCRYPTION_KEYS` (la primera cifra, todas descifran: se rota agregando la nueva adelante). Lo viejo en claro se sigue leyendo; `user/0014` lo cifra | `MFASecretIsEncryptedTestCase` |
+| Secreto MFA cifrado en reposo | Fernet con `MFA_ENCRYPTION_KEYS` (la primera cifra, todas descifran: se rota agregando la nueva adelante). Lo viejo en claro se sigue leyendo; `user/0015` lo cifra | `MFASecretIsEncryptedTestCase` |
 | El registro no revela qué emails tienen cuenta | Misma respuesta y mismo trabajo (hash de la contraseña) para un email nuevo y uno existente; al existente le llega «Ya tenés una cuenta» | `test_api` (`test_register_duplicate_email_does_not_reveal_the_account`) |
 | Bloqueo por cuenta | 10 fallos (contraseña o MFA) → 15 minutos (`LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES`). El error es el mismo que una contraseña equivocada: no confirma que la cuenta existe | `LockoutTestCase` |
 | Throttle por IP | DRF: 30/min anónimo, 120/min autenticado, 20/min refresco | (existente) |
@@ -212,7 +212,7 @@ sobre `fase-5-backend`.
 
 | # | Riesgo | Por qué no se resolvió acá | Mitigación y siguiente paso |
 |---|---|---|---|
-| P5 | Sin `MFA_ENCRYPTION_KEYS`, la clave del MFA se deriva de `SECRET_KEY` | Funciona, pero ata los secretos MFA a esa clave: rotar `SECRET_KEY` sin más deja sin MFA a todos | Definir `MFA_ENCRYPTION_KEYS` en Secrets Manager antes del deploy (ver [Antes del deploy](#antes-del-deploy)) |
+| P5 | Sin `MFA_ENCRYPTION_KEYS`, la clave del MFA se deriva de `SECRET_KEY` | Decisión: no hace falta mientras el MFA no sea obligatorio | Rotar `SECRET_KEY` dejaría sin MFA a quien lo activó: no rotarla sin antes definir `MFA_ENCRYPTION_KEYS` y correr `recifrar_secretos_mfa`. Se resuelve junto con P8, antes de la auditoría |
 | P6 | Sin códigos de recuperación del MFA | Es una funcionalidad nueva, con su pantalla en el front | Quien pierde su app de MFA lo recupera con un superadmin, que se lo apaga en el admin de Django tras verificar su identidad por otro canal. Queda en el `LogEntry` del admin |
 | P7 | `pip-audit` no corre en CI | Necesita red en CI y una política para las alertas | Correrlo a mano antes de cada salida, sobre el lock |
 | P8 | **MFA no obligatorio para el superadmin** (`ADMIN_REQUIRE_MFA` apagado) | Decisión de producto por ahora | Bloqueo por cuenta, auditoría de cada pedido del superadmin, contraseñas validadas y pocos superadmins. Quien activa el MFA lo usa siempre. **Prenderlo antes de abrir a instituciones internacionales**: ASVS L2 (2.2.x) e ISO 27001 (A.8.5) esperan MFA para cuentas privilegiadas |
@@ -252,6 +252,9 @@ verificarlos en AWS y en los procesos:
 
 ## Antes del deploy
 
+El procedimiento completo de la salida, con el snapshot y la vuelta atrás probada
+en tres niveles, está en [`salida-instituciones.md`](salida-instituciones.md).
+
 1. **MFA obligatorio: apagado por ahora** (`ADMIN_REQUIRE_MFA` sin definir).
    Cuando se decida prenderlo: primero todos los superadmins activan MFA
    (`POST /api/auth/mfa/setup/` → `POST /api/auth/mfa/verify/`), después
@@ -260,14 +263,16 @@ verificarlos en AWS y en los procesos:
 2. **Al desplegar, todos los usuarios vuelven a iniciar sesión una vez.**
    `CHECK_REVOKE_TOKEN` invalida los tokens emitidos sin el sello nuevo.
 3. Entran las migraciones `user/0011_seguridad_login`, `user/0012_audit_event`,
-   `user/0013_institucion_protegida`, `user/0014_cifrar_secretos_mfa` y
+   `user/0013_institucion_protegida`, `user/0014_defaults_en_la_base`,
+   `user/0015_cifrar_secretos_mfa`, `skill/0051_defaults_en_la_base` y
    `project/0019_institucion_protegida`.
-4. **Antes de esas migraciones, definir `MFA_ENCRYPTION_KEYS`** en
-   `ecofilia/prod`: una clave Fernet
-   (`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`).
-   `user/0014` cifra con la clave que haya en ese momento. Si se agrega
-   después: `migrate user 0013` sin la variable (descifra) y `migrate` con ella
-   (vuelve a cifrar).
+4. **`MFA_ENCRYPTION_KEYS` no hace falta para salir** (el MFA no es obligatorio):
+   sin ella, los secretos se cifran con una clave derivada de `SECRET_KEY`.
+   Cuando se prepare la auditoría: definirla en `ecofilia/prod` (una clave Fernet,
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`),
+   redeploy y `manage.py recifrar_secretos_mfa`. No rompe nada: la clave
+   derivada sigue descifrando lo viejo. Hasta entonces, **no rotar `SECRET_KEY`**:
+   quien haya activado el MFA lo perdería.
 5. **Staff que no es superadmin.** `listar_usuarios_por_nivel` los marca
    «is_staff sin alcance global». Si alguno tiene que seguir viendo todo, hacerlo
    superadmin (`role=admin`, sin institución) con MFA.
@@ -278,7 +283,7 @@ verificarlos en AWS y en los procesos:
 
 ## Evidencia
 
-- `apps/user/tests/test_seguridad.py`: 50 tests, uno o más por control,
+- `apps/user/tests/test_seguridad.py`: 54 tests, uno o más por control,
   incluidos los puntos que reportó el front (borrar una institución, Basic
   auth, salir de una institución, auditoría de cambios y lecturas, MFA
   obligatorio, restablecer sin apagar el MFA, secreto MFA cifrado, `is_staff`

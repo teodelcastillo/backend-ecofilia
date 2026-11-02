@@ -75,7 +75,10 @@ class Organization(models.Model):
     # Vacío: rige la configuración base. Se lee con
     # ``apps.user.institution_config.effective_config`` y se escribe validado
     # (``validate_config``); la forma está en backend/docs/contrato-instituciones.md.
-    config = models.JSONField(default=dict, blank=True)
+    # ``db_default``: el código anterior a este campo no lo conoce y, al crear la
+    # fila, no lo manda. Con el default en la base, una vuelta atrás del deploy
+    # sigue funcionando sin revertir migraciones (ver docs/salida-instituciones.md).
+    config = models.JSONField(default=dict, db_default=models.Value({}, output_field=models.JSONField()), blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -183,7 +186,10 @@ class User(AbstractUser):
     last_password_change = models.DateTimeField(null=True, blank=True)
     # Bloqueo por intentos fallidos de login (contraseña o MFA). Ver
     # ``apps.authentication.services.login_guard``.
-    failed_login_attempts = models.PositiveIntegerField(default=0)
+    # ``db_default``: el código anterior a este campo no lo conoce y, al crear la
+    # fila, no lo manda. Con el default en la base, una vuelta atrás del deploy
+    # sigue funcionando sin revertir migraciones (ver docs/salida-instituciones.md).
+    failed_login_attempts = models.PositiveIntegerField(default=0, db_default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
     # El último paso TOTP aceptado: un código MFA sirve una sola vez.
     mfa_last_step = models.BigIntegerField(null=True, blank=True)
