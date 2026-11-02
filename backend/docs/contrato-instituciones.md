@@ -287,8 +287,8 @@ GET /api/projects/evaluation-records/?organization=<slug>
 
 - Skills `caf-*` → `organization` / CAF. Las demás con dueño → `user`. **Todas
   las demás sin dueño → `platform`.**
-- Etiquetas de operación de CAF → CAF (`document/0024`), y también
-  `metodologia-caf` y `salvaguardas-cesas` (`document/0025`). Las de país
+- Etiquetas de operación de CAF → CAF (`document/0025`), y también
+  `metodologia-caf` y `salvaguardas-cesas` (`document/0026`). Las de país
   quedan globales: son las únicas que ve una institución que no es CAF.
 
 > **Para la salida:** las skills que hoy ven todos (en una base nueva, las 11
