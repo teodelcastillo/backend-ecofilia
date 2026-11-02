@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("skill", "0047_iet_catalogo_actividades_caf"),
+        ("skill", "0048_iet_lee_ley_y_reporte_nacional"),
         ("user", "0007_seed_caf_default_project_skills"),
     ]
 
