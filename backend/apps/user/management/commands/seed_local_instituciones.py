@@ -13,7 +13,7 @@ Los usuarios, la clave y lo que debería ver cada uno están documentados en
 
 Deja la base como quedaría producción después de las migraciones de la fase 0:
 crea la institución CAF y vuelve a aplicar las migraciones de datos
-(``skill/0049`` y ``document/0024``), que en una base nueva corrieron sin CAF y
+(``skill/0050``, ``document/0025`` y ``document/0026``), que en una base nueva corrieron sin CAF y
 dejaron todo en plataforma/global. Además suma una segunda institución
 (``otra``), un usuario público y un superadmin, con una operación, un documento
 y un informe emitido cada uno, para que se vea qué ve cada nivel.
@@ -125,9 +125,9 @@ class Command(BaseCommand):
 
         # Lo que en producción dejan las migraciones de datos con CAF presente:
         # alcance de skills y etiquetas (fase 0) y su configuración (fase 1).
-        importlib.import_module("apps.skill.migrations.0049_asignar_alcance_skills").asignar(django_apps, None)
-        importlib.import_module("apps.document.migrations.0024_etiquetas_de_operacion_caf").asignar(django_apps, None)
-        importlib.import_module("apps.document.migrations.0025_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
+        importlib.import_module("apps.skill.migrations.0050_asignar_alcance_skills").asignar(django_apps, None)
+        importlib.import_module("apps.document.migrations.0025_etiquetas_de_operacion_caf").asignar(django_apps, None)
+        importlib.import_module("apps.document.migrations.0026_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
         importlib.import_module("apps.user.migrations.0009_config_caf").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)

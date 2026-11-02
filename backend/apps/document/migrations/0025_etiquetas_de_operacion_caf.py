@@ -1,7 +1,7 @@
 """
 Las etiquetas de operación de CAF pasan a ser de CAF (fase 0: aislamiento).
 
-Desde ``0023`` una etiqueta sin institución es global y una con institución
+Desde ``0024`` una etiqueta sin institución es global y una con institución
 la ve sólo esa institución. Las de contexto de país (NDC, NAP, LTS, …) siguen
 globales: son instrumentos públicos de cada país. Las que describen piezas de
 una operación de CAF (IDO, DEC, IAS, IBAT, …) son de CAF.
@@ -59,7 +59,7 @@ def revertir(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("document", "0023_evidence_tag_organization"),
+        ("document", "0024_evidence_tag_organization"),
         ("user", "0007_seed_caf_default_project_skills"),
     ]
 
