@@ -9,3 +9,12 @@ class AuthenticationConfig(AppConfig):
         # Import signals for token invalidation side-effects
         from apps.authentication import signals  # noqa: F401
 
+        # El admin de Django con MFA, bloqueo por intentos y sin miembros de
+        # instituciones (ver ``admin_login.py``).
+        from django.contrib import admin
+
+        from apps.authentication.admin_login import AdminMFAAuthenticationForm
+
+        admin.site.login_form = AdminMFAAuthenticationForm
+        admin.site.login_template = "admin/login_mfa.html"
+

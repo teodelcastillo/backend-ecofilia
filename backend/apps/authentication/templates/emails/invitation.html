@@ -1,0 +1,28 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Te invitaron a {{ organization_name }} — Ecofilia{% endblock %}
+
+{% block content %}
+  <p class="greeting">Hola</p>
+
+  <p class="text">
+    Te invitaron a <strong>{{ organization_name }}</strong> en Ecofilia.
+    Para entrar, elegí tu contraseña con el botón de abajo.
+  </p>
+
+  <div class="btn-wrapper">
+    <a href="{{ invite_url }}" class="btn">Elegir mi contraseña</a>
+  </div>
+
+  <p class="text">
+    Este enlace es válido por <strong>{{ days }} días</strong>. Si vence, pedile a
+    quien te invitó que te vuelva a agregar.
+  </p>
+
+  <hr class="divider" />
+
+  <p class="fallback">
+    ¿El botón no funciona? Copiá y pegá este enlace en tu navegador:<br />
+    <a href="{{ invite_url }}">{{ invite_url }}</a>
+  </p>
+{% endblock %}

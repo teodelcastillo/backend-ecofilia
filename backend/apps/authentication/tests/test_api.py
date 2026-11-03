@@ -1,6 +1,7 @@
 import pyotp
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -12,6 +13,7 @@ User = get_user_model()
 
 class AuthenticationAPITestCase(APITestCase):
     def setUp(self):
+        cache.clear()  # el throttle de anónimos vive en el caché
         self.password = "StrongPass123!"
         self.user = User.objects.create_user(
             email="user@example.com",
@@ -104,21 +106,37 @@ class AuthenticationAPITestCase(APITestCase):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("EvenStronger123!"))
 
-    def test_register_duplicate_email_returns_field_error(self):
+    def test_register_duplicate_email_does_not_reveal_the_account(self):
+        # Antes daba 400 «already exists»: probando emails se sabía quién usa
+        # Ecofilia. Ahora la respuesta es la de un alta nueva, y a la cuenta
+        # existente le llega un email que se lo cuenta.
         url = reverse("auth-register")
+        new = self.client.post(
+            url, {"email": "otro@example.com", "password": "StrongPass456!"}, format="json"
+        )
+        mail.outbox.clear()
         payload = {
-            "email": "user@example.com",
+            "email": "USER@example.com",
             "password": "StrongPass456!",
             "first_name": "Dup",
             "last_name": "User",
         }
         response = self.client.post(url, payload, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("email", response.data)
-        self.assertTrue(
-            any("already exists" in str(msg).lower() for msg in response.data["email"])
-        )
+        self.assertEqual((response.status_code, response.data), (new.status_code, new.data))
+        self.assertEqual(User.objects.filter(email__iexact="user@example.com").count(), 1)
+        self.assertEqual([m.to for m in mail.outbox], [["user@example.com"]])
+        self.assertIn("Ya tenés una cuenta", mail.outbox[0].subject)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.password))  # nada cambió
+
+    def test_register_weak_password_is_rejected_whether_or_not_the_email_exists(self):
+        url = reverse("auth-register")
+        for email in ("user@example.com", "nadie@example.com"):
+            with self.subTest(email=email):
+                response = self.client.post(url, {"email": email, "password": "123"}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(list(response.data), ["password"])
 
     def test_register_weak_password_returns_field_error(self):
         url = reverse("auth-register")

@@ -166,11 +166,19 @@ class Document(models.Model):
                 pass
         super().save(*args, **kwargs)
 
+    def _owned_by(self, user) -> bool:
+        """Dueño, y el documento no es de una institución de la que ya no es parte."""
+        from apps.document.services import foreign_institution_document_ids
+
+        return self.owner_id == user.id and not Document.objects.filter(
+            pk=self.pk, id__in=foreign_institution_document_ids(user)
+        ).exists()
+
     def can_view(self, user) -> bool:
         """Verifica si el usuario puede ver el documento"""
         from apps.user.access import administers_member
 
-        if user.is_staff or self.owner_id == user.id:
+        if user.is_staff or self._owned_by(user):
             return True
         if self.is_public:
             return True
@@ -190,7 +198,7 @@ class Document(models.Model):
         """Verifica si el usuario puede editar el documento"""
         from apps.user.access import administers_member
 
-        if user.is_staff or self.owner_id == user.id:
+        if user.is_staff or self._owned_by(user):
             return True
         # El administrador de una institución trabaja los documentos de sus
         # miembros (clasificar, etiquetar). Los públicos no: son de Ecofilia.
@@ -220,7 +228,7 @@ class Document(models.Model):
 
         return (
             user.is_staff
-            or self.owner_id == user.id
+            or self._owned_by(user)
             or (not self.is_public and administers_member(user, self.owner))
         )
 
@@ -386,9 +394,24 @@ class EvidenceTag(models.Model):
 
     El catálogo es ampliable: ``is_seed`` sólo distingue las que provee
     Ecofilia (que no se borran) de las que agrega un equipo.
+
+    Sin ``organization`` la etiqueta es global (los instrumentos de país: NDC,
+    NAP, LTS…); con ``organization`` es de esa institución y ninguna otra la
+    ve. Por eso el slug es único por institución y no en todo el catálogo:
+    cada slug se resuelve dentro de las globales más las de la institución
+    (ver ``apps.document.services.evidence_tags_for_organization``).
     """
 
-    slug = models.SlugField(unique=True, max_length=80)
+    slug = models.SlugField(max_length=80)
+    organization = models.ForeignKey(
+        "user.Organization",
+        null=True,
+        blank=True,
+        # Borrar la institución no puede volver globales sus etiquetas.
+        on_delete=models.PROTECT,
+        related_name="evidence_tags",
+        help_text="Vacío: etiqueta global. Con institución: sólo la ve esa institución.",
+    )
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     source_topics = ArrayField(
@@ -410,6 +433,18 @@ class EvidenceTag(models.Model):
 
     class Meta:
         ordering = ("position", "name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "slug"), name="evidence_tag_org_slug_unique"
+            ),
+            # ``(organization, slug)`` no alcanza para las globales: en
+            # Postgres dos NULL no chocan.
+            models.UniqueConstraint(
+                fields=("slug",),
+                condition=Q(organization__isnull=True),
+                name="evidence_tag_global_slug_unique",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.slug})"

@@ -1,6 +1,19 @@
 from .base import *
+from .base import _env_bool
 
 ENVIRONMENT_NAME = "Production"
+
+# ── Seguridad: fija, no depende de variables de entorno ─────────────────────
+# Hasta acá las cookies seguras, el HSTS y la redirección a HTTPS dependían de
+# variables que por defecto venían apagadas. En producción no son opcionales.
+DEBUG = False
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+SECURE_SSL_REDIRECT = _env_bool("SECURE_SSL_REDIRECT", "True")  # el ALB manda X-Forwarded-Proto
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", str(60 * 60 * 24 * 365)))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = False  # el preload se pide para el dominio raíz, no para la API
+SILENCED_SYSTEM_CHECKS = ["security.W021"]  # el aviso del preload: es a propósito, ver arriba
 
 # ALLOWED_HOSTS += ["*"]
 STATIC_ROOT = BASE_DIR + "/django-static/"

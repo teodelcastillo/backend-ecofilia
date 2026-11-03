@@ -10,10 +10,12 @@ User = get_user_model()
 
 class DocumentBulkPublicAPITest(APITestCase):
     def setUp(self):
+        # Publicar es de superadmin y exige MFA activo (ADMIN_REQUIRE_MFA).
         self.superuser = User.objects.create_superuser(
             email="admin@test.com",
             password="TestPass123!",
             username="admin@test.com",
+            mfa_enabled=True,
         )
         self.regular = User.objects.create_user(
             email="user@test.com",
@@ -25,6 +27,7 @@ class DocumentBulkPublicAPITest(APITestCase):
             password="TestPass123!",
             username="admin-role@test.com",
             role="admin",
+            mfa_enabled=True,
         )
         self.doc_a = Document.objects.create(
             owner=self.superuser,

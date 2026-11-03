@@ -116,16 +116,22 @@ class ProjectDocumentTagsSerializer(serializers.Serializer):
         return attrs
 
     def validate_tags(self, slugs):
-        from apps.document.models import EvidenceTag
+        from apps.document.services import evidence_tags_for_organization, resolve_evidence_tags
 
         unique = list(dict.fromkeys(slugs))
-        found = EvidenceTag.objects.filter(slug__in=unique)
-        missing = set(unique) - set(found.values_list("slug", flat=True))
+        # Dentro de las globales más las de la institución de la operación: una
+        # etiqueta de otra institución no existe para esta operación.
+        project = self.context.get("project")
+        organization_id = getattr(project, "organization_id", None)
+        found = resolve_evidence_tags(
+            unique, evidence_tags_for_organization(organization_id), organization_id
+        )
+        missing = set(unique) - set(found)
         if missing:
             raise serializers.ValidationError(
                 f"Etiquetas inexistentes: {', '.join(sorted(missing))}."
             )
-        self.context["resolved_tags"] = list(found)
+        self.context["resolved_tags"] = [found[slug] for slug in unique]
         return unique
 
 
@@ -452,11 +458,14 @@ class ProjectWriteSerializer(ProjectSerializer):
 
     def validate_enabled_skill_slugs(self, slugs):
         request = self.context["request"]
-        allowed = Skill.objects.filter(
-            Q(owner__isnull=True) | Q(owner=request.user),
+        from apps.skill.visibility import visible_skills
+
+        # Las que el usuario ve (fase 0), no ``owner`` nulo: con la regla vieja
+        # se podía habilitar una skill de plataforma o de otra institución.
+        allowed = visible_skills(request.user, Skill.objects.filter(
             Q(allowed_contexts__contains=["project"]) | Q(allowed_contexts__contains=["any"]),
             slug__in=slugs,
-        )
+        ))
         found_slugs = set(allowed.values_list("slug", flat=True))
         missing = [slug for slug in slugs if slug not in found_slugs]
         if missing:

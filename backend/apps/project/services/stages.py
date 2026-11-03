@@ -1,5 +1,9 @@
 """
-Las etapas de una operación: pre-originación → IDO → DEC → aprobada.
+Las etapas de una operación. En CAF: pre-originación → IDO → DEC → aprobada.
+
+Desde la fase 1 las etapas, sus etiquetas y lo que lanza cada una salen de la
+configuración de la institución de la operación (``stages`` en
+``apps.user.institution_config``): este módulo no conoce ninguna en particular.
 
 La etapa vive en ``context_notes["estado"]``, pero no se edita como un campo
 más: cambiarla tiene efectos. Entrar a IDO lanza el reporte de Ecofilia (la
@@ -13,9 +17,9 @@ Reglas:
 
 - Avanzar es de quien edita la operación. Volver atrás, del staff de Ecofilia
   o de quien administra la institución: retroceder deshace un hito del ciclo.
-- Lo que la etapa lanza se decide en un solo lugar, :func:`stage_workflow_slugs`.
-  Ahí entran después las variantes por familia de producto (PPI, PBL…) y la
-  configuración desde el Studio.
+- Lo que la etapa lanza se decide en un solo lugar, :func:`stage_workflow_slugs`,
+  a partir de ``stages[].launches`` de la institución. Ahí entran después las
+  variantes por familia de producto (PPI, PBL…).
 - Si al entrar a la etapa la operación no está lista (sin documento principal,
   documentos procesándose), lo que no se pudo lanzar queda ``blocked`` y se
   reintenta solo cuando cambia lo que lo bloqueaba (ver
@@ -29,19 +33,14 @@ from django.db import transaction
 
 from apps.project.models import Project, ProjectStageTransition
 from apps.project.services.alignment_history import record_if_changed
+from apps.user import institution_config
 
 logger = logging.getLogger(__name__)
 
-STAGE_ORDER: list[str] = ["pre_originacion", "ido_cci", "dec", "aprobada"]
-STAGE_LABELS: dict[str, str] = {
-    "pre_originacion": "Pre-originación",
-    "ido_cci": "IDO-CCI",
-    "dec": "DEC",
-    "aprobada": "Aprobada",
-}
-
-# Workflows del ciclo CAF. Los slugs son el contrato con la interfaz, que lee
-# sus pasos por título; los workflows se ajustan desde el Studio.
+# Workflows del ciclo CAF. Ya no deciden nada: lo que lanza cada etapa y qué
+# workflow es el informe, el guiado o la lectura sale de la configuración de
+# la institución (``workflows`` / ``stages[].launches``). Quedan para
+# reconocer corridas viejas y para los tests de los workflows sembrados.
 IET_SLUG = "caf-iet-datbc-evaluacion-tecnica"
 # El insumo fue un agente aparte (``0033``); desde ``0041`` es la ficha de la
 # IET. El slug queda para reconocer sus corridas viejas en el historial.
@@ -64,9 +63,19 @@ def current_stage(project: Project) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def stage_index(stage: str) -> int:
+def stage_order(project: Project) -> list[str]:
+    """Las etapas de la operación, en orden, según su institución."""
+    return institution_config.stage_slugs(institution_config.config_for_project(project))
+
+
+def stage_label(project: Project, stage: str) -> str:
+    return institution_config.stage_label(institution_config.config_for_project(project), stage)
+
+
+def stage_index(stage: str, project: Project) -> int:
     """Posición en el ciclo. Una etapa vacía o desconocida va antes de todas."""
-    return STAGE_ORDER.index(stage) if stage in STAGE_ORDER else -1
+    order = stage_order(project)
+    return order.index(stage) if stage in order else -1
 
 
 def is_ecofilia_staff(user) -> bool:
@@ -81,7 +90,7 @@ def can_revert(user, project: Project) -> bool:
 
 
 def can_transition(user, project: Project, to_stage: str) -> bool:
-    if stage_index(to_stage) > stage_index(current_stage(project)):
+    if stage_index(to_stage, project) > stage_index(current_stage(project), project):
         return project.can_edit(user)
     return can_revert(user, project)
 
@@ -89,13 +98,13 @@ def can_transition(user, project: Project, to_stage: str) -> bool:
 def stage_workflow_slugs(project: Project, stage: str) -> list[str]:
     """Qué workflows lanza la operación al entrar a ``stage``.
 
-    Hoy sólo IDO lanza algo. Es el único punto de ruteo a propósito: cuando
-    haya variantes por familia de producto, sector o institución, se eligen acá
-    a partir de los datos de la operación.
+    Salen de ``stages[].launches`` de la institución de la operación (en CAF,
+    sólo IDO lanza algo: el IET). Es el único punto de ruteo a propósito: cuando
+    haya variantes por familia de producto o sector, se eligen acá a partir de
+    los datos de la operación.
     """
-    if stage == "ido_cci":
-        return [IET_SLUG]
-    return []
+    found = institution_config.stage(institution_config.config_for_project(project), stage)
+    return list((found or {}).get("launches") or [])
 
 
 def runs_for_stage(project: Project, skill, stage: str):
@@ -184,19 +193,19 @@ def transition(
     project: Project, to_stage: str, user, *, step_instructions: dict[str, dict] | None = None
 ) -> ProjectStageTransition:
     """Mueve la operación a ``to_stage`` y lanza lo que esa etapa pide."""
-    if to_stage not in STAGE_ORDER:
-        raise StageError(f"Etapa desconocida: {to_stage!r}.")
+    if to_stage not in stage_order(project):
+        raise StageError(f"Etapa desconocida para esta institución: {to_stage!r}.")
 
     with transaction.atomic():
         locked = Project.objects.select_for_update().get(pk=project.pk)
         from_stage = current_stage(locked)
         if to_stage == from_stage:
-            raise StageError(f"La operación ya está en {STAGE_LABELS[to_stage]}.")
+            raise StageError(f"La operación ya está en {stage_label(locked, to_stage)}.")
         if not can_transition(user, locked, to_stage):
             raise StagePermissionError(
                 "Volver a una etapa anterior es del staff de Ecofilia o de quien "
                 "administra la institución."
-                if stage_index(to_stage) < stage_index(from_stage)
+                if stage_index(to_stage, locked) < stage_index(from_stage, locked)
                 else "No tenés permiso para cambiar la etapa de esta operación."
             )
 
@@ -215,7 +224,7 @@ def transition(
 
     project.refresh_from_db()
     # Fuera de la transacción: las corridas se encolan apenas existen.
-    if stage_index(to_stage) > stage_index(from_stage):
+    if stage_index(to_stage, project) > stage_index(from_stage, project):
         record.launches = launch_stage_workflows(
             project, to_stage, user, step_instructions=step_instructions
         )
@@ -318,7 +327,8 @@ def on_execution_finished(execution) -> None:
     try:
         if execution.project_id is None or execution.status != ExecutionStatus.COMPLETED:
             return
-        if execution.skill.slug == GUIADO_SLUG:
+        config = institution_config.config_for_project(execution.project)
+        if execution.skill.slug == institution_config.workflow(config, "guided"):
             from apps.project.services.stage_reports import apply_guided_result
 
             apply_guided_result(execution)

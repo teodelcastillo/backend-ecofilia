@@ -83,8 +83,11 @@ class MembersCanRunTestCase(APITestCase):
             email="admin@example.com", password="x", username="admin", role="admin"
         )
         self.project = Project.objects.create(owner=self.member, name="Operación")
+        # El IET de la organización: lo ve por su alcance (fase 0) y, como la
+        # organización es restringida, sólo mientras esté asignado a ella.
         self.skill = Skill.objects.create(
-            owner=None, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
+            owner=None, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"],
+            scope="organization", organization=self.org,
         )
         self.project.enabled_skills.add(self.skill)
         self.org.enabled_skills.add(self.skill)
@@ -143,8 +146,9 @@ class AssignToOrganizationTestCase(APITestCase):
         from apps.user.models import Organization
 
         self.org = Organization.objects.create(name="CAF", slug="caf", restricted=True)
+        # Asignar a organizaciones es de superadmin y exige MFA (ADMIN_REQUIRE_MFA).
         self.admin = User.objects.create_user(
-            email="admin@example.com", password="x", username="admin", role="admin"
+            email="admin@example.com", password="x", username="admin", role="admin", mfa_enabled=True
         )
         self.member = User.objects.create_user(
             email="m@example.com", password="x", username="m", organization=self.org

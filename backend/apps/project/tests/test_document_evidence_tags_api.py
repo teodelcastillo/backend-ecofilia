@@ -9,6 +9,8 @@ from rest_framework.test import APITestCase
 
 from apps.document.models import Document, EvidenceTag
 from apps.project.models import Project, ProjectDocument
+from apps.user.models import Organization
+from apps.user.tests.fixtures import caf_config
 
 User = get_user_model()
 
@@ -122,6 +124,9 @@ class DocumentEvidenceTagsApiTestCase(APITestCase):
         self.assertEqual(ndc["document_count"], 1)
 
     def test_the_catalog_says_the_group_of_each_tag(self):
+        # Los grupos son los de la institución de quien mira (fase 1): los de CAF.
+        self.owner.organization = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.owner.save(update_fields=["organization"])
         EvidenceTag.objects.update_or_create(slug="propia", defaults={"name": "Propia"})
         response = self.client.get("/api/document/evidence-tags/")
         rows = response.data["results"] if isinstance(response.data, dict) else response.data
@@ -141,7 +146,11 @@ class PrincipalStageTagTestCase(APITestCase):
     como decisión de la operación: el mismo archivo puede ser anexo en otra."""
 
     def setUp(self):
-        self.owner = User.objects.create_user(email="owner@example.com", password="x", username="owner")
+        # La etiqueta de cada etapa sale de la configuración de la institución (fase 1).
+        caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.owner = User.objects.create_user(
+            email="owner@example.com", password="x", username="owner", organization=caf
+        )
         self.client.force_authenticate(self.owner)
         self.doc = Document.objects.create(owner=self.owner, name="IDO", slug="ido-doc")
         self.doc.evidence_tags.set([EvidenceTag.objects.get(slug="documento-operacion")])
@@ -206,3 +215,29 @@ class PrincipalStageTagTestCase(APITestCase):
     def test_a_document_that_is_not_the_principal_is_left_alone(self):
         response = self.client.put(self.tags_url, {"tags": ["ias"]}, format="json")
         self.assertEqual(response.data["tags"], ["ias"])
+
+
+class ContextoPaisExistenteTestCase(APITestCase):
+    """La ley de cambio climático y el reporte nacional que ya estaban en la
+    biblioteca se etiquetan (document/0023) y se vinculan por país."""
+
+    def _migrar(self):
+        from importlib import import_module
+
+        from django.apps import apps as django_apps
+
+        import_module("apps.document.migrations.0023_contexto_pais_en_la_biblioteca").aplicar(django_apps, None)
+
+    def test_existing_law_and_national_report_get_their_tags(self):
+        from apps.document.models import Document
+
+        owner = User.objects.create_user(email="lib@example.com", password="x")
+        ley = Document.objects.create(owner=owner, name="Ley N° 30754 — Ley Marco sobre Cambio Climático", slug="ley-pe", region="Perú")
+        btr = Document.objects.create(owner=owner, name="Primer BTR del Perú", slug="btr-pe", region="Perú")
+        cn = Document.objects.create(owner=owner, name="Documento", slug="cn-pe", region="Perú", topics=["comunicaciones nacionales"])
+        otro = Document.objects.create(owner=owner, name="Estudio sectorial", slug="otro-pe", region="Perú")
+        self._migrar()
+        self.assertEqual([t.slug for t in ley.evidence_tags.all()], ["ley-cambio-climatico"])
+        self.assertEqual([t.slug for t in btr.evidence_tags.all()], ["reporte-nacional"])
+        self.assertEqual([t.slug for t in cn.evidence_tags.all()], ["reporte-nacional"])
+        self.assertFalse(otro.evidence_tags.exists())

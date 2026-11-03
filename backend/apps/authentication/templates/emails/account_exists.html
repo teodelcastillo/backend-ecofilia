@@ -1,0 +1,20 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Ya tenés una cuenta en Ecofilia{% endblock %}
+
+{% block content %}
+  <p class="greeting">Hola, {{ first_name }}</p>
+
+  <p class="text">
+    Alguien intentó crear una cuenta en Ecofilia con este email, pero ya tenés una.
+    Si olvidaste tu contraseña, podés restablecerla.
+  </p>
+
+  <div class="btn-wrapper">
+    <a href="{{ reset_url }}" class="btn">Restablecer contraseña</a>
+  </div>
+
+  <p class="text">
+    Si no fuiste vos, ignorá este correo: tu cuenta no cambió.
+  </p>
+{% endblock %}

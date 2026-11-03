@@ -17,10 +17,12 @@ class RepositoryType(models.TextChoices):
 class RepositoryQuerySet(models.QuerySet):
     def for_user(self, user):
         """Return PUBLIC repositories, owned PRIVATE repos, and shared PRIVATE repos."""
+        from apps.user.access import public_reach_q
+
         if user.is_staff:
             return self
         return self.filter(
-            Q(repo_type=RepositoryType.PUBLIC)
+            (Q(repo_type=RepositoryType.PUBLIC) & public_reach_q(user))
             | Q(owner=user)
             | Q(shares__user=user)
         ).distinct()
@@ -90,9 +92,11 @@ class Repository(models.Model):
         return slug
 
     def can_view(self, user) -> bool:
+        from apps.user.access import public_reaches
+
         if user.is_staff:
             return True
-        if self.repo_type == RepositoryType.PUBLIC:
+        if self.repo_type == RepositoryType.PUBLIC and public_reaches(user, self.owner):
             return True
         if self.owner_id == user.id:
             return True

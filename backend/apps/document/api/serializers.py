@@ -104,7 +104,15 @@ class EvidenceTagSlugsField(serializers.Field):
         if not isinstance(data, (list, tuple)):
             self.fail("invalid")
         slugs = list(dict.fromkeys(str(s).strip() for s in data if str(s).strip()))
-        found = {t.slug: t for t in EvidenceTag.objects.filter(slug__in=slugs)}
+        # Dentro de las que ve quien etiqueta: globales más las de su
+        # institución. La etiqueta de otra institución no existe para él.
+        from apps.document.services import resolve_evidence_tags, visible_evidence_tags
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        found = resolve_evidence_tags(
+            slugs, visible_evidence_tags(user), getattr(user, "organization_id", None)
+        )
         missing = [slug for slug in slugs if slug not in found]
         if missing:
             self.fail("unknown", slugs=", ".join(missing))
@@ -237,6 +245,10 @@ class DocumentCreateSerializer(serializers.ModelSerializer):
         except Project.DoesNotExist:
             raise serializers.ValidationError("Project not found.")
         request = self.context.get('request')
+        # Quien no la ve recibe lo mismo que si no existiera: no confirmar
+        # operaciones de otra institución.
+        if request and not project.can_view(request.user):
+            raise serializers.ValidationError("Project not found.")
         if request and not project.can_edit(request.user):
             raise serializers.ValidationError(
                 "You do not have permission to add documents to this project."
@@ -364,6 +376,10 @@ class DocumentBulkCreateSerializer(serializers.Serializer):
         except Project.DoesNotExist:
             raise serializers.ValidationError("Project not found.")
         request = self.context.get('request')
+        # Quien no la ve recibe lo mismo que si no existiera: no confirmar
+        # operaciones de otra institución.
+        if request and not project.can_view(request.user):
+            raise serializers.ValidationError("Project not found.")
         if request and not project.can_edit(request.user):
             raise serializers.ValidationError(
                 "You do not have permission to add documents to this project."
@@ -751,12 +767,19 @@ class CategoryWriteSerializer(serializers.ModelSerializer):
 class EvidenceTagSerializer(serializers.ModelSerializer):
     """Etiqueta del catálogo con el que los pasos piden su evidencia.
 
-    ``group`` (principal / operacion / contexto / otro) sale del slug, para que
-    el portal filtre sin listas duras (ver ``apps.document.evidence_tag_groups``).
+    ``group`` sale de los ``evidence_tag_groups`` de la configuración de la
+    institución (ver ``apps.user.institution_config``), para que el portal
+    filtre sin listas duras. La etiqueta de una institución usa la de esa
+    institución; una global, la de quien mira (la vista la pasa en el contexto
+    como ``group_config``). Sin grupo: ``"otro"``.
     """
 
     document_count = serializers.IntegerField(read_only=True, required=False)
     group = serializers.SerializerMethodField()
+    # Null: global. Con slug: de esa institución, y sólo ella la ve.
+    organization_slug = serializers.SlugField(
+        source="organization.slug", read_only=True, allow_null=True, default=None,
+    )
 
     class Meta:
         model = EvidenceTag
@@ -769,14 +792,21 @@ class EvidenceTagSerializer(serializers.ModelSerializer):
             "is_seed",
             "position",
             "group",
+            "organization_slug",
             "document_count",
         )
-        read_only_fields = ("id", "slug", "is_seed", "group", "document_count")
+        read_only_fields = (
+            "id", "slug", "is_seed", "group", "organization_slug", "document_count",
+        )
 
     def get_group(self, obj) -> str:
-        from apps.document.evidence_tag_groups import evidence_tag_group
+        from apps.user import institution_config
 
-        return evidence_tag_group(obj.slug)
+        if obj.organization_id:
+            config = institution_config.effective_config(obj.organization)
+        else:
+            config = self.context.get("group_config") or institution_config.effective_config(None)
+        return institution_config.tag_group(config, obj.slug)
 
 
 class EvidenceTagWriteSerializer(serializers.ModelSerializer):
@@ -787,13 +817,29 @@ class EvidenceTagWriteSerializer(serializers.ModelSerializer):
     queda escrito en la definición de los workflows, así que no puede depender
     de lo que alguien tipee en un formulario. `is_seed` tampoco: distingue las
     etiquetas que provee Ecofilia y sólo se pone en las migraciones de semilla.
+
+    La institución tampoco la elige quien no es superadmin: la etiqueta que
+    agrega un miembro es de su institución. El superadmin manda
+    ``organization_slug`` (null o ausente: global). Ver la vista.
     """
+
+    organization_slug = serializers.SlugField(
+        required=False, allow_null=True, allow_blank=True, write_only=True,
+    )
 
     class Meta:
         model = EvidenceTag
-        fields = ("name", "description", "source_topics", "position")
+        fields = ("name", "description", "source_topics", "position", "organization_slug")
+
+    def _target_organization_id(self):
+        """La institución en la que queda la etiqueta (la fija la vista)."""
+        if self.instance is not None:
+            return self.instance.organization_id
+        return self.context.get("target_organization_id")
 
     def validate_name(self, value):
+        from apps.document.services import evidence_tags_for_organization
+
         name = (value or "").strip()
         if not name:
             raise serializers.ValidationError("El nombre no puede estar vacío.")
@@ -802,9 +848,49 @@ class EvidenceTagWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 "El nombre tiene que producir un identificador válido."
             )
-        qs = EvidenceTag.objects.filter(slug=slug)
+        # Único dentro de lo que ve la institución de destino (globales más las
+        # suyas), así un slug nunca resuelve a dos etiquetas para nadie. Una
+        # global nueva no puede chocar con la de ninguna institución.
+        organization_id = self._target_organization_id()
+        qs = (
+            evidence_tags_for_organization(organization_id)
+            if organization_id
+            else EvidenceTag.objects.all()
+        ).filter(slug=slug)
         if self.instance:
             qs = qs.exclude(pk=self.instance.pk)
         if qs.exists():
             raise serializers.ValidationError(f"Ya existe una etiqueta «{slug}».")
         return name
+
+    def validate(self, attrs):
+        organization_slug = attrs.pop("organization_slug", None)
+        # Mover una etiqueta de institución (fase 2): sólo superadmin, y sólo si
+        # el slug no choca con lo que ve la institución de destino.
+        if self.instance is not None and "organization_slug" in self.initial_data:
+            from apps.document.services import evidence_tags_for_organization
+            from apps.user.access import is_ecofilia_admin
+            from apps.user.models import Organization
+
+            request = self.context.get("request")
+            user = getattr(request, "user", None)
+            if not (getattr(user, "is_staff", False) or is_ecofilia_admin(user)):
+                raise serializers.ValidationError(
+                    {"organization_slug": "Sólo un superadmin cambia la institución de una etiqueta."}
+                )
+            target = None
+            if organization_slug:
+                target = Organization.objects.filter(slug=organization_slug).first()
+                if target is None:
+                    raise serializers.ValidationError(
+                        {"organization_slug": f"No existe la institución «{organization_slug}»."}
+                    )
+            pool = (
+                evidence_tags_for_organization(target.pk) if target else EvidenceTag.objects.all()
+            )
+            if pool.filter(slug=self.instance.slug).exclude(pk=self.instance.pk).exists():
+                raise serializers.ValidationError(
+                    {"organization_slug": f"Ya existe «{self.instance.slug}» para esa institución."}
+                )
+            attrs["organization"] = target
+        return attrs

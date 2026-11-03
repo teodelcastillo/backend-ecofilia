@@ -17,6 +17,20 @@ DEFAULT_FILE_STORAGE = 'django.core.files.storage.FileSystemStorage'
 # ]
 
 ALLOWED_HOSTS += ["localhost"]
+
+# En local, además del JWT, la sesión y la API navegable de DRF. Nunca en
+# producción (ver ``base.py``).
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,
+    "DEFAULT_RENDERER_CLASSES": (
+        "rest_framework.renderers.JSONRenderer",
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ),
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "apps.authentication.org_scope.OrgScopedJWTAuthentication",
+        "apps.authentication.org_scope.OrgScopedSessionAuthentication",
+    ),
+}
 INTERNAL_IPS = [
     "localhost",
 ]
