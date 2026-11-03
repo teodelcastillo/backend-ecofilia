@@ -25,8 +25,15 @@ producción (`main` 4e02713) y datos parecidos a los reales: ver
 
 ## 1. Relevamiento (sólo lectura)
 
-Con la imagen que está hoy en producción, sin cambiar nada. Responde tres
+Con la imagen que está hoy en producción, sin cambiar nada. Responde cuatro
 preguntas que deciden cómo queda cada persona después del deploy:
+- ¿hay **al menos un superadmin sin institución** (superuser o `role=admin`)? Es
+  quien entra a la consola y al admin de Django. **Un superuser con institución
+  pierde el admin de Django** con el deploy (ya hoy la API lo trata como un
+  miembro más de su institución). Si no queda ninguno sin institución, nadie
+  administra la plataforma: crear uno **antes** del deploy, desde el admin de
+  Django actual, sin institución y con contraseña propia. Es aditivo: no cambia
+  nada de lo que corre hoy;
 - ¿existe la institución `caf`? Si no, las skills `caf-*` quedan en `platform` y
   los usuarios de CAF dejan de verlas;
 - ¿quién tiene `role=admin` sin institución? Esas personas pasan a ser
@@ -110,14 +117,26 @@ en ECR (etiquetadas por SHA), así que la vuelta no reconstruye nada.
 
 ## 4. Salida
 
-1. Merge de `instituciones` → `main`, en back y en front, en el mismo momento.
-2. El workflow de deploy:
+1. **Justo antes**, un snapshot manual nuevo (como el del paso 2, con otra hora en
+   el nombre) y anotar la hora UTC del merge. Lo escrito entre el primer
+   snapshot y el merge queda cubierto, y además está la restauración a un punto
+   en el tiempo (ver nivel 3).
+2. **Primero el back:** merge de `instituciones` → `main` en el back.
+3. **Después, con el deploy del back en verde, el front:** merge en el front. El
+   front nuevo contra el back viejo rompe más que al revés.
+   - Antes de mergear el front, anotar en Vercel el deployment de producción
+     actual (Deployments → Production → «Current»): es al que se vuelve con
+     Instant Rollback.
+   - En la ventana en que el front viejo convive con el back nuevo, quien tenga
+     **MFA activo no puede entrar**: el login viejo no pide el código. Si nadie
+     lo tiene activo, no afecta a nadie.
+4. El workflow de deploy del back (el último tardó 23 minutos):
    - construye la imagen;
    - **corre `migrate`**: 15 migraciones, todas probadas de ida y de vuelta;
    - si `migrate` falla, **no despliega nada**: los servicios siguen con la
      imagen vieja (ver nivel 2);
    - despliega API, worker, worker interactivo y beat.
-3. Mirar el run de GitHub Actions y los logs:
+5. Mirar el run de GitHub Actions y los logs:
    `aws logs tail /ecs/ecofilia-api --follow --region us-east-2`.
 
 Cada migración corre en su propia transacción: si una falla, esa no deja nada a
@@ -158,7 +177,10 @@ default en la base (`user/0014`, `skill/0051`).
    ```
    Sólo deshace `user/0015` (el cifrado). El código nuevo sigue leyendo bien los
    secretos en claro mientras tanto.
-2. Volver cada servicio a su revisión anterior (del archivo del paso 3):
+2. Volver cada servicio a su revisión anterior (del archivo del paso 3). Hace
+   falta una identidad con `ecs:UpdateService`: el usuario de la salida
+   (`ecofilia-salida`) no lo tiene a propósito, así que lo corre el
+   administrador. Tener su sesión abierta durante la salida:
    ```bash
    while read svc td; do
      aws ecs update-service --cluster cluster-ecofilia --service "$svc" --task-definition "$td" --region us-east-2 >/dev/null
@@ -204,19 +226,34 @@ Las filas que ya existían vuelven exactamente a como estaban (probado). Si dos
 instituciones crearon etiquetas con el mismo slug, `document 0023` falla: en ese
 caso, nivel 3.
 
-### Nivel 3 — restaurar el snapshot (último recurso)
+### Nivel 3 — restaurar la base (último recurso)
 
-Para datos dañados. **Se pierde todo lo escrito después del snapshot.**
+Para datos dañados. Hay dos formas, las dos a una instancia **nueva**, nunca
+encima de `ecofilia-db`, que queda intacta para comparar. Las corre el
+administrador.
 
-1. Restaurar a una instancia **nueva**. Nunca encima de `ecofilia-db`, que queda
-   intacta para comparar:
-   ```bash
-   aws rds restore-db-instance-from-db-snapshot --db-instance-identifier ecofilia-db-restaurada \
-     --db-snapshot-identifier "$SNAP" --db-instance-class db.t4g.micro --no-publicly-accessible \
-     --vpc-security-group-ids <los de ecofilia-db> --db-subnet-group-name <el de ecofilia-db> --region us-east-2
-   aws rds wait db-instance-available --db-instance-identifier ecofilia-db-restaurada --region us-east-2
-   ```
-   (los dos `<...>` salen de `describe-db-instances` de `ecofilia-db`).
+- **A un punto en el tiempo** (preferida: pierde menos). `ecofilia-db` tiene 14
+  días de backups automáticos; se restaura al minuto anterior a la hora del
+  merge anotada en el paso 4:
+  ```bash
+  aws rds restore-db-instance-to-point-in-time --source-db-instance-identifier ecofilia-db \
+    --target-db-instance-identifier ecofilia-db-restaurada --restore-time <hora UTC del merge menos 1 minuto> \
+    --db-instance-class db.t4g.small --no-publicly-accessible \
+    --vpc-security-group-ids sg-0748a16a26bf7c2c3 --db-subnet-group-name ecofilia-rds-subnets --region us-east-2
+  ```
+- **Desde el snapshot manual** (si lo anterior falla). Se pierde lo escrito
+  después del snapshot:
+  ```bash
+  aws rds restore-db-instance-from-db-snapshot --db-instance-identifier ecofilia-db-restaurada \
+    --db-snapshot-identifier "$SNAP" --db-instance-class db.t4g.small --no-publicly-accessible \
+    --vpc-security-group-ids sg-0748a16a26bf7c2c3 --db-subnet-group-name ecofilia-rds-subnets --region us-east-2
+  ```
+
+En los dos casos:
+1. Esperar a que esté lista
+   (`aws rds wait db-instance-available --db-instance-identifier ecofilia-db-restaurada --region us-east-2`).
+   En el ensayo del 3 de noviembre de 2026, la restauración del snapshot coincidió
+   con producción: mismos conteos, pgvector 0.8.0 y 154 migraciones.
 2. Volver los servicios a las revisiones anteriores (nivel 1, paso 2).
 3. Apuntar `POSTGRES_HOST` en `ecofilia/prod` al endpoint de la restaurada y forzar
    un redeploy de los cuatro servicios
