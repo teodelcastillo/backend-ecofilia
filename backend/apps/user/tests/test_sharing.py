@@ -37,6 +37,11 @@ class ShareTargetTestCase(APITestCase):
         response = self._share_project(self.owner, self.colleague.email)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
 
+    def test_email_is_matched_ignoring_case_and_spaces(self):
+        response = self._share_project(self.owner, "  Colega@CAF.com ")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.assertEqual(self.project.shares.get().user, self.colleague)
+
     def test_member_shares_with_ecofilia_staff(self):
         response = self._share_project(self.owner, self.staff.email)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)

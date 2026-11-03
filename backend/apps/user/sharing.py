@@ -77,7 +77,10 @@ def resolve_share_target(sharer, email: str, organization_id=None):
     todos los casos de rechazo (regla 2).
     """
     User = get_user_model()
-    target = User.objects.filter(email=email).first()
+    # Los emails se guardan en minúsculas; quien comparte puede escribirlo con
+    # mayúsculas o espacios y la cuenta existe igual.
+    email = (email or "").strip().lower()
+    target = User.objects.filter(email__iexact=email).first()
     if target is None or not can_share_with(sharer, target, organization_id):
         raise serializers.ValidationError({"user_email": SHARE_TARGET_UNAVAILABLE})
     return target
