@@ -836,6 +836,195 @@ distintos de CAF y de `otra`.
 
 ---
 
+## Plantilla del informe y estilo del portal — pedido del front (pendiente de implementar)
+
+**Estado:** el front ya lo tiene hecho y probado. Mientras el back no lo
+implemente, detecta que falta y **no ofrece guardar**: muestra la plantilla
+vigente en vista previa y avisa que todavía no se puede guardar. CAF no
+necesita nada: sin plantilla propia, el front usa la del IET, idéntica a la de
+siempre.
+
+### Para qué
+
+Hasta ahora la plantilla del informe (en CAF, el IET) estaba fija en el código
+del front, con los textos y el formato de CAF. Con esto el superadmin arma, por
+institución:
+
+- la plantilla de su informe: portada, membrete, secciones y estilo del Word;
+- el estilo de su portal: color principal, logo y nombre del encabezado.
+
+### Endpoints
+
+**No hay endpoints nuevos.** Cambia la forma de la configuración en los que ya
+existen:
+
+| Endpoint | Cambio |
+|---|---|
+| `GET /api/organizations/me/config/` y `GET /api/organizations/{slug}/config/` | `config.report_template` **siempre presente**: el objeto guardado o `null`. Así el front sabe que el back lo acepta |
+| `PUT /api/organizations/{slug}/config/` | Acepta `report_template` (objeto o `null`) y las tres claves nuevas de `branding` |
+| `GET` y `PUT /api/platform/config/{public|template}/` | Lo mismo. Se validan como «sin institución», igual que hoy |
+| `POST /api/admin/organizations/` con `from_template: true` | La configuración nueva copia `report_template` y el `branding` nuevo de la plantilla, como copia el resto |
+
+**Permisos:** los de la configuración, sin cambios.
+
+- **Escribir:** sólo el superadmin; un miembro recibe 403.
+- **Leer:** el miembro y el superadmin (quien no es miembro recibe 404).
+
+La plantilla no tiene datos de operaciones.
+
+**Versión:** sigue siendo `1`, porque todo lo nuevo es opcional. Una
+configuración sin estas claves sigue siendo válida.
+
+### `branding`: tres claves opcionales
+
+| Clave | Tipo | Regla | Sin valor |
+|---|---|---|---|
+| `portal_title` | string | se guarda recortado; vacío = sin valor | el front usa `display_name` («Asistente Virtual DATBC» con el marco `caf-datbc`) |
+| `primary_color` | string | hexadecimal de 6 dígitos sin `#` (`1D4ED8`); se guarda en mayúsculas | el color de la plataforma |
+| `portal_logo_url` | string | ruta del front (`/…`) o URL `https://` | la hoja de Ecofilia |
+
+El front no manda las claves vacías. El back **no las devuelve** si no tienen valor.
+
+### `report_template`
+
+`null` (o ausente al escribir) = sin plantilla propia.
+
+```json
+{
+  "title": "INFORME DE EVALUACIÓN TÉCNICA DATBC",
+  "subtitle": "Inventario de Operaciones (IDO)",
+  "file_prefix": "IET",
+  "assistant_name": "IET DATBC — Evaluación Técnica de la Operación",
+  "letterhead": {
+    "logo_url": "/images/caf-logo.png",
+    "logo_width": 180,
+    "logo_height": 31,
+    "lines": ["Informe de Evaluación Técnica DATBC", "Etapa de Inventario de Operaciones (IDO)"]
+  },
+  "cover": {
+    "intro": "…",
+    "structure_lead": "El informe comprende las siguientes secciones:",
+    "structure": ["Sección A: Descripción de la operación", "…"],
+    "disclaimer": "…"
+  },
+  "sections": [
+    {
+      "key": "A", "heading": "SECCIÓN A. DESCRIPCIÓN DE LA OPERACIÓN", "intro": "",
+      "source": "operacion", "include_empty_fields": true, "include_objective": true,
+      "conclusion": null, "groups": [], "inserts": [], "table_layout": "mitades",
+      "closing_heading": "", "closing": ""
+    },
+    {
+      "key": "D", "heading": "SECCIÓN D. …", "intro": "…", "source": "analisis",
+      "include_empty_fields": false, "include_objective": true, "conclusion": null,
+      "groups": [{"number": "1", "heading": "D.1. Enfoque de Transacción — Objetivo 1: …"}],
+      "inserts": [], "table_layout": "ultima_ancha", "closing_heading": "", "closing": ""
+    },
+    {
+      "key": "E", "heading": "SECCIÓN E. …", "intro": "", "source": "analisis",
+      "include_empty_fields": false, "include_objective": true, "conclusion": "criterios",
+      "groups": [], "inserts": [], "table_layout": null,
+      "closing_heading": "E.4. Registro y Trazabilidad del Informe",
+      "closing": "**Participación de la DATBC:** … Link a FOCUS: {{enlace:link_focus}}"
+    }
+  ],
+  "style": {
+    "body_font": "Aptos", "display_font": "Aptos Display",
+    "text_color": "000000", "heading_color": "2E74B5", "subheading_color": "005288",
+    "accent_color": "13B67E", "table_header_color": "E7F5EF", "table_border_color": "D8E5E0"
+  }
+}
+```
+
+| Campo | Tipo | Reglas |
+|---|---|---|
+| `title` | string | no vacío |
+| `subtitle`, `file_prefix`, `assistant_name` | string | pueden ser `""` |
+| `letterhead.logo_url` | string | `""`, ruta del front (`/…`), URL `https://` o `data:image/png;base64,…` / `data:image/jpeg;base64,…` |
+| `letterhead.logo_width` | número | `0 < x ≤ 600` |
+| `letterhead.logo_height` | número | `0 < x ≤ 200` |
+| `letterhead.lines` | lista de string | se descartan las vacías |
+| `cover.intro`, `cover.structure_lead`, `cover.disclaimer` | string | pueden ser `""`; `intro` es Markdown |
+| `cover.structure` | lista de string | se descartan las vacías; vacía = el front usa los `heading` |
+| `sections` | lista | **al menos una**; a lo sumo **una** con `source: "operacion"` |
+| `sections[].key` | string | `^[A-Z]{1,3}$` o `"*"`; única; **`"S"` reservada** (pasos internos del asistente). `"*"` sólo con `source: "analisis"` |
+| `sections[].heading` | string | no vacío |
+| `sections[].intro` | string | Markdown, puede ser `""` |
+| `sections[].source` | string | `"operacion"` o `"analisis"` |
+| `sections[].include_empty_fields`, `include_objective` | bool | default `false` y `true` |
+| `sections[].conclusion` | string \| null | `"criterios"`, `"componentes"` o `null` |
+| `sections[].groups[]` | `{number, heading}` | `number` dígitos, único en la sección; `heading` no vacío |
+| `sections[].inserts[]` | `{after_step, heading, instruction}` | `after_step` entero ≥ 1 (no bool); `heading` no vacío |
+| `sections[].table_layout` | string \| null | `"mitades"`, `"ultima_ancha"` o `null` |
+| `sections[].closing_heading`, `closing` | string | pueden ser `""`; `closing` es Markdown con variables `{{operacion}}`, `{{nota:clave}}`, `{{enlace:clave}}` (el back no las interpreta) |
+| `style.*_font` | string | no vacío |
+| `style.*_color` | string | hexadecimal de 6 dígitos sin `#`; se guarda en mayúsculas |
+
+Una clave desconocida en `report_template`, en una sección o en `branding` es error.
+
+**El back guarda la plantilla, no la interpreta.** El armado del informe y del
+Word es del front:
+
+- cada paso del asistente cae en la sección cuya `key` trae al principio del título («B.1. …» va a la B);
+- `*` se lleva los que no reclama otra sección;
+- los pasos «S.n.» nunca van al informe.
+
+### Errores
+
+Igual que el resto de la configuración: **400** con todos los errores juntos y la ruta de cada uno.
+
+```json
+{"config": [
+  "report_template.title: no puede estar vacío.",
+  "report_template.sections[1].key: «S» está reservada para los pasos internos del asistente.",
+  "report_template.sections[2].key: «B» está repetida.",
+  "report_template.style.heading_color: un color hexadecimal de seis dígitos, sin «#».",
+  "branding.primary_color: un color hexadecimal de seis dígitos, sin «#»."
+]}
+```
+
+**Mensajes:** los del front, para que la consola los muestre igual que los suyos.
+
+| Ruta | Mensaje |
+|---|---|
+| `report_template` | `tiene que ser un objeto o null.` |
+| `report_template.sections` | `tiene que haber al menos una sección.` · `puede haber una sola sección con los datos de la operación.` |
+| `….key` | `una a tres mayúsculas (A, B, IA) o «*».` · `«S» está reservada para los pasos internos del asistente.` · `«X» está repetida.` |
+| `report_template.sections[i]` | `la sección «*» tiene que ser de análisis.` |
+| `….heading`, `report_template.title`, `….groups[j].heading`, `….inserts[j].heading`, `style.*_font` | `no puede estar vacío.` |
+| `….groups[j].number` | `tiene que ser un número.` · `«n» está repetido.` |
+| `….inserts[j].after_step` | `tiene que ser un número de paso (1 o más).` |
+| `….source` / `….conclusion` / `….table_layout` | `tiene que ser operacion o analisis.` / `criterios, componentes o null.` / `mitades, ultima_ancha o null.` |
+| `style.*_color`, `branding.primary_color` | `un color hexadecimal de seis dígitos, sin «#».` |
+| `report_template.letterhead.logo_url` | `una URL https, una ruta del sitio o una imagen PNG/JPEG.` |
+| `report_template.letterhead` | `el logo mide hasta 600 × 200 píxeles.` |
+| `branding.portal_logo_url` | `tiene que ser una ruta del front (/...) o una URL https.` |
+
+**Implementación de referencia:** la validación en Python que espeja la del
+front está en el repo del front, en `docs/referencia-back-plantilla-informe.py`.
+Expone `report_template(value, errors)` y `branding_opcionales(value, errors)`.
+Engancharla en `apps/user/institution_config.py`:
+
+- `"report_template": None` en `BASE_CONFIG`, así queda en `TOP_LEVEL_KEYS` y el GET la devuelve siempre;
+- en `validate_config`: `config["report_template"] = report_template(config.get("report_template"), errors)`;
+- en `_branding`: aceptar las tres claves y sumar `**branding_opcionales(value, errors)` al resultado.
+
+**Auditoría:** el cambio queda en el `config.organization.updated` /
+`config.platform.updated` que ya se registra.
+
+**Migración:** ninguna. CAF y las instituciones existentes quedan con
+`report_template: null`, y el front usa la plantilla del asistente del IET,
+idéntica a la de antes.
+
+### Cómo se comprueba
+
+- `pnpm test:contrato` en el front: «API › la configuración guarda y devuelve el estilo y la plantilla» deja de saltearse en cuanto el GET devuelve `report_template`.
+- Esa prueba verifica:
+  - la ida y vuelta de la configuración;
+  - que el miembro la lee;
+  - el 400 con «S» reservada;
+  - el 403 a un miembro que intenta escribirla.
+
 ## Seguridad — lo que cambia para el front
 
 Detalle y evidencia en `backend/docs/seguridad.md`.
