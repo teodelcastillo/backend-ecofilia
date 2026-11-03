@@ -42,9 +42,12 @@ todo vuelve a la cola por defecto, sin perder tareas.
 
 ### Base de datos
 
-- **RDS PostgreSQL 17.4** — `ecofilia-db.cjsem8ewibzq.us-east-2.rds.amazonaws.com`
-- Instancia: `db.t4g.micro` | DB: `postgres` | Sin acceso público
-- Extensión: `pgvector`
+- **RDS PostgreSQL 17.9** — `ecofilia-db.cjsem8ewibzq.us-east-2.rds.amazonaws.com`
+- Instancia: `db.t4g.small`, single-AZ | DB: `postgres` | Sin acceso público | Cifrada
+- Subnet group `ecofilia-rds-subnets` | Security group `sg-0748a16a26bf7c2c3`
+- **Protección contra borrado activa** y backups automáticos con 14 días de restauración a un punto en el tiempo
+- Extensión: `pgvector` 0.8.0
+- Relevado el 3 de noviembre de 2026; el bucket de documentos en S3 no tiene versionado
 
 ### Otros recursos
 
@@ -121,7 +124,7 @@ aws secretsmanager get-secret-value --secret-id ecofilia/prod --region us-east-2
 
 ## CI/CD
 
-Push a `main` con cambios en `backend/**` → GitHub Actions → build Docker → push ECR → deploy ECS (los 3 servicios).
+Push a `main` con cambios en `backend/**` → GitHub Actions → build Docker → push ECR → `migrate` (si falla, no se despliega nada) → deploy ECS de los 4 servicios (API, worker, worker interactivo y beat). Tarda unos 20-25 minutos.
 
 Workflow: `.github/workflows/deploy.yml`
 Rol IAM: `arn:aws:iam::028780196116:role/ecofilia-github-deploy` (OIDC, sin credenciales estáticas)
