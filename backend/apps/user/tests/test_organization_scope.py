@@ -30,8 +30,14 @@ class OrganizationScopeTestCase(APITestCase):
         self.caf_member = User.objects.create_user(email="m@caf.com", password="x", organization=self.caf)
         self.caf_admin = User.objects.create_user(email="admin@caf.com", password="x", organization=self.caf, role="admin")
         self.other_member = User.objects.create_user(email="m@otro.com", password="x", organization=self.other)
-        self.ecofilia_admin = User.objects.create_user(email="admin@ecofilia.site", password="x", role="admin")
-        self.ecofilia_staff = User.objects.create_user(email="staff@ecofilia.site", password="x", is_staff=True)
+        # Las acciones de plataforma exigen MFA activo (ADMIN_REQUIRE_MFA).
+        self.ecofilia_admin = User.objects.create_user(
+            email="admin@ecofilia.site", password="x", role="admin", mfa_enabled=True
+        )
+        # Sin MFA, el staff no tiene alcance de plataforma (ADMIN_REQUIRE_MFA).
+        self.ecofilia_staff = User.objects.create_user(
+            email="staff@ecofilia.site", password="x", is_staff=True, mfa_enabled=True
+        )
 
         self.caf_op = Project.objects.create(owner=self.caf_member, name="Operación CAF")
         self.other_op = Project.objects.create(owner=self.other_member, name="Operación de otro cliente")
@@ -63,8 +69,17 @@ class OrganizationScopeTestCase(APITestCase):
         self.assertEqual(self.caf_admin.first_name, "Ana")
         self.assertTrue(self.caf_admin.is_staff, "el alcance de la API no debe tocar la base")
 
-    def test_ecofilia_staff_keeps_global_access(self):
+    def test_staff_alone_is_not_global_access(self):
+        # Acceso global es ser superadmin; ``is_staff`` sólo abre el admin de
+        # Django. Antes un staff veía todas las instituciones.
         self._as(self.ecofilia_staff)
+        self.assertFalse({self.caf_op.slug, self.other_op.slug} & self._project_slugs())
+
+    def test_staff_that_is_superadmin_keeps_global_access(self):
+        # El staff de Ecofilia que tiene que ver todo es superadmin: role=admin
+        # sin institución (o superusuario), con MFA.
+        User.objects.filter(pk=self.ecofilia_staff.pk).update(role="admin")
+        self._as(User.objects.get(pk=self.ecofilia_staff.pk))
         self.assertTrue({self.caf_op.slug, self.other_op.slug} <= self._project_slugs())
 
     def test_admin_refuses_staff_with_organization(self):
@@ -102,7 +117,10 @@ class OrganizationScopeTestCase(APITestCase):
         self.assertTrue(doc.is_public)
 
     def test_org_admin_does_not_see_other_clients(self):
-        skill = Skill.objects.create(name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"])
+        # Público: asignado a dos clientes, los dos lo ven (fase 0).
+        skill = Skill.objects.create(
+            name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"], scope="public"
+        )
         self.caf.enabled_skills.add(skill)
         self.other.enabled_skills.add(skill)
         self._as(self.caf_admin)

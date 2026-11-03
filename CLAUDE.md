@@ -42,9 +42,12 @@ todo vuelve a la cola por defecto, sin perder tareas.
 
 ### Base de datos
 
-- **RDS PostgreSQL 17.4** — `ecofilia-db.cjsem8ewibzq.us-east-2.rds.amazonaws.com`
-- Instancia: `db.t4g.micro` | DB: `postgres` | Sin acceso público
-- Extensión: `pgvector`
+- **RDS PostgreSQL 17.9** — `ecofilia-db.cjsem8ewibzq.us-east-2.rds.amazonaws.com`
+- Instancia: `db.t4g.small`, single-AZ | DB: `postgres` | Sin acceso público | Cifrada
+- Subnet group `ecofilia-rds-subnets` | Security group `sg-0748a16a26bf7c2c3`
+- **Protección contra borrado activa** y backups automáticos con 14 días de restauración a un punto en el tiempo
+- Extensión: `pgvector` 0.8.0
+- Relevado el 3 de noviembre de 2026; el bucket de documentos en S3 no tiene versionado
 
 ### Otros recursos
 
@@ -121,7 +124,7 @@ aws secretsmanager get-secret-value --secret-id ecofilia/prod --region us-east-2
 
 ## CI/CD
 
-Push a `main` con cambios en `backend/**` → GitHub Actions → build Docker → push ECR → deploy ECS (los 3 servicios).
+Push a `main` con cambios en `backend/**` → GitHub Actions → build Docker → push ECR → `migrate` (si falla, no se despliega nada) → deploy ECS de los 4 servicios (API, worker, worker interactivo y beat). Tarda unos 20-25 minutos.
 
 Workflow: `.github/workflows/deploy.yml`
 Rol IAM: `arn:aws:iam::028780196116:role/ecofilia-github-deploy` (OIDC, sin credenciales estáticas)
@@ -156,6 +159,8 @@ Backend configurado con `django-ses`. Templates HTML en `apps/authentication/tem
 **Emails implementados:**
 - `verification.html` — confirmación de cuenta al registrarse
 - `password_reset.html` — restablecimiento de contraseña
+- `invitation.html` — invitación a una institución (fase 5): lleva a elegir la contraseña
+- `account_exists.html` — a quien intenta registrarse con un email que ya tiene cuenta
 
 **Variables de entorno necesarias en ECS (Secrets Manager o task definition):**
 ```
@@ -278,9 +283,133 @@ python manage.py reprocess_documents --status partial,error,processing
 
 ---
 
+## Aislamiento entre instituciones (fase 0)
+
+Ninguna información de una institución la ve otra. Tres niveles de acceso:
+superadmin de Ecofilia (`apps.user.access.is_ecofilia_admin`: superuser o
+`role=admin`, sin organización), miembro de una institución y usuario público
+sin institución.
+
+- **Skills** (`Skill.scope`): `platform` (sólo superadmin), `public`,
+  `organization` (con `Skill.organization`) y `user` (sólo su `owner`). La regla
+  vive en `apps/skill/visibility.py` y la usan el listado, el detalle y todas
+  las acciones que corren o continúan una corrida. Una institución `restricted`
+  ve de las suyas sólo las de `enabled_for_organizations`. El alcance lo cambia
+  sólo el superadmin (`PATCH /api/skills/{slug}/` con `scope` /
+  `organization_slug`).
+- **Etiquetas de evidencia** (`EvidenceTag.organization`): sin institución es
+  global (instrumentos de país); con institución, sólo la ve esa. El slug es
+  único por institución, y todo slug se resuelve dentro de las globales más las
+  de la institución de la operación (`apps/document/services.py`:
+  `evidence_tags_for_organization`, `resolve_evidence_tags`).
+- **Aprendizaje por institución**: `GET /api/projects/evaluation-records/`
+  exige `?organization=<slug>`; las versiones de definición de una skill de
+  institución sólo pueden venir informadas por ella
+  (`SkillDefinitionVersion.informed_by_organization`).
+
+La batería que lo verifica es `apps/project/tests/test_aislamiento.py`.
+
+### Configuración de cada institución (fase 1)
+
+Lo que hace distinto al portal de una institución vive en `Organization.config`,
+no en el código:
+- la marca;
+- las etapas, y lo que lanza cada una;
+- la etiqueta del documento principal por etapa;
+- qué workflow es el informe, el guiado y la lectura;
+- los grupos de etiquetas;
+- los criterios de evaluación.
+
+Se lee con `apps.user.institution_config.effective_config` y se escribe validada
+(`validate_config`, `PUT /api/organizations/{slug}/config/`). Sin configuración
+propia rige la base, que no tiene etapas ni workflows: **una operación sin
+institución, o de una institución sin configurar, no lanza nada de CAF**. La de
+CAF la siembra `user/0009_config_caf` con los valores que tenía el código. En
+tests, una operación de CAF necesita esa configuración
+(`apps.user.tests.fixtures.caf_config`).
+
+### Consola, portal genérico, /app y alta (fases 2 a 5)
+
+- **Consola del superadmin** (`apps/user/api/admin_views.py`, `/api/admin/`): instituciones, usuarios por
+  nivel, alcance de skills en lote. **La consola no crea superadmins**: `role=admin` sin institución es
+  superadmin de toda la plataforma, así que un cambio que deje a alguien así da 400.
+- **Portal genérico**: `home_path` en `/api/auth/me/` (`/admin`, `/{slug}` o `/app`) y
+  `GET /api/organizations/` con los portales que cada uno puede abrir. Ningún endpoint asume CAF.
+- **Configuraciones de plataforma** (`PlatformConfig`): `public` rige `/app` (usuarios y operaciones sin
+  institución); `template` es el portal base y el punto de partida de una institución nueva.
+- **Alta** (`apps/user/onboarding.py`, `POST /api/admin/organizations/`): todo o nada. Copia skills de
+  Ecofilia (nunca de otra institución), arma la configuración desde la plantilla e invita miembros. El
+  enlace de la invitación es el de restablecer contraseña, que ahora también verifica el email.
+
+**Por ahora ninguna skill de Ecofilia es pública** (decisión de producto, 2 de
+noviembre de 2026): quedan en `platform` y `/app` no ofrece skills de Ecofilia.
+No correr `--hacer-publicas` hasta que se decida.
+
+```bash
+# Qué skills hay en cada alcance, y abrir al público las confirmadas
+python manage.py listar_skills_alcance
+python manage.py listar_skills_alcance --hacer-publicas slug1,slug2 --dry-run
+# Usuarios por nivel (superadmin / institución / público)
+python manage.py listar_usuarios_por_nivel
+```
+
+### Seguridad: roles, permisos y protección de la información
+
+Detalle, evidencia y lo que depende de AWS en `backend/docs/seguridad.md`. Lo
+esencial al tocar código:
+- **La API acepta sólo JWT.** Basic y sesión salteaban MFA, email verificado y
+  bloqueo; la sesión existe sólo en `dev.py`.
+- **MFA obligatorio: implementado y apagado por ahora** (`ADMIN_REQUIRE_MFA`,
+  default `False`, decisión de producto). Prendido: sin MFA no hay poder de
+  plataforma. Un superadmin o un staff sin MFA es un
+  usuario común para la API (`require_mfa_for_privileges`) y para el admin de
+  Django (`admin_login.py`). Interruptor de emergencia: `ADMIN_REQUIRE_MFA`.
+- **`is_staff` solo no es acceso global.** Muchos chequeos usan `is_staff` como
+  «ve todo»; al autenticar, `staff_is_not_global` se lo saca en memoria a quien
+  no es superadmin. Para ver todo hay que ser superadmin (con MFA, si se exige).
+- **El secreto MFA va cifrado** (`services/secret_box.py`): leerlo y escribirlo
+  sólo con `MFAService.secret_of` / `store_secret`, nunca `user.mfa_secret` a
+  mano. Hoy con una clave derivada de `SECRET_KEY` (**no rotarla**); antes de la
+  auditoría, `MFA_ENCRYPTION_KEYS` + `recifrar_secretos_mfa`.
+- **Columnas nuevas obligatorias llevan `db_default`.** Así el código anterior
+  sigue funcionando sobre el esquema nuevo y volver atrás un deploy es
+  redesplegar la imagen anterior. Salida y vuelta atrás:
+  `backend/docs/salida-instituciones.md`.
+- **Restablecer la contraseña no toca el MFA**, y el registro responde lo mismo
+  exista o no el email (con el mismo trabajo, para no delatarlo por tiempo).
+- **`backend/poetry.lock` está versionado** y CI corre `poetry check --lock`: al
+  cambiar `pyproject.toml`, regenerarlo con `poetry lock`.
+- **Toda acción privilegiada se audita** con `apps.user.audit.record`, dentro de
+  su transacción. Cada pedido de un superadmin queda como `superadmin.access`.
+  `AuditEvent` no se edita ni se borra.
+- **«Público» no sale de su institución** (`public_reach_q`), y **lo de una
+  institución sólo lo ve quien es de ella**, aunque lo haya creado
+  (`institution_boundary_q`).
+- **Una institución con miembros u operaciones no se borra** (`PROTECT`), y quien
+  pierde su institución siendo `admin` baja a `member`. Con `role=admin` y sin
+  institución, es superadmin.
+- `apps/user/tests/test_seguridad.py` tiene un barrido de todas las rutas GET:
+  una ruta nueva que filtre datos de otra institución lo hace fallar.
+
+### Contrato y prueba local
+
+El contrato de API de todo el plan de instituciones (fases 0 a 5) vive en
+`backend/docs/contrato-instituciones.md`, con una sección por fase. Se escribe
+**antes** de implementar cada fase y la sesión del frontend programa contra
+ese archivo: si algo cambia, se cambia ahí.
+
+Ramas: `main` es producción y no recibe nada hasta la salida. Todo el plan va
+por PR a `instituciones` (en este repo y en el del front).
+
+Cómo levantar el backend local, el comando de datos de prueba
+(`seed_local_instituciones`) y los usuarios: ver el contrato.
+
+---
+
 ## Variables de entorno clave (en Secrets Manager `ecofilia/prod`)
 
 `SECRET_KEY`, `JWT_SIGNING_KEY`, `OPENAI_API_KEY`, `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_NAME`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+(`MFA_ENCRYPTION_KEYS` cuando se exija MFA)
 
 Variables de configuración (en task definition ECS):
 `DJANGO_SETTINGS_MODULE=main.settings.prod`, `JWT_ACCESS_TTL_MINUTES`, `JWT_REFRESH_TTL_DAYS`, `SQS_QUEUE_URL`, `AWS_STORAGE_BUCKET_NAME`

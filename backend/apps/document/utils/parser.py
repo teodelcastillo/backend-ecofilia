@@ -188,10 +188,13 @@ def _read_pdf_pypdf2(path: str) -> ParseResult:
     Emits no <<<PAGE:N>>> markers, so chunks parsed this way have no page
     number — the ``parser`` field records which path produced the text.
     """
-    import PyPDF2
+    # ``pypdf``, el sucesor mantenido de PyPDF2: PyPDF2 está abandonado y su
+    # última versión se cuelga en un bucle infinito con PDFs armados a
+    # propósito (PYSEC-2026-1835), lo que dejaba trabado un worker de ingesta.
+    import pypdf
 
     with open(path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
+        reader = pypdf.PdfReader(f)
         pages: list[str] = []
         pages_with_text = 0
         for p in reader.pages:
@@ -207,7 +210,7 @@ def _read_pdf_pypdf2(path: str) -> ParseResult:
             text="\n".join(pages).strip(),
             page_count=len(reader.pages),
             pages_with_text=pages_with_text,
-            parser="pypdf2",
+            parser="pypdf",
         )
 
 
@@ -265,7 +268,7 @@ def _parse_file(file_path: str) -> ParseResult:
 
     Supported:
       - .txt     (UTF-8, with 'replace' for bad bytes)
-      - .pdf     (PyMuPDF for layout-aware extraction + header/footer removal; PyPDF2 fallback)
+      - .pdf     (PyMuPDF for layout-aware extraction + header/footer removal; pypdf fallback)
       - .doc/.docx (python-docx)
     """
     _, ext = os.path.splitext(file_path)

@@ -82,18 +82,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pypoetry
-          # No hay poetry.lock en el repo, así que la clave sale de pyproject.
-          # Sin lock, Poetry resuelve de cero en cada corrida: más lento y no
-          # reproducible entre builds. Vale la pena commitear el lock — el
-          # Dockerfile de producción también lo copia con `poetry.lock*`, o sea
-          # que hoy la imagen se construye sin él.
-          key: poetry-${{ runner.os }}-${{ hashFiles('backend/pyproject.toml') }}
+          # La clave sale del lock: mismas versiones, mismo caché.
+          key: poetry-${{ runner.os }}-${{ hashFiles('backend/poetry.lock') }}
           restore-keys: poetry-${{ runner.os }}-
 
       - name: Instalar dependencias
         working-directory: backend
         run: |
           poetry config virtualenvs.create false
+          # Si alguien cambió pyproject.toml sin regenerar el lock, se corta
+          # acá con un mensaje claro y no en el build de la imagen.
+          poetry check --lock
           poetry install --no-root --only main
 
       # ── Bloqueante ────────────────────────────────────────────────────

@@ -289,9 +289,12 @@ class ProjectCreationSkillAssignmentTestCase(APITestCase):
     """
 
     def setUp(self):
+        # Un superadmin de Ecofilia, sin organización a propósito: desde la
+        # fase 0 un usuario común no habilita en su operación una skill de
+        # plataforma (no la ve).
         self.staff = User.objects.create_user(
-            email="staff@ecofilia.com", password="secret123", username="staff",
-        )  # sin organización, a propósito
+            email="staff@ecofilia.com", password="secret123", username="staff", role="admin",
+        )
         self.client.force_authenticate(self.staff)
         self.agent = Skill.objects.create(
             name="Agente CAF", skill_type=SkillType.COPILOT, owner=None,

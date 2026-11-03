@@ -11,8 +11,10 @@ contarlas y compararlas:
 - ``externo``: el informe que el ejecutivo escribió afuera y subió —también los
   IET históricos que carga el staff—, con lo que leyó de él la lectura.
 
-Cada registro trae los ocho CT y los dos objetivos con ``valor`` y
-``fundamento``. Lo que la fuente no dice queda en ``NO_CONSTA``, no vacío, para
+Cada registro trae los criterios de la institución de la operación
+(``evaluation.criteria`` de su configuración; en CAF, los ocho CT y los dos
+objetivos) con ``valor`` y ``fundamento``. Una institución sin criterios no
+tiene registro. Lo que la fuente no dice queda en ``NO_CONSTA``, no vacío, para
 poder contar qué tan completos vienen los informes hechos por fuera.
 
 No se guarda: se arma al pedirlo, así nunca queda desfasado de lo que cambió.
@@ -23,21 +25,24 @@ import re
 
 from apps.project.models import Project, ProjectStageReport, ProjectStageReportOrigin as Origin
 from apps.project.services.caf_criteria import (
-    CRITERIOS,
     ecofilia_determinations,
     ecofilia_green_components,
 )
+from apps.user import institution_config
 
 ORIGEN_IA = "ia"
 ORIGEN_EJECUTIVO = "ejecutivo"
 ORIGEN_EXTERNO = "externo"
 
 NO_CONSTA = "No consta"
-STAGES = ("ido_cci", "dec")
 # Marca de las operaciones creadas por la carga de un IET histórico.
 HISTORICO_KEY = "historico"
 
-_CRITERIO_KEYS = [key for key, _ in CRITERIOS]
+
+def criterio_keys(project: Project) -> list[str]:
+    """Las claves de los criterios de la institución de la operación, en orden."""
+    config = institution_config.config_for_project(project)
+    return [c["key"] for c in institution_config.criteria(config)]
 
 
 def _text(value) -> str:
@@ -53,10 +58,10 @@ def key_de_etiqueta(label: str) -> str | None:
     return f"objetivo_{objetivo.group(1)}" if objetivo else None
 
 
-def _criterios(valores: dict[str, dict]) -> dict[str, dict]:
-    """Los diez criterios, en orden; lo que falta, «No consta»."""
+def _criterios(valores: dict[str, dict], keys: list[str]) -> dict[str, dict]:
+    """Los criterios de la institución, en orden; lo que falta, «No consta»."""
     out = {}
-    for key in _CRITERIO_KEYS:
+    for key in keys:
         item = valores.get(key) or {}
         valor = _text(item.get("valor"))
         out[key] = {
@@ -91,7 +96,7 @@ def _base(project: Project, stage: str) -> dict:
     }
 
 
-def _registro_ia(project: Project, stage: str) -> dict | None:
+def _registro_ia(project: Project, stage: str, keys: list[str]) -> dict | None:
     from apps.project.services.stage_reports import current_ecofilia_report
 
     execution = current_ecofilia_report(project, stage)
@@ -108,13 +113,14 @@ def _registro_ia(project: Project, stage: str) -> dict | None:
             {
                 key: {"valor": item.get("determinacion"), "fundamento": item.get("fundamento")}
                 for key, item in determinaciones.items()
-            }
+            },
+            keys,
         ),
         "actividades_elegibles": len(ecofilia_green_components(execution)),
     }
 
 
-def _registro_ejecutivo(project: Project, stage: str) -> dict | None:
+def _registro_ejecutivo(project: Project, stage: str, keys: list[str]) -> dict | None:
     """El último informe emitido de la etapa o, en un histórico, el subido aunque
     no se haya emitido: lo que vale es lo que dice el documento."""
     from apps.project.services.stage_reports import reading_assessment
@@ -145,7 +151,7 @@ def _registro_ejecutivo(project: Project, stage: str) -> dict | None:
         fundamentos = assessment.get("fundamentos") or {}
         valores = {
             key: {"valor": determinaciones.get(key), "fundamento": fundamentos.get(key)}
-            for key in _CRITERIO_KEYS
+            for key in keys
         }
         origen = ORIGEN_EJECUTIVO
         leido = True
@@ -158,15 +164,31 @@ def _registro_ejecutivo(project: Project, stage: str) -> dict | None:
         "emitido": report.is_emitted,
         # Un subido cuya lectura todavía no terminó: no hay qué contar aún.
         "leido": leido,
-        "criterios": _criterios(valores),
+        "criterios": _criterios(valores, keys),
     }
+
+
+def evaluation_stages(project: Project) -> list[str]:
+    """Las etapas que se evalúan: las que tienen documento principal.
+
+    En CAF, IDO y DEC (``stages[].principal_tag``): son las etapas en las que
+    hay un informe que dice algo sobre la operación.
+    """
+    config = institution_config.config_for_project(project)
+    return [s["slug"] for s in config.get("stages") or [] if s.get("principal_tag")]
 
 
 def records_for(projects) -> list[dict]:
     out: list[dict] = []
     for project in projects:
-        for stage in STAGES:
-            for registro in (_registro_ia(project, stage), _registro_ejecutivo(project, stage)):
+        keys = criterio_keys(project)
+        if not keys:
+            continue
+        for stage in evaluation_stages(project):
+            for registro in (
+                _registro_ia(project, stage, keys),
+                _registro_ejecutivo(project, stage, keys),
+            ):
                 if registro is not None:
                     out.append(registro)
     return out

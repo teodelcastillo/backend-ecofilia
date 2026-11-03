@@ -24,12 +24,21 @@ class EvaluationVisibility(models.TextChoices):
 
 class EvaluationQuerySet(models.QuerySet):
     def for_user(self, user):
+        from apps.user.access import public_reach_q
+
         if user.is_staff:
             return self
+        from apps.user.access import institution_boundary_q
+
         return self.filter(
-            Q(owner=user)
-            | Q(visibility=EvaluationVisibility.PUBLIC)
-            | Q(shares__user=user)
+            (
+                Q(owner=user)
+                | (Q(visibility=EvaluationVisibility.PUBLIC) & public_reach_q(user))
+                | Q(shares__user=user)
+            )
+            # La de una operación de otra institución no le llega, aunque la haya
+            # creado él antes de salir de esa institución.
+            & institution_boundary_q(user, "project__organization")
         ).distinct()
 
 
@@ -102,14 +111,28 @@ class Evaluation(models.Model):
         return slug
 
     def can_view(self, user) -> bool:
-        if user.is_staff or self.owner_id == user.id:
+        from apps.user.access import within_institution
+
+        if user.is_staff:
             return True
-        if self.visibility == EvaluationVisibility.PUBLIC:
+        if self.project_id and not within_institution(user, self.project.organization_id):
+            return False
+        if self.owner_id == user.id:
+            return True
+        from apps.user.access import public_reaches
+
+        if self.visibility == EvaluationVisibility.PUBLIC and public_reaches(user, self.owner):
             return True
         return self.shares.filter(user=user).exists()
 
     def can_edit(self, user) -> bool:
-        if user.is_staff or self.owner_id == user.id:
+        from apps.user.access import within_institution
+
+        if user.is_staff:
+            return True
+        if self.project_id and not within_institution(user, self.project.organization_id):
+            return False
+        if self.owner_id == user.id:
             return True
         return self.shares.filter(
             user=user, role=EvaluationShareRole.EDITOR

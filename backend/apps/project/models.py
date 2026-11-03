@@ -24,9 +24,16 @@ def _is_organization_admin(user) -> bool:
 
 class ProjectQuerySet(models.QuerySet):
     def for_user(self, user):
+        from apps.user.access import institution_boundary_q
+
         if user.is_staff:
             return self
-        visible = Q(owner=user) | Q(shares__user=user)
+        # Lo propio y lo compartido, dentro de su institución: quien sale de una
+        # institución deja de ver las operaciones que creó ahí. El superadmin
+        # no tiene institución y arma operaciones para todas: para él no hay
+        # límite, pero tampoco más acceso que el de siempre (lo suyo y lo
+        # compartido).
+        visible = (Q(owner=user) | Q(shares__user=user)) & institution_boundary_q(user)
         # El administrador de una institución ve todas sus operaciones.
         if _is_organization_admin(user):
             visible |= Q(organization_id=user.organization_id)
@@ -43,7 +50,9 @@ class Project(models.Model):
         "user.Organization",
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        # Con SET_NULL, borrar la institución dejaba sus operaciones «sin
+        # institución»: fuera de su portal y con la configuración base.
+        on_delete=models.PROTECT,
         related_name="projects",
         help_text=(
             "Institución a la que pertenece la operación. Define qué portal la "
@@ -147,22 +156,31 @@ class Project(models.Model):
             and self.organization_id == user.organization_id
         )
 
+    def _within(self, user) -> bool:
+        """Si la operación es de la institución de ``user`` (o de ninguna).
+
+        El superadmin no tiene institución y arma operaciones para todas.
+        """
+        from apps.user.access import within_institution
+
+        return within_institution(user, self.organization_id)
+
     def _owns(self, user) -> bool:
         return (
             user.is_staff
-            or self.owner_id == user.id
+            or (self.owner_id == user.id and self._within(user))
             or self.is_administered_by(user)
         )
 
     def can_view(self, user) -> bool:
         if self._owns(user):
             return True
-        return self.shares.filter(user=user).exists()
+        return self._within(user) and self.shares.filter(user=user).exists()
 
     def can_edit(self, user) -> bool:
         if self._owns(user):
             return True
-        return self.shares.filter(
+        return self._within(user) and self.shares.filter(
             user=user, role=ProjectShareRole.EDITOR
         ).exists()
 

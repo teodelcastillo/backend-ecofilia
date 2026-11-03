@@ -102,6 +102,7 @@ MIDDLEWARE = [
     "django_otp.middleware.OTPMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "main.middleware.PrivilegedAccessAuditMiddleware",
 ]
 
 # CORS: por defecto usamos los orígenes de producción actuales,
@@ -189,15 +190,15 @@ DATABASES = {
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": (
         "rest_framework.renderers.JSONRenderer",
-        "rest_framework.renderers.BrowsableAPIRenderer",
     ),
-    # Las de siempre (JWT, sesión, básica), con el alcance de la organización
-    # aplicado: un miembro de una organización nunca llega con acceso global
-    # (ver ``apps/authentication/org_scope.py``).
+    # Sólo JWT, con el alcance de la organización aplicado: un miembro de una
+    # organización nunca llega con acceso global (ver
+    # ``apps/authentication/org_scope.py``). El login JWT es el único que exige
+    # email verificado, MFA y el bloqueo por intentos fallidos: con Basic o
+    # sesión se entraba a la API con email y contraseña salteando las tres
+    # cosas. El front sólo manda Bearer. (``dev.py`` suma la sesión en local.)
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "apps.authentication.org_scope.OrgScopedJWTAuthentication",
-        "apps.authentication.org_scope.OrgScopedSessionAuthentication",
-        "apps.authentication.org_scope.OrgScopedBasicAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_FILTER_BACKENDS": ("django_filters.rest_framework.DjangoFilterBackend",),
@@ -228,7 +229,34 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     "AUTH_TOKEN_CLASSES": ("rest_framework_simplejwt.tokens.AccessToken",),
     "UPDATE_LAST_LOGIN": True,
+    # Cambiar o restablecer la contraseña invalida los tokens emitidos antes:
+    # quien la cambia porque se la robaron no le deja una sesión abierta al ladrón.
+    "CHECK_REVOKE_TOKEN": True,
 }
+
+# Vigencia de los enlaces de restablecer contraseña y de invitación (fase 5).
+PASSWORD_RESET_TIMEOUT = int(os.environ.get("PASSWORD_RESET_TIMEOUT", str(60 * 60 * 24)))
+
+# Bloqueo de la cuenta tras intentos fallidos de login (contraseña o MFA).
+LOGIN_MAX_FAILURES = int(os.environ.get("LOGIN_MAX_FAILURES", "10"))
+LOGIN_LOCKOUT_MINUTES = int(os.environ.get("LOGIN_LOCKOUT_MINUTES", "15"))
+
+# Con esto prendido, lo que es de toda la plataforma (consola, configuraciones,
+# alcance de skills, biblioteca pública, admin de Django) exige que el
+# superadmin tenga MFA activo; sin MFA es un usuario común.
+# POR AHORA APAGADO (decisión de producto, 2 de noviembre de 2026): el MFA sigue
+# disponible para quien quiera activarlo y, quien lo tiene activo, lo usa en la
+# API y en el admin. Para exigirlo: ADMIN_REQUIRE_MFA=1, sin tocar código.
+ADMIN_REQUIRE_MFA = _env_bool("ADMIN_REQUIRE_MFA", "False")
+
+# Claves Fernet para cifrar los secretos MFA en reposo, separadas por coma: la
+# primera cifra, todas descifran (rotación). Sin definir se derivan de SECRET_KEY;
+# ver ``apps/authentication/services/secret_box.py``.
+MFA_ENCRYPTION_KEYS = _env_list("MFA_ENCRYPTION_KEYS")
+
+# Cada pedido a la API de un superadmin o del staff, lecturas incluidas, queda
+# en el registro de auditoría (``main.middleware.PrivilegedAccessAuditMiddleware``).
+AUDIT_PRIVILEGED_ACCESS = _env_bool("AUDIT_PRIVILEGED_ACCESS", "True")
 
 
 # Password validation

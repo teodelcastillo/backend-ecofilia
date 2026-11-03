@@ -70,6 +70,15 @@ class Organization(models.Model):
             "without this their projects would be born with an empty workspace."
         ),
     )
+    # Lo que hace distinto al portal de esta institución: marca, etapas,
+    # lanzamientos, roles de los workflows, grupos de etiquetas y criterios.
+    # Vacío: rige la configuración base. Se lee con
+    # ``apps.user.institution_config.effective_config`` y se escribe validado
+    # (``validate_config``); la forma está en backend/docs/contrato-instituciones.md.
+    # ``db_default``: el código anterior a este campo no lo conoce y, al crear la
+    # fila, no lo manda. Con el default en la base, una vuelta atrás del deploy
+    # sigue funcionando sin revertir migraciones (ver docs/salida-instituciones.md).
+    config = models.JSONField(default=dict, db_default=models.Value({}, output_field=models.JSONField()), blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -78,6 +87,30 @@ class Organization(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class PlatformConfig(models.Model):
+    """Las configuraciones de plataforma (fase 4), con la forma de ``Organization.config``.
+
+    - ``public``: rige ``/app``, es decir los usuarios sin institución y las
+      operaciones sin institución.
+    - ``template``: el portal base, sólo del superadmin. De acá sale la
+      configuración de una institución nueva (fase 5).
+
+    Sin fila, rige la configuración base del código
+    (``apps.user.institution_config.BASE_CONFIG``).
+    """
+
+    class Key(models.TextChoices):
+        PUBLIC = "public", _("Pública (/app)")
+        TEMPLATE = "template", _("Plantilla de institución nueva")
+
+    key = models.CharField(max_length=20, choices=Key.choices, unique=True)
+    config = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.key
 
 
 class UserManager(DjangoUserManager):
@@ -142,11 +175,24 @@ class User(AbstractUser):
         Organization,
         null=True,
         blank=True,
-        on_delete=models.SET_NULL,
+        # Borrar una institución con miembros no se puede: con SET_NULL sus
+        # administradores quedaban con role=admin y sin institución, que es la
+        # definición de superadmin de toda la plataforma. Primero se da de baja
+        # a cada uno, a conciencia.
+        on_delete=models.PROTECT,
         related_name="members",
         help_text=_("Client organization this user belongs to (e.g. CAF)."),
     )
     last_password_change = models.DateTimeField(null=True, blank=True)
+    # Bloqueo por intentos fallidos de login (contraseña o MFA). Ver
+    # ``apps.authentication.services.login_guard``.
+    # ``db_default``: el código anterior a este campo no lo conoce y, al crear la
+    # fila, no lo manda. Con el default en la base, una vuelta atrás del deploy
+    # sigue funcionando sin revertir migraciones (ver docs/salida-instituciones.md).
+    failed_login_attempts = models.PositiveIntegerField(default=0, db_default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    # El último paso TOTP aceptado: un código MFA sirve una sola vez.
+    mfa_last_step = models.BigIntegerField(null=True, blank=True)
 
     class Meta(AbstractUser.Meta):
         swappable = "AUTH_USER_MODEL"
@@ -183,6 +229,18 @@ class User(AbstractUser):
         return self._save(*args, **kwargs)
 
     def _save(self, *args, **kwargs):
+        # Quien pierde su institución siendo role=admin quedaría como superadmin
+        # de toda la plataforma (role=admin sin institución). Baja a member:
+        # ascender a alguien a superadmin es una decisión aparte, no un efecto
+        # secundario de sacarlo de su institución.
+        if self.pk and self.organization_id is None and self.role == UserRole.ADMIN and not self.is_superuser:
+            had_organization = (
+                type(self).objects.filter(pk=self.pk, organization__isnull=False).exists()
+            )
+            if had_organization:
+                self.role = UserRole.MEMBER
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = list({*kwargs["update_fields"], "role"})
         if self.email:
             self.username = self.email
         if self.email_verified and self.email_verified_at is None:
@@ -212,3 +270,46 @@ class User(AbstractUser):
 
     def __str__(self):
         return f"{self.id}, username: {self.username}"
+
+
+class AuditEvent(models.Model):
+    """Registro de auditoría: quién hizo qué, sobre qué, cuándo y desde dónde.
+
+    Append-only: no se edita ni se borra desde la aplicación ni desde el admin.
+    Cubre las acciones privilegiadas (consola, configuraciones, alcance de
+    skills, biblioteca pública, alta de instituciones) y la autenticación
+    (logins, bloqueos, contraseñas, MFA). Se escribe con
+    ``apps.user.audit.record``.
+    """
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    actor = models.ForeignKey(
+        "user.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_events"
+    )
+    # El email queda aunque se borre el usuario: el registro no puede perder el quién.
+    actor_email = models.CharField(max_length=254, blank=True)
+    action = models.CharField(max_length=80, db_index=True)
+    organization = models.ForeignKey(
+        Organization, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_events",
+        help_text="Institución afectada, si la hay.",
+    )
+    target_type = models.CharField(max_length=80, blank=True)
+    target_id = models.CharField(max_length=255, blank=True)
+    data = models.JSONField(default=dict, blank=True)
+    ip = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = [models.Index(fields=("organization", "created_at"))]
+
+    def save(self, *args, **kwargs):
+        if self.pk is not None:
+            raise PermissionError("El registro de auditoría no se modifica.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise PermissionError("El registro de auditoría no se borra.")
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.actor_email or '—'} {self.action}"

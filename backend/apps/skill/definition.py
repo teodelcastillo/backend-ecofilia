@@ -95,6 +95,8 @@ SKILL_FIELDS_IGNORED = (
     "id",
     "members_can_run",   # quién lo ejecuta, no qué produce
     "owner",
+    "scope",             # quién lo ve, no qué produce
+    "organization",      # ídem: la institución dueña cuando scope='organization'
     "slug",              # identidad de la skill, no contenido de la definición
     "allowed_contexts",  # dónde se la puede correr, no qué produce
     "is_template",
@@ -262,6 +264,11 @@ def resolve_definition_version(skill, *, steps=None, parameters=None):
                     fingerprint=huella,
                     schema=DEFINITION_SCHEMA,
                     definition=definition,
+                    # La versión de un asistente de una institución es de esa
+                    # institución (ver ``SkillDefinitionVersion.informed_by_organization``).
+                    informed_by_organization_id=(
+                        skill.organization_id if skill.scope == "organization" else None
+                    ),
                 )
         except IntegrityError:
             # Dos corridas de la misma skill arrancando a la vez: una ganó. El

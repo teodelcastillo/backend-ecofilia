@@ -505,7 +505,13 @@ class ChatSessionViewSet(
         if self.request.user.is_staff:
             base = qs
         else:
-            base = qs.filter(owner=self.request.user)
+            # Las suyas, salvo las de operaciones de una institución de la que
+            # ya no es parte (las respuestas citan sus documentos).
+            from apps.user.access import institution_boundary_q
+
+            base = qs.filter(owner=self.request.user).filter(
+                institution_boundary_q(self.request.user, "project__organization")
+            )
 
         # Listado: no devolver sesiones vacías salvo ?include_empty=true (evita ruido y carga innecesaria).
         if getattr(self, "action", None) == "list":
@@ -547,7 +553,11 @@ class ChatMessageViewSet(
             "created_at"
         )
         if not self.request.user.is_staff:
-            qs = qs.filter(session__owner=self.request.user)
+            from apps.user.access import institution_boundary_q
+
+            qs = qs.filter(session__owner=self.request.user).filter(
+                institution_boundary_q(self.request.user, "session__project__organization")
+            )
 
         session_id = self.request.query_params.get("session")
         if session_id:

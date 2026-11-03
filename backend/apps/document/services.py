@@ -35,8 +35,11 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     # Las operaciones que el usuario ve: las suyas, las compartidas con él y,
     # si administra una institución, todas las de ella.
     project_ids = Project.objects.for_user(user).values("pk")
+    # Lo propio, salvo lo que es de una institución de la que ya no es parte:
+    # quien sale de una institución no se lleva los documentos de sus
+    # operaciones.
     visible = (
-        Q(**{f"{prefix}owner": user})
+        (Q(**{f"{prefix}owner": user}) & ~Q(**{f"{prefix}id__in": foreign_institution_document_ids(user)}))
         | Q(**{f"{prefix}is_public": True})
         | Q(**{f"{prefix}shares__user": user})
         | Q(**{f"{prefix}projects__id__in": project_ids})
@@ -46,6 +49,19 @@ def visible_documents_q(user, prefix: str = "") -> Q:
     if is_organization_admin(user):
         visible |= Q(**{f"{prefix}owner__organization_id": user.organization_id})
     return visible
+
+
+def foreign_institution_document_ids(user):
+    """Ids de documentos vinculados a operaciones de otra institución que la de ``user``."""
+    from apps.project.models import ProjectDocument
+    from apps.user.access import is_ecofilia_admin
+
+    if is_ecofilia_admin(user):
+        return ProjectDocument.objects.none().values("document_id")
+    links = ProjectDocument.objects.filter(project__organization__isnull=False)
+    if getattr(user, "organization_id", None):
+        links = links.exclude(project__organization_id=user.organization_id)
+    return links.values("document_id")
 
 
 def accessible_documents_for(user, slugs: Iterable[str]) -> QuerySet[Document]:
@@ -69,6 +85,62 @@ def accessible_library_documents(user) -> QuerySet[Document]:
         return qs
     return qs.filter(visible_documents_q(user)).distinct()
 
+
+
+# ---------------------------------------------------------------------------
+# Etiquetas de evidencia por institución
+#
+# Una etiqueta sin institución es global (los instrumentos de país: NDC, NAP…);
+# con institución, es de esa institución y ninguna otra la ve. El slug es único
+# dentro de «las globales más las de una institución», así que resolver un slug
+# siempre es resolverlo en ese conjunto.
+# ---------------------------------------------------------------------------
+
+def evidence_tags_for_organization(organization_id) -> QuerySet[EvidenceTag]:
+    """Las etiquetas que ve una institución: las globales más las suyas."""
+    visible = Q(organization__isnull=True)
+    if organization_id:
+        visible |= Q(organization_id=organization_id)
+    return EvidenceTag.objects.filter(visible)
+
+
+def visible_evidence_tags(user) -> QuerySet[EvidenceTag]:
+    """Las del catálogo que ve ``user``: el superadmin, todas."""
+    from apps.user.access import is_ecofilia_admin
+
+    if user is None:
+        return EvidenceTag.objects.all()
+    if getattr(user, "is_staff", False) or is_ecofilia_admin(user):
+        return EvidenceTag.objects.all()
+    return evidence_tags_for_organization(getattr(user, "organization_id", None))
+
+
+def resolve_evidence_tags(
+    slugs: Iterable[str],
+    queryset: QuerySet[EvidenceTag],
+    prefer_organization_id=None,
+) -> dict[str, EvidenceTag]:
+    """``{slug: etiqueta}`` de los ``slugs`` que existen en ``queryset``.
+
+    Si un slug aparece más de una vez (sólo pasa en la vista del superadmin,
+    que ve todas), gana la de ``prefer_organization_id``, después la global y
+    después la más vieja: nunca una elección al azar.
+    """
+    slugs = list(dict.fromkeys(slugs))
+    found: dict[str, EvidenceTag] = {}
+
+    def rank(tag: EvidenceTag) -> tuple:
+        return (
+            0 if prefer_organization_id and tag.organization_id == prefer_organization_id else 1,
+            0 if tag.organization_id is None else 1,
+            tag.pk,
+        )
+
+    for tag in queryset.filter(slug__in=slugs):
+        current = found.get(tag.slug)
+        if current is None or rank(tag) < rank(current):
+            found[tag.slug] = tag
+    return found
 
 
 def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
@@ -95,9 +167,17 @@ def default_evidence_tags_for(document: Document) -> list[EvidenceTag]:
     topics = _document_topic_keys(document.topics)
     if not topics:
         return []
+    # Sólo las que ve la institución del dueño: un documento no puede quedar
+    # con la etiqueta de otra institución.
+    from django.contrib.auth import get_user_model
+
+    owner_org = (
+        get_user_model().objects.filter(pk=document.owner_id)
+        .values_list("organization_id", flat=True).first()
+    )
     return [
         tag
-        for tag in EvidenceTag.objects.exclude(source_topics=[])
+        for tag in evidence_tags_for_organization(owner_org).exclude(source_topics=[])
         if _tag_matches(tag.source_topics, topics)
     ]
 

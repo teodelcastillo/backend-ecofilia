@@ -5,6 +5,7 @@ from typing import Iterable, List, Sequence
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from apps.user.sharing import resolve_share_target
 
@@ -187,7 +188,8 @@ class EvaluationWriteSerializer(EvaluationSerializer):
             raise serializers.ValidationError("Proyecto no encontrado.") from exc
         request = self.context["request"]
         if not project.can_view(request.user):
-            raise serializers.ValidationError("No tienes acceso a este proyecto.")
+            # El mismo mensaje que si no existiera: no confirmar operaciones ajenas.
+            raise serializers.ValidationError("Proyecto no encontrado.")
         self.context["project_instance"] = project
         return slug
 
@@ -204,6 +206,37 @@ class EvaluationWriteSerializer(EvaluationSerializer):
         self.context["validated_documents"] = list(docs)
         return slugs
 
+    def validate_visibility(self, value):
+        """Publicar una evaluación la abre a toda la plataforma: es del superadmin.
+
+        Antes la publicaba su dueño, y la veía cualquiera de cualquier
+        institución, con sus documentos y resultados.
+        """
+        from apps.evaluation.models import EvaluationVisibility
+        from apps.user.access import ensure_privileged_mfa, is_ecofilia_admin
+
+        current = getattr(self.instance, "visibility", None)
+        if value == EvaluationVisibility.PUBLIC and current != EvaluationVisibility.PUBLIC:
+            user = self.context["request"].user
+            if not is_ecofilia_admin(user):
+                raise PermissionDenied(
+                    "Sólo un superadmin publica una evaluación: pública la ve toda la plataforma."
+                )
+            ensure_privileged_mfa(user)
+        return value
+
+    def _audit_visibility(self, evaluation, before):
+        if evaluation.visibility != before:
+            from apps.user import audit
+
+            audit.record(
+                "evaluation.visibility.changed",
+                request=self.context.get("request"),
+                organization=getattr(evaluation.owner, "organization", None),
+                target=evaluation,
+                data={"before": before, "after": evaluation.visibility},
+            )
+
     @transaction.atomic
     def create(self, validated_data):
         document_slugs = validated_data.pop("document_slugs", [])
@@ -217,6 +250,8 @@ class EvaluationWriteSerializer(EvaluationSerializer):
         evaluation = Evaluation.objects.create(**validated_data)
         self._sync_documents(evaluation, document_slugs)
         self._sync_pillars(evaluation, pillars)
+        if evaluation.visibility == "public":
+            self._audit_visibility(evaluation, None)
         return evaluation
 
     @transaction.atomic
@@ -229,9 +264,11 @@ class EvaluationWriteSerializer(EvaluationSerializer):
                 instance.project = self.context.get("project_instance")
             else:
                 instance.project = None
+        before = instance.visibility
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        self._audit_visibility(instance, before)
         if document_slugs is not None:
             instance.evaluation_documents.all().delete()
             self._sync_documents(instance, document_slugs)
@@ -436,9 +473,7 @@ class EvaluationRunCreateSerializer(serializers.Serializer):
                     {"project_slug": "Proyecto no encontrado."}
                 ) from exc
             if not project.can_view(request.user):
-                raise serializers.ValidationError(
-                    {"project_slug": "No tienes acceso a este proyecto."}
-                )
+                raise serializers.ValidationError({"project_slug": "Proyecto no encontrado."})
         attrs["project_instance"] = project
 
         slugs = attrs.get("document_slugs") or []

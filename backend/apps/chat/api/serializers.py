@@ -216,7 +216,12 @@ class ChatMessageCreateSerializer(serializers.Serializer):
 
     def validate_session(self, session: ChatSession):
         user = self.context["request"].user
-        if not user.is_staff and session.owner_id != user.id:
+        from apps.user.access import within_institution
+
+        if not user.is_staff and (
+            session.owner_id != user.id
+            or (session.project_id and not within_institution(user, session.project.organization_id))
+        ):
             raise serializers.ValidationError("No tienes acceso a esta sesión.")
         if not session.is_active:
             raise serializers.ValidationError("La sesión está inactiva.")
