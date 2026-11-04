@@ -320,9 +320,12 @@ class ProjectDetailSerializer(ProjectSerializer):
     stage_history = serializers.SerializerMethodField()
     stage_reports = serializers.SerializerMethodField()
     guiado_runs = serializers.SerializerMethodField()
+    guided_sections = serializers.SerializerMethodField()
 
     class Meta(ProjectSerializer.Meta):
-        fields = ProjectSerializer.Meta.fields + ("stage_history", "stage_reports", "guiado_runs")
+        fields = ProjectSerializer.Meta.fields + (
+            "stage_history", "stage_reports", "guiado_runs", "guided_sections",
+        )
         read_only_fields = fields
 
     def get_stage_history(self, obj):
@@ -351,6 +354,23 @@ class ProjectDetailSerializer(ProjectSerializer):
             "used": guiado_runs_used(obj, current_stage(obj)),
             "max": None if is_staff else GUIADO_MAX_PER_STAGE,
         }
+
+
+    def get_guided_sections(self, obj):
+        """Los títulos de las secciones del informe que escribe el ejecutivo.
+
+        Son las que reescribe el informe guiado (``workflows.guided``): en CAF,
+        C, D y E. Hasta que el ejecutivo las completa, su informe las muestra
+        en blanco.
+        """
+        from apps.skill.models import Skill
+        from apps.user import institution_config
+
+        slug = institution_config.workflow(institution_config.config_for_project(obj), "guided")
+        if not slug:
+            return []
+        skill = Skill.objects.filter(slug=slug).first()
+        return [step.title for step in skill.steps.order_by("position")] if skill else []
 
 
 class EmittedStageReportSerializer(ProjectStageReportSerializer):

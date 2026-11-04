@@ -119,6 +119,34 @@ def runs_for_stage(project: Project, skill, stage: str):
     return SkillExecution.objects.filter(project=project, skill=skill, stage__in=stages)
 
 
+def principal_de_otra_etapa(project: Project, stage: str) -> str | None:
+    """La etiqueta de etapa del principal si es la de otra etapa, o None.
+
+    En CAF, al pasar de IDO a DEC el principal sigue siendo el documento IDO
+    hasta que se sube el DEC. Un principal sin etiqueta de etapa (operaciones
+    viejas) no se objeta: no hay cómo saber de qué etapa es.
+    """
+    from apps.project.models import ProjectDocument
+    from apps.project.services.evidence_tags import effective_tag_slugs
+
+    config = institution_config.config_for_project(project)
+    propia = institution_config.principal_tag(config, stage)
+    if not propia or not project.blueprint_document_id:
+        return None
+    link = (
+        ProjectDocument.objects.filter(project=project, document_id=project.blueprint_document_id)
+        .select_related("document")
+        .first()
+    )
+    if link is None:
+        return None
+    tags = set(effective_tag_slugs(link))
+    if propia in tags:
+        return None
+    otras = sorted(tags & institution_config.principal_tags(config))
+    return otras[0] if otras else None
+
+
 def launch_stage_workflows(
     project: Project,
     stage: str,
@@ -172,6 +200,19 @@ def launch_stage_workflows(
                  "reason": "Falta marcar el documento principal de la operación."}
             )
             continue
+        otra = principal_de_otra_etapa(project, stage)
+        if otra:
+            # En DEC el análisis es del documento DEC, como en IDO lo fue del
+            # IDO: con el de la etapa anterior como principal, no corre nada.
+            etiqueta = (institution_config.principal_tag(
+                institution_config.config_for_project(project), stage
+            ) or "").upper()
+            results.append(
+                {"skill_slug": slug, "status": "blocked", "execution_id": None,
+                 "reason": f"Falta el documento {etiqueta} de la operación: el principal sigue siendo "
+                           f"el {otra.upper()}. Subilo y marcalo como principal."}
+            )
+            continue
 
         instrucciones = (step_instructions or {}).get(slug) or None
         outcome = launch_institutional(
@@ -187,6 +228,41 @@ def launch_stage_workflows(
             entry["step_instructions"] = instrucciones
         results.append(entry)
     return results
+
+
+def informe_sin_emitir(project: Project, stage: str, to_stage: str) -> str | None:
+    """Por qué no se puede avanzar de ``stage`` a ``to_stage``, o None.
+
+    Una operación avanza con los informes de sus etapas emitidos: cada etapa
+    con informe por la que pasó (en CAF, IDO y DEC), anterior a la de destino,
+    tiene que tener el del ejecutivo emitido. Así una operación aprobada tiene
+    todas sus etapas emitidas, haya empezado en IDO o en DEC; una que empezó en
+    DEC no pasó por IDO y no se le pide.
+    """
+    from apps.project.models import ProjectStageReport
+
+    config = institution_config.config_for_project(project)
+    con_informe = institution_config.report_stages(config)
+    destino = stage_index(to_stage, project)
+    # Por dónde pasó: la etapa en la que está y aquellas a las que entró.
+    recorridas = {stage} | set(
+        ProjectStageTransition.objects.filter(project=project).values_list("to_stage", flat=True)
+    )
+    faltan = [
+        slug
+        for slug in con_informe
+        if slug in recorridas and stage_index(slug, project) < destino
+        and not ProjectStageReport.objects.filter(
+            project=project, stage=slug, voided_at__isnull=True, emitted_at__isnull=False
+        ).exists()
+    ]
+    if not faltan:
+        return None
+    etapas = " y ".join(stage_label(project, slug) for slug in faltan)
+    return (
+        f"Para pasar a {stage_label(project, to_stage)}, primero emití el informe de {etapas}: "
+        "una operación avanza con los informes de sus etapas emitidos."
+    )
 
 
 def transition(
@@ -208,6 +284,11 @@ def transition(
                 if stage_index(to_stage, locked) < stage_index(from_stage, locked)
                 else "No tenés permiso para cambiar la etapa de esta operación."
             )
+
+        if stage_index(to_stage, locked) > stage_index(from_stage, locked):
+            pendiente = informe_sin_emitir(locked, from_stage, to_stage)
+            if pendiente:
+                raise StageError(pendiente)
 
         previous_notes = dict(locked.context_notes or {})
         notes = dict(previous_notes)

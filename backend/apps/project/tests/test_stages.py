@@ -9,6 +9,12 @@ Las etapas de una operación: quién las mueve y qué lanzan.
 - Lo que no se pudo lanzar queda bloqueado y se reintenta solo cuando la
   operación está lista.
 - La edición de la operación no cambia la etapa: sólo la acción.
+- Una operación avanza con los informes de sus etapas emitidos: sin el de IDO
+  no pasa a DEC, y sin el de DEC (ni el de IDO, si pasó por IDO) no queda
+  aprobada. Una operación creada de entrada en DEC no pasó por IDO: no se le
+  exige.
+- DEC tiene su propio informe, que analiza el documento DEC como IDO analizó
+  el IDO: mientras el principal sea el de IDO, no corre.
 """
 from unittest.mock import patch
 
@@ -73,6 +79,16 @@ class _StageBase(APITestCase):
 
     def _move(self, user, to):
         return self._post(user, "stage/", {"to": to})
+
+    def _emit(self, stage):
+        from django.utils import timezone
+
+        from apps.project.models import ProjectStageReport
+
+        ProjectStageReport.objects.create(
+            project=self.project, stage=stage, origin="editado", created_by=self.owner,
+            emitted_at=timezone.now(), emitted_by=self.owner, emitted_markdown="# IET",
+        )
 
     def _set_stage(self, stage):
         self.project.context_notes = {**self.project.context_notes, "estado": stage}
@@ -238,6 +254,7 @@ class BlockedLaunchTestCase(_StageBase):
         self.project.blueprint_document = None
         self.project.save(update_fields=["blueprint_document"])
         self._move(self.editor, "ido_cci")
+        self._emit("ido_cci")
         self._move(self.editor, "dec")
 
         self.project.refresh_from_db()
@@ -246,6 +263,99 @@ class BlockedLaunchTestCase(_StageBase):
         self.project.save(update_fields=["blueprint_document"])
         self.assertIsNone(retry_pending_stage_launches(self.project))
         self.assertFalse(SkillExecution.objects.filter(project=self.project).exists())
+
+
+class DecComoIdoTestCase(_StageBase):
+    DEC_SLUG = "dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion"
+
+    def setUp(self):
+        super().setUp()
+        self.dec = Skill.objects.create(
+            name="IET DEC", slug=self.DEC_SLUG, skill_type=self.iet.skill_type,
+            allowed_contexts=["project"], scope="organization", organization=self.caf,
+        )
+        config = caf_config()
+        for stage in config["stages"]:
+            if stage["slug"] == "dec":
+                stage["report"] = self.DEC_SLUG
+                stage["launches"] = [self.DEC_SLUG]
+        self.caf.config = config
+        self.caf.save(update_fields=["config"])
+        self.project.organization = self.caf
+        self.project.save(update_fields=["organization"])
+        self._set_stage("ido_cci")
+        # El principal de IDO lleva la etiqueta de su etapa.
+        link = ProjectDocument.objects.get(project=self.project, document=self.blueprint)
+        link.tags.set(self._tags("ido"))
+        link.tags_overridden = True
+        link.save(update_fields=["tags_overridden"])
+
+    def _tags(self, *slugs):
+        from apps.document.models import EvidenceTag
+
+        from django.db.models import Q
+
+        return EvidenceTag.objects.filter(Q(organization__isnull=True) | Q(organization=self.caf), slug__in=slugs)
+
+    def test_without_the_ido_report_emitted_it_does_not_go_to_dec(self):
+        response, delay = self._move(self.editor, "dec")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("emití el informe", str(response.data))
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.context_notes["estado"], "ido_cci")
+        delay.assert_not_called()
+
+    def test_dec_waits_for_its_document_and_then_runs(self):
+        self._emit("ido_cci")
+        response, delay = self._move(self.editor, "dec")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        launch = response.data["launches"][0]
+        self.assertEqual((launch["skill_slug"], launch["status"]), (self.DEC_SLUG, "blocked"))
+        self.assertIn("documento DEC", launch["reason"])
+        delay.assert_not_called()
+
+        # Sube el DEC y lo marca como principal: se lanza el análisis de DEC.
+        doc_dec = Document.objects.create(
+            owner=self.owner, name="Documento DEC", slug="doc-dec", chunking_status="done", extracted_text="x",
+        )
+        link = ProjectDocument.objects.create(project=self.project, document=doc_dec, tags_overridden=True)
+        link.tags.set(self._tags("dec"))
+        self.project.refresh_from_db()
+        self.project.blueprint_document = doc_dec
+        self.project.save(update_fields=["blueprint_document"])
+        with patch(DELAY), self.captureOnCommitCallbacks(execute=True):
+            retried = retry_pending_stage_launches(self.project)
+        self.assertEqual(self._statuses(retried), {self.DEC_SLUG: "launched"})
+        run = SkillExecution.objects.get(project=self.project, skill=self.dec)
+        self.assertEqual(run.stage, "dec")
+
+    def test_approved_needs_every_stage_it_went_through_emitted(self):
+        self._emit("ido_cci")
+        self._move(self.editor, "dec")
+        response, _ = self._move(self.editor, "aprobada")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertIn("DEC", str(response.data))
+        self._emit("dec")
+        response, _ = self._move(self.editor, "aprobada")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def test_created_in_dec_only_needs_its_dec_report_to_be_approved(self):
+        self._set_stage("dec")
+        response, _ = self._move(self.editor, "aprobada")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, response.data)
+        self.assertNotIn("IDO", str(response.data))
+        self._emit("dec")
+        response, _ = self._move(self.editor, "aprobada")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+
+    def test_an_operation_created_in_dec_launches_its_report(self):
+        # Creada de entrada en DEC: no pasó por IDO, no se le exige su informe.
+        self._set_stage("dec")
+        link = ProjectDocument.objects.get(project=self.project, document=self.blueprint)
+        link.tags.set(self._tags("dec"))
+        response, _ = self._post(self.editor, "stage/launch/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._statuses(response.data["launches"]), {self.DEC_SLUG: "launched"})
 
 
 class StageLaunchEndpointTestCase(_StageBase):

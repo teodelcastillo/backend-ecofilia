@@ -44,7 +44,17 @@ class AlignmentHistoryTestCase(APITestCase):
 
     def _move_to(self, stage):
         # La etapa se cambia con la acción de etapa, no editando la operación
-        # (ver ``apps.project.services.stages``).
+        # (ver ``apps.project.services.stages``). Para avanzar, el informe de la
+        # etapa en la que está tiene que estar emitido.
+        from django.utils import timezone
+
+        from apps.project.models import ProjectStageReport
+
+        actual = Project.objects.get(pk=self.project.pk).context_notes.get("estado")
+        ProjectStageReport.objects.get_or_create(
+            project=self.project, stage=actual, voided_at=None, superseded_at=None,
+            defaults={"origin": "editado", "emitted_at": timezone.now(), "emitted_markdown": "# IET"},
+        )
         return self.client.post(
             reverse("project-stage", kwargs={"slug": self.project.slug}), {"to": stage}, format="json"
         )

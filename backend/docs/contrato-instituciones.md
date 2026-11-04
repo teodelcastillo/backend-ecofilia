@@ -386,6 +386,17 @@ mismo para todas las etapas y reescribe el informe de la etapa en la que está l
 operación. Lo que reescribe se publica directo en el informe del ejecutivo, sin
 tope de generaciones.
 
+**Avanzar de etapa** (`POST /api/projects/{slug}/stage/`): cada etapa con
+informe por la que pasó la operación, anterior a la de destino, tiene que tener
+el informe del ejecutivo emitido; si no, **400** con cuáles faltan. Una
+operación creada de entrada en DEC no pasó por IDO y no se le pide.
+
+**El informe de una etapa analiza su documento principal**: si el principal
+lleva la etiqueta de otra etapa (en DEC, el documento IDO), el lanzamiento queda
+`blocked` («Falta el documento DEC…») y se reintenta cuando se marca el de la
+etapa. El detalle de la operación trae `guided_sections`: los títulos de las
+secciones que escribe el ejecutivo (los pasos del guiado).
+
 `POST /api/projects/historical-report/` acepta `stage` (una etapa con documento
 principal; por defecto la primera). Cuando la lectura termina, sus
 determinaciones, fundamentos, consideraciones y componentes verdes pasan a la
