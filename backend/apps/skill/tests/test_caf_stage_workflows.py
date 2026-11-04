@@ -212,7 +212,8 @@ class SeededWorkflowsTestCase(TestCase):
     def test_the_reading_runs_on_a_document(self):
         lectura = Skill.objects.get(slug=LECTURA_SLUG)
         self.assertEqual(lectura.allowed_contexts, ["document"])
-        self.assertEqual([t.split(" ")[0] for t in self._titles(LECTURA_SLUG)], ["1.", "2.", "3."])
+        # 4: los componentes verdes del informe (skill/0052), para el % verde.
+        self.assertEqual([t.split(" ")[0] for t in self._titles(LECTURA_SLUG)], ["1.", "2.", "3.", "4."])
 
     def test_running_the_seeds_again_duplicates_nothing(self):
         counts = {slug: Skill.objects.get(slug=slug).steps.count() for slug in (INSUMO_SLUG, IET_SLUG, GUIADO_SLUG, LECTURA_SLUG)}
