@@ -73,9 +73,11 @@ def _report_workflow_slugs() -> list[str]:
     from apps.user import institution_config
     from apps.user.models import Organization
 
-    slugs = {institution_config.workflow(institution_config.effective_config(None), "report")}
+    slugs = set(institution_config.report_workflows(institution_config.effective_config(None)))
     for org in Organization.objects.exclude(config={}).only("pk", "name", "config"):
-        slugs.add(institution_config.workflow(institution_config.effective_config(org), "report"))
+        config = institution_config.effective_config(org)
+        slugs |= institution_config.report_workflows(config)
+        slugs.add(institution_config.workflow(config, "report"))
     return sorted(s for s in slugs if s)
 
 
@@ -1288,11 +1290,12 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         POST /projects/historical-report/
             {"document_slug": "...", "name": "...", "pais": "...",
-             "organization": "caf", "fecha_informe": "2025-05-10",
-             "monto": "40", "tipo_operacion": "..."}
+             "organization": "caf", "stage": "dec", "fecha_informe": "2025-05-10",
+             "monto": "40", "tipo_operacion": "...", "sector": "..."}
 
-        El informe queda como subido en IDO y se lee solo; no se corre el
-        análisis del Asistente IA.
+        El informe queda como subido en ``stage`` (IDO si no se dice) y se lee
+        solo: lo que dice pasa a la operación y el informe queda emitido. No se
+        corre el análisis del Asistente IA.
         """
         from apps.document.models import Document
         from apps.project.services.evaluation_records import create_historical
@@ -1318,17 +1321,25 @@ class ProjectViewSet(viewsets.ModelViewSet):
         document = get_object_or_404(Document, slug=document_slug)
         organization = get_object_or_404(Organization, slug=org_slug)
         notes = {"pais": pais}
-        for key in ("fecha_informe", "monto", "tipo_operacion"):
+        for key in (
+            "fecha_informe", "monto", "tipo_operacion", "sector", "numero_operacion", "year",
+        ):
             value = str(request.data.get(key) or "").strip()
             if value:
                 notes[key] = value
-        report = create_historical(
-            user=request.user,
-            organization=organization,
-            document=document,
-            name=name,
-            notes=notes,
-        )
+        if str(notes.get("year", "")).isdigit():
+            notes["year"] = int(notes["year"])
+        try:
+            report = create_historical(
+                user=request.user,
+                organization=organization,
+                document=document,
+                name=name,
+                notes=notes,
+                stage=str(request.data.get("stage") or "").strip() or None,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(self._serialize_project(report.project), status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="alignment-history")

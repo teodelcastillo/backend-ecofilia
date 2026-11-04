@@ -9,8 +9,10 @@ el oficial, por una de tres vías:
 - **guiado**: completa paso a paso sus determinaciones, fundamentos y
   enverdecimiento —con la ficha de la IET de Ecofilia como referencia— y Ecofilia
   reescribe con ese criterio sólo las secciones de enverdecimiento y alineación
-  (C, D y E) donde difiere de la suya. Lo reescrito entra como borradores sobre
-  el reporte de Ecofilia, que el ejecutivo revisa y publica en el Editor.
+  (C, D y E) donde difiere de la suya. Lo reescrito se publica directo en el
+  informe del ejecutivo (capas sobre el reporte de Ecofilia, que sigue intacto
+  debajo): su decisión es la que vale. Hasta emitir puede cambiar su criterio y
+  regenerarlo las veces que haga falta.
 - **subido**: lo escribe afuera y lo sube. Ecofilia lo lee para obtener su
   mirada estructurada, pero no lo suma al expediente de la operación: si lo
   hiciera, las corridas de Ecofilia leerían la conclusión del ejecutivo.
@@ -33,6 +35,10 @@ from apps.project.models import (
     ProjectStageReportOrigin as Origin,
 )
 from apps.project.services.caf_criteria import (
+    ALINEACION_KEY,
+    CONSIDERACIONES_KEY,
+    ENVERDECIMIENTO_KEY,
+    FUNDAMENTOS_KEY,
     build_criterio_ejecutivo,
     ecofilia_determinations,
     ecofilia_green_components,
@@ -50,16 +56,16 @@ from apps.user import institution_config
 
 logger = logging.getLogger(__name__)
 
-# Cuántas veces puede el ejecutivo generar el informe guiado en una etapa. Cada
-# generación es una corrida entera del IET; el staff no tiene tope.
-GUIADO_MAX_PER_STAGE = 3
+# Cuántas veces puede el ejecutivo generar el informe guiado en una etapa. Sin
+# tope (decisión de producto, 4 de noviembre de 2026): hasta emitir, cada
+# cambio de su criterio tiene que poder llegar al informe.
+GUIADO_MAX_PER_STAGE: int | None = None
 
 def _report_stages(project: Project) -> list[str]:
-    """Las etapas con reporte de Ecofilia: las que lanzan el workflow del informe.
+    """Las etapas con reporte de Ecofilia: las que tienen workflow del informe.
 
     Las vías que viven en una corrida del informe (editado, guiado) sólo existen
-    ahí. En CAF es IDO: el IET es el informe de IDO, y el análisis de DEC
-    todavía no está.
+    ahí. En CAF, IDO (la IET) y DEC (la IET de DEC).
     """
     return institution_config.report_stages(institution_config.config_for_project(project))
 
@@ -69,6 +75,14 @@ def _role_skill(project: Project, role: str):
     from apps.skill.models import Skill
 
     slug = institution_config.workflow(institution_config.config_for_project(project), role)
+    return Skill.objects.filter(slug=slug).first() if slug else None
+
+
+def report_skill(project: Project, stage: str):
+    """La skill del informe de Ecofilia en ``stage``: cada etapa tiene el suyo."""
+    from apps.skill.models import Skill
+
+    slug = institution_config.report_workflow(institution_config.config_for_project(project), stage)
     return Skill.objects.filter(slug=slug).first() if slug else None
 
 
@@ -119,7 +133,7 @@ def current_ecofilia_report(project: Project, stage: str):
     """
     from apps.skill.models import ExecutionStatus
 
-    skill = _role_skill(project, "report")
+    skill = report_skill(project, stage)
     if skill is None:
         return None
     runs = runs_for_stage(project, skill, stage).filter(status=ExecutionStatus.COMPLETED)
@@ -190,7 +204,11 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
         raise StageReportError(
             "Completá tus determinaciones o tu enverdecimiento antes de generar tu informe."
         )
-    if not is_ecofilia_staff(user) and guiado_runs_used(project, stage) >= GUIADO_MAX_PER_STAGE:
+    if (
+        GUIADO_MAX_PER_STAGE is not None
+        and not is_ecofilia_staff(user)
+        and guiado_runs_used(project, stage) >= GUIADO_MAX_PER_STAGE
+    ):
         raise StageReportError(
             f"Ya se generaron {GUIADO_MAX_PER_STAGE} versiones guiadas en esta etapa. "
             "Seguí trabajando la última en el Editor, o pedile una nueva al staff de Ecofilia."
@@ -215,12 +233,28 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
             "No se pudo poner en marcha la generación. Volvé a intentarlo en unos minutos."
         )
 
+    # Lo que reescribió la generación anterior sobre este mismo reporte: si
+    # ahora el ejecutivo coincide con Ecofilia en esas secciones, vuelven al
+    # texto de Ecofilia (ver ``apply_guided_result``).
+    previas = []
+    if report.pk and report.origin == Origin.GUIADO and report.execution_id == base.id:
+        previas = [
+            c["step_id"]
+            for c in (report.guided_result or {}).get("cambiadas") or []
+            if isinstance(c, dict) and isinstance(c.get("step_id"), int)
+        ]
+        previas += [
+            sid for sid in (report.guided_result or {}).get("previas") or [] if isinstance(sid, int)
+        ]
     report.origin = Origin.GUIADO
     report.execution = base
     report.guided_execution = outcome.execution
-    # Con qué criterio se generó: si el ejecutivo lo cambia después, los
-    # borradores ya no lo reflejan y la interfaz lo avisa.
-    report.guided_result = {"base": guided_basis(project.context_notes)}
+    # Con qué criterio se generó: si el ejecutivo lo cambia después, el informe
+    # ya no lo refleja y la interfaz lo avisa.
+    report.guided_result = {
+        "base": guided_basis(project.context_notes),
+        **({"previas": sorted(set(previas))} if previas else {}),
+    }
     report.document = None
     report.reader_execution = None
     report.save()
@@ -276,17 +310,19 @@ def _sources_footer(citations) -> str:
 
 
 def apply_guided_result(run) -> dict | None:
-    """Vuelca como borradores, sobre el reporte de Ecofilia, lo que el guiado cambió.
+    """Publica en el informe del ejecutivo lo que el guiado reescribió.
 
     Cada paso del guiado tiene el título de la sección de la IET que reescribe.
-    Los que dicen «SIN CAMBIOS» no tocan nada. Los demás quedan como borrador de
-    esa sección, con sus fuentes al pie: el ejecutivo los revisa y publica en el
-    Editor, y lo que escribió Ecofilia sigue intacto debajo.
+    Los que dicen «SIN CAMBIOS» no tocan nada, salvo que la generación anterior
+    hubiera reescrito esa sección: entonces vuelve al texto de Ecofilia, porque
+    ahora el ejecutivo coincide. Los demás se publican en esa sección, con sus
+    fuentes al pie; lo que escribió Ecofilia sigue intacto debajo y el ejecutivo
+    puede seguir ajustando en el Editor.
 
     Devuelve el resumen guardado en ``guided_result``, o ``None`` si no había
     nada que aplicar (el informe cambió de vía, se emitió o se anuló).
     """
-    from apps.skill.report_edits import save_section_draft
+    from apps.skill.report_edits import publish_section_content
     from apps.skill.models import ExecutionSectionEdit
 
     report = (
@@ -316,33 +352,48 @@ def apply_guided_result(run) -> dict | None:
     }
     author = run.owner or report.created_by
 
+    previas = set(report.guided_result.get("previas") or [])
     cambiadas: list[dict] = []
     sin_cambios: list[str] = []
     sin_destino: list[str] = []
     reemplazadas: list[str] = []
-    for step in (run.output_structured or {}).get("steps") or []:
-        if not isinstance(step, dict):
-            continue
-        title = str(step.get("title") or "")
-        content = str(step.get("content") or "").strip()
-        if not content or _is_sin_cambios(content):
-            sin_cambios.append(title)
-            continue
-        target = by_title.get(_norm_title(title)) or by_code.get(_code(title))
-        if target is None:
-            sin_destino.append(title)
-            continue
-        body = _strip_heading(content)
-        footer = _sources_footer(step.get("citations"))
-        if footer:
-            body = f"{body}\n\n{footer}"
-        existing = ExecutionSectionEdit.objects.filter(
-            execution=report.execution, step_id=target["step_id"]
-        ).first()
-        if existing is not None and existing.has_unpublished_changes:
-            reemplazadas.append(title)
-        save_section_draft(report.execution, target["step_id"], body, author)
-        cambiadas.append({"titulo": target.get("title") or title, "step_id": target["step_id"]})
+    restauradas: list[dict] = []
+    with transaction.atomic():
+        for step in (run.output_structured or {}).get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            title = str(step.get("title") or "")
+            content = str(step.get("content") or "").strip()
+            target = by_title.get(_norm_title(title)) or by_code.get(_code(title))
+            if not content or _is_sin_cambios(content):
+                sin_cambios.append(title)
+                if target is not None and target["step_id"] in previas:
+                    # La generación anterior la había reescrito y ahora el
+                    # ejecutivo coincide con Ecofilia: vuelve a su texto.
+                    publish_section_content(
+                        report.execution,
+                        target["step_id"],
+                        _strip_heading(str(target.get("content") or "")),
+                        author,
+                    )
+                    restauradas.append(
+                        {"titulo": target.get("title") or title, "step_id": target["step_id"]}
+                    )
+                continue
+            if target is None:
+                sin_destino.append(title)
+                continue
+            body = _strip_heading(content)
+            footer = _sources_footer(step.get("citations"))
+            if footer:
+                body = f"{body}\n\n{footer}"
+            existing = ExecutionSectionEdit.objects.filter(
+                execution=report.execution, step_id=target["step_id"]
+            ).first()
+            if existing is not None and existing.has_unpublished_changes:
+                reemplazadas.append(title)
+            publish_section_content(report.execution, target["step_id"], body, author)
+            cambiadas.append({"titulo": target.get("title") or title, "step_id": target["step_id"]})
 
     report.guided_result = {
         **({"base": report.guided_result["base"]} if report.guided_result.get("base") else {}),
@@ -350,6 +401,8 @@ def apply_guided_result(run) -> dict | None:
         "sin_cambios": sin_cambios,
         "sin_destino": sin_destino,
         "borradores_reemplazados": reemplazadas,
+        "restauradas": restauradas,
+        "publicado": True,
         "aplicado_en": timezone.now().isoformat(),
     }
     report.save(update_fields=["guided_result", "updated_at"])
@@ -437,7 +490,134 @@ def reading_assessment(report: ProjectStageReport) -> dict:
             out["recomendaciones"] = [row for row in rows if isinstance(row, dict)]
         elif title.startswith("3."):
             out["consideraciones_adicionales"] = str(step.get("content") or "").strip()
+        elif title.startswith("4.") and isinstance(rows, list):
+            out["componentes_verdes"] = [row for row in rows if isinstance(row, dict)]
     return out
+
+
+def _opcion(criterio: dict, valor) -> str:
+    """El valor leído, llevado a una opción del criterio si coincide con alguna."""
+    texto = " ".join(str(valor or "").split())
+    if not texto:
+        return ""
+    bajo = texto.lower()
+    for option in criterio.get("options") or []:
+        value = str(option.get("value") or "")
+        if value and (value.lower() == bajo or str(option.get("short") or "").lower() == bajo):
+            return value
+    for option in criterio.get("options") or []:
+        value = str(option.get("value") or "")
+        if value and bajo.startswith(value.lower()):
+            return value
+    return texto
+
+
+def apply_historical_reading(report: ProjectStageReport) -> bool:
+    """Lleva a la operación lo que la lectura sacó de un IET hecho por fuera.
+
+    Un IET histórico (cargado por el staff) no tiene insumo ni editor: lo que
+    vale es lo que dice el documento. Para que el Resumen y el tablero muestren
+    lo mismo que en una operación trabajada adentro, sus determinaciones, sus
+    fundamentos, sus consideraciones y sus componentes verdes pasan a la mirada
+    del ejecutivo de la operación, y el informe queda emitido tal cual.
+
+    Devuelve si aplicó algo. No toca operaciones que no son históricas.
+    """
+    from apps.project.services.alignment_history import record_if_changed
+    from apps.project.services.caf_criteria import _aplicar_reglas
+    from apps.project.services.evaluation_records import HISTORICO_KEY, key_de_etiqueta
+
+    project = report.project
+    if not (project.context_notes or {}).get(HISTORICO_KEY) or report.origin != Origin.SUBIDO:
+        return False
+    lectura = reading_assessment(report)
+    if not lectura:
+        return False
+
+    criterios = {c["key"]: c for c in institution_config.criteria(institution_config.config_for_project(project))}
+    determinaciones: dict[str, str] = {}
+    fundamentos: dict[str, str] = {}
+    for label, item in (lectura.get("determinaciones") or {}).items():
+        key = key_de_etiqueta(label)
+        if not key or key not in criterios or not isinstance(item, dict):
+            continue
+        valor = _opcion(criterios[key], item.get("determinacion"))
+        if valor:
+            determinaciones[key] = valor
+        fundamento = " ".join(str(item.get("fundamento") or "").split())
+        if fundamento:
+            fundamentos[key] = fundamento
+    componentes = []
+    for row in lectura.get("componentes_verdes") or []:
+        nombre = str(row.get("componente") or "").strip()
+        if not nombre:
+            continue
+        codigo = str(row.get("codigo_actividad") or "").strip()
+        actividad = str(row.get("actividad_elegible") or "").strip()
+        componentes.append(
+            {
+                "componente": nombre,
+                "objetivo": str(row.get("objetivo") or "").strip(),
+                "categoria": " ".join(x for x in (codigo, actividad) if x) or str(row.get("categoria") or ""),
+                "monto_usd": _amount_or_none(row.get("monto_usd")),
+                "fundamento": str(row.get("fundamento") or "").strip(),
+                "origen": "ejecutivo",
+                "estado": "incluido",
+            }
+        )
+
+    with transaction.atomic():
+        locked = Project.objects.select_for_update().get(pk=project.pk)
+        previous = dict(locked.context_notes or {})
+        notes = dict(previous)
+        if determinaciones:
+            _aplicar_reglas(determinaciones)
+            notes[ALINEACION_KEY] = {**determinaciones, "actualizado_en": timezone.now().isoformat()}
+        if fundamentos:
+            notes[FUNDAMENTOS_KEY] = fundamentos
+        if lectura.get("consideraciones_adicionales"):
+            notes[CONSIDERACIONES_KEY] = lectura["consideraciones_adicionales"]
+        if componentes:
+            notes[ENVERDECIMIENTO_KEY] = {
+                "componentes": componentes,
+                "oportunidades": [],
+                "actualizado_en": timezone.now().isoformat(),
+            }
+        locked.context_notes = notes
+        locked.save(update_fields=["context_notes", "updated_at"])
+        record_if_changed(locked, previous, report.created_by)
+
+        fresh = ProjectStageReport.objects.select_for_update().get(pk=report.pk)
+        if not fresh.is_emitted:
+            assessment = executive_assessment(notes)
+            assessment["lectura"] = lectura
+            fresh.emitted_assessment = assessment
+            fresh.emitted_markdown = ""
+            fresh.emitted_at = timezone.now()
+            fresh.emitted_by = fresh.created_by
+            fresh.save()
+    return True
+
+
+def _amount_or_none(value) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = re.sub(r"[^\d.,-]", "", str(value))
+    if not cleaned:
+        return None
+    # «1.500.000» o «1,500,000»: separadores de miles; «2,5»: decimal.
+    if cleaned.count(".") > 1 or cleaned.count(",") > 1:
+        cleaned = cleaned.replace(".", "").replace(",", "")
+    elif "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".") if cleaned.rfind(",") > cleaned.rfind(".") else cleaned.replace(",", "")
+    else:
+        cleaned = cleaned.replace(",", ".")
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
 
 
 def emit(project: Project, user, markdown: str = "") -> ProjectStageReport:

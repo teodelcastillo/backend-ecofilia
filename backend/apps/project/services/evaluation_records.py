@@ -194,25 +194,48 @@ def records_for(projects) -> list[dict]:
     return out
 
 
-def create_historical(*, user, organization, document, name: str, notes: dict) -> ProjectStageReport:
-    """Una operación para un IET histórico, con el informe como subido.
+def historical_stages(organization) -> list[str]:
+    """Las etapas en las que se puede cargar un IET hecho por fuera: las que
+    tienen documento principal (en CAF, IDO y DEC)."""
+    config = institution_config.effective_config(organization)
+    return [st["slug"] for st in config.get("stages") or [] if st.get("principal_tag")]
 
-    No se lanza el análisis del Asistente IA: el IET histórico se lee (la
-    lectura arranca sola cuando el documento termina de procesarse) y entra al
-    tablero como evaluación externa. El documento no se vincula al expediente:
-    la operación no tiene más fuentes que el informe mismo.
+
+def create_historical(
+    *, user, organization, document, name: str, notes: dict, stage: str | None = None
+) -> ProjectStageReport:
+    """Una operación para un IET hecho por fuera, con el informe como subido.
+
+    No se lanza el análisis del Asistente IA: el IET se lee (la lectura arranca
+    sola cuando el documento termina de procesarse) y lo que dice pasa a la
+    operación (``stage_reports.apply_historical_reading``), así el Resumen y el
+    tablero muestran lo mismo que en una operación trabajada en Ecofilia. El
+    documento no se vincula al expediente: la operación no tiene más fuentes que
+    el informe mismo.
+
+    ``stage`` es la etapa del informe (en CAF, IDO o DEC); sin ella, la primera
+    con documento principal.
     """
     from apps.project.services.stage_reports import maybe_launch_reading
 
+    etapas = historical_stages(organization)
+    if etapas:
+        stage = stage or etapas[0]
+        if stage not in etapas:
+            raise ValueError(f"Etapa desconocida para un informe histórico: {stage!r}.")
+    else:
+        # Una institución sin etapas configuradas: el informe queda en IDO,
+        # como antes de que cada institución tuviera las suyas.
+        stage = "ido_cci"
     project = Project.objects.create(
         owner=user,
         organization=organization,
         name=name,
-        context_notes={**notes, "estado": "ido_cci", HISTORICO_KEY: True},
+        context_notes={**notes, "estado": stage, HISTORICO_KEY: True},
     )
     report = ProjectStageReport.objects.create(
         project=project,
-        stage="ido_cci",
+        stage=stage,
         origin=Origin.SUBIDO,
         document=document,
         created_by=user,

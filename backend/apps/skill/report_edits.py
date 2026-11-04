@@ -113,6 +113,38 @@ def publish_section_edits(
     return published
 
 
+def publish_section_content(
+    execution: SkillExecution, step_id: int, content: str, user
+) -> ExecutionSectionEdit:
+    """
+    Publica ``content`` como texto vigente de una sección, sin tocar las demás.
+
+    Es lo que usa el informe guiado: lo que el asistente reescribe con el
+    criterio del ejecutivo entra directo a su informe, con su versión en el
+    historial como cualquier publicación. El resto de los borradores del
+    ejecutivo sigue como estaba.
+    """
+    edit, _ = ExecutionSectionEdit.objects.select_for_update().get_or_create(
+        execution=execution, step_id=step_id
+    )
+    last = edit.versions.order_by("-version_number").first()
+    ExecutionSectionEditVersion.objects.create(
+        edit=edit,
+        version_number=(last.version_number + 1) if last else 1,
+        content=content,
+        created_by=user,
+    )
+    edit.draft = content
+    edit.published = content
+    edit.published_at = timezone.now()
+    edit.published_by = user
+    edit.updated_by = user
+    edit.save(
+        update_fields=["draft", "published", "published_at", "published_by", "updated_by", "updated_at"]
+    )
+    return edit
+
+
 def restore_section_version(
     execution: SkillExecution, step_id: int, version_number: int
 ) -> ExecutionSectionEdit | None:

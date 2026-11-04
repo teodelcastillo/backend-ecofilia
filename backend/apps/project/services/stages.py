@@ -317,21 +317,35 @@ def record_launches(project: Project, stage: str, launches: list[dict]) -> None:
 def on_execution_finished(execution) -> None:
     """Lo que dispara una corrida de la operación al terminar.
 
-    El guiado completado vuelca sus secciones como borradores sobre la IET.
+    El guiado completado publica sus secciones en el informe del ejecutivo; la
+    lectura de un IET histórico lleva lo que leyó a la operación.
 
     Se llama al final de cada corrida y nunca levanta: un problema acá no puede
     dejar fallida una corrida que terminó bien.
     """
     from apps.skill.models import ExecutionStatus
 
+    if execution.status != ExecutionStatus.COMPLETED:
+        return
     try:
-        if execution.project_id is None or execution.status != ExecutionStatus.COMPLETED:
-            return
-        config = institution_config.config_for_project(execution.project)
-        if execution.skill.slug == institution_config.workflow(config, "guided"):
-            from apps.project.services.stage_reports import apply_guided_result
+        if execution.project_id is not None:
+            config = institution_config.config_for_project(execution.project)
+            if execution.skill.slug == institution_config.workflow(config, "guided"):
+                from apps.project.services.stage_reports import apply_guided_result
 
-            apply_guided_result(execution)
+                apply_guided_result(execution)
+    except Exception:  # noqa: BLE001
+        logger.exception("Falló el seguimiento de la corrida %s", getattr(execution, "id", None))
+    try:
+        # La lectura de un IET histórico corre sobre el documento, no sobre la
+        # operación: se busca el informe que la lanzó.
+        from apps.project.models import ProjectStageReport
+        from apps.project.services.stage_reports import apply_historical_reading
+
+        for report in ProjectStageReport.objects.filter(
+            reader_execution=execution, voided_at__isnull=True
+        ).select_related("project"):
+            apply_historical_reading(report)
     except Exception:  # noqa: BLE001
         logger.exception("Falló el seguimiento de la corrida %s", getattr(execution, "id", None))
 

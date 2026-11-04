@@ -372,14 +372,25 @@ los valores que hoy están en el código.
 | `stages[].label` | string | no vacío |
 | `stages[].principal_tag` | slug \| null | etiqueta que existe para la institución (globales + las suyas) |
 | `stages[].launches` | lista de slugs de skill | cada una `public` o de esta institución |
+| `stages[].report` | slug de skill, opcional | el informe de Ecofilia **de esa etapa** (en CAF, DEC tiene el suyo). Se suma a `launches` si no estaba. Sin él, vale `workflows.report` si la etapa lo lanza |
 | `workflows.report` / `.guided` / `.reading` | slug de skill \| null | ídem; `null` = la institución no tiene ese rol |
 | `evidence_tag_groups[]` | lista | `slug` único; una etiqueta en a lo sumo un grupo; cada etiqueta existe para la institución. Una etiqueta sin grupo cae en `"otro"` |
 | `evaluation.framework` | string | `"caf-datbc"` o `""`. Con `caf-datbc`, los criterios tienen que ser exactamente los 10 de CAF: las reglas de determinación están en código y dependen de esas claves |
 | `evaluation.criteria[]` | lista | `key` única; `group` es la clave del criterio-determinación al que pertenece (o `null`); `options[].tone` ∈ `ok`, `atencion`, `brecha`, `critico`, `pendiente`, `neutro` |
 
-Los roles de la etapa se derivan, no se configuran aparte. Una etapa tiene
-**informe de Ecofilia** si sus `launches` incluyen `workflows.report`; hoy, sólo
-`ido_cci`. Ahí se ofrecen las vías editado y guiado.
+Una etapa tiene **informe de Ecofilia** si tiene `stages[].report` o si sus
+`launches` incluyen `workflows.report`. En CAF, `ido_cci` (la IET) y, desde
+`user/0016`, `dec` (`dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion`).
+Ahí se ofrecen las vías editado y guiado; el guiado (`workflows.guided`) es el
+mismo para todas las etapas y reescribe el informe de la etapa en la que está la
+operación. Lo que reescribe se publica directo en el informe del ejecutivo, sin
+tope de generaciones.
+
+`POST /api/projects/historical-report/` acepta `stage` (una etapa con documento
+principal; por defecto la primera). Cuando la lectura termina, sus
+determinaciones, fundamentos, consideraciones y componentes verdes pasan a la
+operación y el informe queda emitido: el Resumen y el tablero lo muestran igual
+que una operación trabajada en Ecofilia.
 
 ### Configuración base
 

@@ -136,6 +136,24 @@ class ValidateConfigTestCase(TestCase):
         for fragment in expected:
             self.assertTrue(any(fragment in e for e in errors), (fragment, errors))
 
+    def test_each_stage_can_have_its_own_report(self):
+        config = caf_config()
+        dec = next(st for st in config["stages"] if st["slug"] == "dec")
+        dec["report"] = IET_SLUG
+        normalized, errors = institution_config.validate_config(config, self.caf)
+        self.assertEqual(errors, [])
+        dec = next(st for st in normalized["stages"] if st["slug"] == "dec")
+        # El informe de la etapa se lanza al entrar: queda entre los lanzamientos.
+        self.assertEqual((dec["report"], dec["launches"]), (IET_SLUG, [IET_SLUG]))
+        self.assertEqual(institution_config.report_workflow(normalized, "dec"), IET_SLUG)
+        self.assertEqual(institution_config.report_workflow(normalized, "ido_cci"), IET_SLUG)
+        self.assertIsNone(institution_config.report_workflow(normalized, "aprobada"))
+        self.assertEqual(institution_config.report_stages(normalized), ["ido_cci", "dec"])
+
+        dec["report"] = "no-existe"
+        _, errors = institution_config.validate_config(normalized, self.caf)
+        self.assertTrue(any(e.startswith("stages[2].report") for e in errors), errors)
+
     def test_not_an_object(self):
         self.assertEqual(institution_config.validate_config([], self.caf)[1], ["config: tiene que ser un objeto."])
 

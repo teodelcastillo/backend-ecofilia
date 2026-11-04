@@ -6,8 +6,10 @@ El informe del ejecutivo de cada etapa.
   puede leer.
 - Guiado: Ecofilia reescribe, con el criterio del ejecutivo (que viaja como
   parámetro, con el de Ecofilia al lado), sólo las secciones C, D y E donde
-  difieren. Lo reescrito entra como borradores sobre su reporte, con las fuentes
-  al pie. Hasta tres generaciones por etapa, salvo el staff.
+  difieren. Lo reescrito se publica directo en el informe del ejecutivo, con las
+  fuentes al pie. Sin tope de generaciones: hasta emitir, cada cambio de su
+  criterio puede llegar al informe. Cada etapa tiene su reporte (en CAF, DEC
+  tiene el suyo).
 - Las fotos de la mirada del ejecutivo (alineación y enverdecimiento) y los
   documentos del expediente forman la historia de la operación.
 - Emitido, no cambia más: ni la vía, ni el documento. Anularlo es del staff.
@@ -263,19 +265,16 @@ class GuiadoTestCase(_ReportBase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         delay.assert_not_called()
 
-    def test_the_executive_has_a_limit_and_staff_does_not(self):
+    def test_there_is_no_limit_of_generations(self):
+        self.assertIsNone(GUIADO_MAX_PER_STAGE)
         self._determine()
         skill = Skill.objects.get(slug=GUIADO_SLUG)
-        for _ in range(GUIADO_MAX_PER_STAGE):
+        for _ in range(5):
             SkillExecution.objects.create(
                 skill=skill, owner=self.editor, project=self.project,
                 status=ExecutionStatus.COMPLETED, stage="ido_cci",
             )
         response, delay = self._post(self.editor, "stage-report/guiado/")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        delay.assert_not_called()
-
-        response, delay = self._post(self.staff, "stage-report/guiado/")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         delay.assert_called_once()
 
@@ -288,8 +287,8 @@ class GuiadoTestCase(_ReportBase):
 
 
 class GuidedDraftsTestCase(_ReportBase):
-    """Al terminar el guiado, lo que cambió entra como borrador sobre el reporte
-    de Ecofilia; lo que no, queda como estaba."""
+    """Al terminar el guiado, lo que cambió se publica en el informe del
+    ejecutivo (capas sobre el reporte de Ecofilia); lo que no, queda como estaba."""
 
     def _generate(self):
         self._determine()
@@ -303,7 +302,7 @@ class GuidedDraftsTestCase(_ReportBase):
         run.save(update_fields=["status", "output_structured"])
         on_execution_finished(run)
 
-    def test_only_what_changed_becomes_a_draft_with_its_sources(self):
+    def test_only_what_changed_is_published_with_its_sources(self):
         run = self._generate()
         self._finish(run, [
             {"step_id": 1, "title": "C.1. Actividades elegibles para financiamiento verde y co-beneficios",
@@ -328,8 +327,9 @@ class GuidedDraftsTestCase(_ReportBase):
             edit.draft,
             "El riesgo es medio según el APRC.\n\n**Fuentes:** Documento de la operación (p. 4, 7–8)",
         )
-        # No se publica solo: el ejecutivo lo revisa en el Editor.
-        self.assertEqual(edit.published, "")
+        # Se publica directo: la decisión del ejecutivo es la que vale.
+        self.assertEqual(edit.published, edit.draft)
+        self.assertEqual(edit.versions.count(), 1)
         result = self._active().guided_result
         self.assertEqual(
             result["cambiadas"],
@@ -359,6 +359,139 @@ class GuidedDraftsTestCase(_ReportBase):
             {"step_id": 2, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "Otro texto."},
         ])
         self.assertFalse(ExecutionSectionEdit.objects.filter(execution=self.iet_run).exists())
+
+
+    def test_regenerating_returns_to_ecofilia_where_the_executive_now_agrees(self):
+        run = self._generate()
+        self._finish(run, [
+            {"step_id": 2, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "Riesgo medio."},
+        ])
+        # Cambia de criterio y regenera: ahora coincide con Ecofilia en A1.
+        response, _ = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        second = self._active().guided_execution
+        self.assertNotEqual(second, run)
+        self._finish(second, [
+            {"step_id": 2, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "SIN CAMBIOS"},
+        ])
+        edit = ExecutionSectionEdit.objects.get(execution=self.iet_run, step_id=102)
+        self.assertEqual(edit.published, "Texto de Ecofilia sobre A1.")
+        result = self._active().guided_result
+        self.assertEqual(result["restauradas"][0]["step_id"], 102)
+        self.assertEqual(result["cambiadas"], [])
+
+
+class DecReportTestCase(_ReportBase):
+    """DEC tiene su propio informe de Ecofilia: el guiado y el editado viven ahí."""
+
+    DEC_SLUG = "dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion"
+
+    def setUp(self):
+        super().setUp()
+        self.dec_skill = Skill.objects.create(
+            name="IET DEC", slug=self.DEC_SLUG, skill_type=Skill.objects.get(slug=IET_SLUG).skill_type,
+            allowed_contexts=["project"], scope="organization", organization=self.caf,
+        )
+        config = caf_config()
+        for stage in config["stages"]:
+            if stage["slug"] == "dec":
+                stage["report"] = self.DEC_SLUG
+                stage["launches"] = [self.DEC_SLUG]
+        self.caf.config = config
+        self.caf.save(update_fields=["config"])
+        self.project.context_notes = {**self.project.context_notes, "estado": "dec"}
+        self.project.save(update_fields=["context_notes"])
+        self.dec_run = SkillExecution.objects.create(
+            skill=self.dec_skill, owner=self.owner, project=self.project,
+            status=ExecutionStatus.COMPLETED, stage="dec", finished_at=timezone.now(),
+            output_structured={"steps": [
+                {"step_id": 202, "title": "D.2. CT A1 — Análisis de riesgos climáticos",
+                 "content": "Texto de DEC sobre A1."},
+            ]},
+        )
+
+    def test_the_dec_report_is_its_own_workflow(self):
+        from apps.project.services.stage_reports import current_ecofilia_report
+
+        self.assertEqual(current_ecofilia_report(self.project, "dec"), self.dec_run)
+        self.assertEqual(current_ecofilia_report(self.project, "ido_cci"), self.iet_run)
+
+    def test_the_guided_report_rewrites_the_dec_report(self):
+        self._determine()
+        response, delay = self._post(self.editor, "stage-report/guiado/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        report = self._active()
+        self.assertEqual((report.stage, report.execution), ("dec", self.dec_run))
+        run = report.guided_execution
+        run.status = ExecutionStatus.COMPLETED
+        run.output_structured = {"steps": [
+            {"step_id": 1, "title": "D.2. CT A1 — Análisis de riesgos climáticos", "content": "Riesgo medio en DEC."},
+        ]}
+        run.save(update_fields=["status", "output_structured"])
+        on_execution_finished(run)
+        edit = ExecutionSectionEdit.objects.get(execution=self.dec_run, step_id=202)
+        self.assertEqual(edit.published, "Riesgo medio en DEC.")
+
+
+class HistoricalReadingTestCase(APITestCase):
+    """Un IET hecho por fuera: lo que lee la lectura pasa a la operación."""
+
+    def setUp(self):
+        self.caf = Organization.objects.create(name="CAF", slug="caf", config=caf_config())
+        self.staff = User.objects.create_user(email="staff@example.com", password="x", is_staff=True, is_superuser=True)
+        self.doc = Document.objects.create(
+            owner=self.staff, name="IET DEC externo", slug="iet-dec-externo",
+            chunking_status="done", extracted_text="x",
+        )
+
+    def test_an_external_dec_report_reaches_the_summary(self):
+        self.client.force_authenticate(self.staff)
+        with patch(DELAY), self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post("/api/projects/historical-report/", {
+                "document_slug": self.doc.slug, "name": "Op DEC", "pais": "Perú",
+                "organization": "caf", "stage": "dec", "monto": "40",
+            }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        project = Project.objects.get(name="Op DEC")
+        self.assertEqual(project.context_notes["estado"], "dec")
+        report = ProjectStageReport.objects.get(project=project)
+        self.assertEqual(report.stage, "dec")
+        reader = report.reader_execution
+        reader.status = ExecutionStatus.COMPLETED
+        reader.output_structured = {"steps": [
+            {"title": "1. Determinaciones por criterio", "table": {"rows": [
+                {"criterio": "CT A1 — Análisis de riesgos climáticos", "determinacion": "riesgo medio",
+                 "fundamento": "El APRC lo dice."},
+                {"criterio": "Objetivo 2 — Desarrollo bajo en emisiones de GEI",
+                 "determinacion": "No consta en el informe", "fundamento": ""},
+            ]}},
+            {"title": "3. Consideraciones adicionales", "content": "Capacidad del ejecutor."},
+            {"title": "4. Componentes con potencial de financiamiento verde", "table": {"rows": [
+                {"componente": "Planta", "codigo_actividad": "A.1.1.3", "actividad_elegible": "Conexiones",
+                 "objetivo": "Adaptación", "monto_usd": 10000000, "fundamento": "Reduce pérdidas."},
+            ]}},
+        ]}
+        reader.save(update_fields=["status", "output_structured"])
+        on_execution_finished(reader)
+
+        project.refresh_from_db()
+        notes = project.context_notes
+        self.assertEqual(notes["alineacion_paris"]["ct_a1"], "Riesgo medio")
+        self.assertEqual(notes["alineacion_fundamentos"]["ct_a1"], "El APRC lo dice.")
+        self.assertEqual(notes["consideraciones_adicionales"], "Capacidad del ejecutor.")
+        componente = notes["enverdecimiento"]["componentes"][0]
+        self.assertEqual((componente["monto_usd"], componente["estado"]), (10000000.0, "incluido"))
+        report.refresh_from_db()
+        self.assertTrue(report.is_emitted)
+        self.assertEqual(report.emitted_assessment["determinaciones"]["ct_a1"], "Riesgo medio")
+
+    def test_an_unknown_stage_is_rejected(self):
+        self.client.force_authenticate(self.staff)
+        response = self.client.post("/api/projects/historical-report/", {
+            "document_slug": self.doc.slug, "name": "Op X", "pais": "Perú",
+            "organization": "caf", "stage": "aprobada",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class HistoryTestCase(_ReportBase):

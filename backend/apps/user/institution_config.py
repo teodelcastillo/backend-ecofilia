@@ -139,12 +139,31 @@ def workflow(config: dict, role: str) -> str | None:
     return (config.get("workflows") or {}).get(role) or None
 
 
-def report_stages(config: dict) -> list[str]:
-    """Las etapas con informe de Ecofilia: las que lanzan el workflow del informe."""
+def report_workflow(config: dict, slug: str | None) -> str | None:
+    """El workflow que es el informe de Ecofilia en la etapa ``slug``, o None.
+
+    Cada etapa puede tener el suyo (``stages[].report``): en CAF, IDO tiene la
+    IET y DEC la IET de DEC. Sin uno propio, vale el de ``workflows.report`` si
+    la etapa lo lanza, que es como se derivaba antes.
+    """
+    found = stage(config, slug) if slug else None
+    if not found:
+        return None
+    own = found.get("report")
+    if own:
+        return own
     report = workflow(config, "report")
-    if not report:
-        return []
-    return [s["slug"] for s in config.get("stages") or [] if report in (s.get("launches") or [])]
+    return report if report and report in (found.get("launches") or []) else None
+
+
+def report_workflows(config: dict) -> set[str]:
+    """Todos los workflows que son informe de alguna etapa."""
+    return {w for w in (report_workflow(config, s.get("slug")) for s in config.get("stages") or []) if w}
+
+
+def report_stages(config: dict) -> list[str]:
+    """Las etapas con informe de Ecofilia: las que tienen workflow del informe."""
+    return [s["slug"] for s in config.get("stages") or [] if report_workflow(config, s.get("slug"))]
 
 
 def principal_tag(config: dict, slug: str) -> str | None:
@@ -265,7 +284,7 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
         if not isinstance(item, dict):
             errors.append(f"{path}: tiene que ser un objeto.")
             continue
-        unknown = sorted(set(item) - {"slug", "label", "principal_tag", "launches"})
+        unknown = sorted(set(item) - {"slug", "label", "principal_tag", "launches", "report"})
         if unknown:
             errors.append(f"{path}: claves desconocidas: {', '.join(unknown)}.")
         slug = item.get("slug")
@@ -288,12 +307,22 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
             error = _skill_error(f"{path}.launches[{j}]", skill, skills)
             if error:
                 errors.append(error)
+        # El informe de la etapa se lanza al entrar a ella: si no estaba entre
+        # los lanzamientos, se suma.
+        report = item.get("report") or None
+        if report is not None:
+            error = _skill_error(f"{path}.report", report, skills)
+            if error:
+                errors.append(error)
+            elif report not in launches:
+                launches = [*launches, report]
         out.append(
             {
                 "slug": slug,
                 "label": label,
                 "principal_tag": principal or None,
                 "launches": list(dict.fromkeys(launches)),
+                **({"report": report} if report else {}),
             }
         )
     return out
