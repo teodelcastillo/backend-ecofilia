@@ -1094,7 +1094,7 @@ class ProjectViewSet(viewsets.ModelViewSet):
             {"origin": "editado"}
             {"origin": "subido", "document_slug": "..."}
 
-        El guiado tiene su propio endpoint porque lanza una corrida.
+        El guiado tiene su propio endpoint porque publica las secciones.
         """
         from apps.project.services import stage_reports
 
@@ -1132,14 +1132,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
         POST /projects/{slug}/stage-report/guiado/
 
-        Toma las determinaciones, fundamentos y respuestas al insumo que el
-        ejecutivo guardó en Alineación. Hasta tres generaciones por etapa.
+        Body: {"secciones": [{"titulo": "...", "contenido": "..."}]}
+
+        Plasma sin IA lo que el ejecutivo determinó: el portal arma el texto de
+        cada sección con sus selecciones y fundamentos.
         """
         from apps.project.services import stage_reports
 
         project = self.get_object()
+        secciones = request.data.get("secciones")
         return self._stage_report_response(
-            project, lambda: stage_reports.generate_guiado(project, request.user)
+            project, lambda: stage_reports.generate_guiado(project, request.user, secciones)
         )
 
     @action(

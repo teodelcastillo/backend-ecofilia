@@ -7,12 +7,11 @@ el oficial, por una de tres vías:
 - **editado**: trabaja sobre el reporte de Ecofilia. Sus ediciones son capas
   sobre la corrida (``ExecutionSectionEdit``), así que el original no se pierde.
 - **guiado**: completa paso a paso sus determinaciones, fundamentos y
-  enverdecimiento —con la ficha de la IET de Ecofilia como referencia— y Ecofilia
-  reescribe con ese criterio sólo las secciones de enverdecimiento y alineación
-  (C, D y E) donde difiere de la suya. Lo reescrito se publica directo en el
-  informe del ejecutivo (capas sobre el reporte de Ecofilia, que sigue intacto
-  debajo): su decisión es la que vale. Hasta emitir puede cambiar su criterio y
-  regenerarlo las veces que haga falta.
+  enverdecimiento —con la ficha de la IET de Ecofilia como referencia— y eso se
+  plasma tal cual, sin IA, en las secciones de enverdecimiento y alineación
+  (C, D y E) de su informe (capas sobre el reporte de Ecofilia, que sigue
+  intacto debajo). Hasta emitir puede cambiar su criterio y regenerarlo las
+  veces que haga falta.
 - **subido**: lo escribe afuera y lo sube. Ecofilia lo lee para obtener su
   mirada estructurada, pero no lo suma al expediente de la operación: si lo
   hiciera, las corridas de Ecofilia leerían la conclusión del ejecutivo.
@@ -40,8 +39,6 @@ from apps.project.services.caf_criteria import (
     ENVERDECIMIENTO_KEY,
     FUNDAMENTOS_KEY,
     build_criterio_ejecutivo,
-    ecofilia_determinations,
-    ecofilia_green_components,
     executive_assessment,
     guided_basis,
 )
@@ -172,21 +169,18 @@ def guiado_runs_used(project: Project, stage: str) -> int:
     return runs_for_stage(project, skill, stage).exclude(status=ExecutionStatus.FAILED).count()
 
 
-def generate_guiado(project: Project, user) -> ProjectStageReport:
-    """Lanza el guiado sobre el reporte de Ecofilia de la etapa.
+def generate_guiado(project: Project, user, secciones) -> ProjectStageReport:
+    """Plasma en el informe del ejecutivo lo que él determinó, sin IA.
 
-    El informe queda ``guiado`` con ``execution`` = el reporte de Ecofilia (es el
-    documento que se trabaja y se emite) y ``guided_execution`` = la corrida
-    guiada. Cuando ésta termina, ``apply_guided_result`` vuelca como borradores
-    las secciones que cambiaron.
+    ``secciones`` es ``[{"titulo": ..., "contenido": ...}]``: el texto de cada
+    sección, armado por el portal con sus selecciones y fundamentos tal cual.
+    Se publica directo sobre el reporte de Ecofilia, que sigue intacto debajo.
+    El ejecutivo puede seguir ajustándolo en el Editor.
     """
-    from apps.skill.launch import launch_institutional
-
     stage = _require_stage(project)
     if stage not in _report_stages(project):
         raise StageReportError("El informe guiado todavía no está disponible en esta etapa.")
-    skill = _role_skill(project, "guided")
-    if skill is None:
+    if _role_skill(project, "guided") is None:
         raise StageReportError("El informe guiado no está disponible en esta institución.")
     base = current_ecofilia_report(project, stage)
     if base is None:
@@ -194,71 +188,79 @@ def generate_guiado(project: Project, user) -> ProjectStageReport:
             "Todavía no hay un reporte de Ecofilia terminado en esta etapa: el informe "
             "guiado se escribe sobre él."
         )
-
-    criterio = build_criterio_ejecutivo(
-        project.context_notes,
-        ecofilia=ecofilia_determinations(base),
-        componentes_ecofilia=ecofilia_green_components(base),
-    )
-    if not criterio:
+    if not build_criterio_ejecutivo(project.context_notes):
         raise StageReportError(
             "Completá tus determinaciones o tu enverdecimiento antes de generar tu informe."
         )
-    if (
-        GUIADO_MAX_PER_STAGE is not None
-        and not is_ecofilia_staff(user)
-        and guiado_runs_used(project, stage) >= GUIADO_MAX_PER_STAGE
-    ):
-        raise StageReportError(
-            f"Ya se generaron {GUIADO_MAX_PER_STAGE} versiones guiadas en esta etapa. "
-            "Seguí trabajando la última en el Editor, o pedile una nueva al staff de Ecofilia."
-        )
-    # Validar antes de lanzar: si el informe ya está emitido no se gasta una corrida.
+    secciones = [
+        (str(s.get("titulo") or ""), str(s.get("contenido") or "").strip())
+        for s in (secciones if isinstance(secciones, list) else [])
+        if isinstance(s, dict)
+    ]
+    if not any(contenido for _, contenido in secciones):
+        raise StageReportError("No llegó el contenido del informe. Actualizá la página y volvé a intentarlo.")
     report = _editable_report(project, stage, user)
 
-    outcome = launch_institutional(
-        skill,
-        owner=user,
-        project=project,
-        stage=stage,
-        input_values={"criterio_ejecutivo": criterio},
-        launched_by="guiado",
-    )
-    if outcome.execution is None:
-        raise StageReportError(outcome.reason or "No se pudo generar el informe guiado.")
-    if outcome.status == "failed":
-        # No llegó a la cola: la vía del informe no cambia, y la corrida
-        # fallida no cuenta para el tope, así que se puede volver a intentar.
-        raise StageReportError(
-            "No se pudo poner en marcha la generación. Volvé a intentarlo en unos minutos."
-        )
+    from apps.skill.models import ExecutionSectionEdit
+    from apps.skill.report_edits import publish_section_content
 
-    # Lo que reescribió la generación anterior sobre este mismo reporte: si
-    # ahora el ejecutivo coincide con Ecofilia en esas secciones, vuelven al
-    # texto de Ecofilia (ver ``apply_guided_result``).
-    previas = []
-    if report.pk and report.origin == Origin.GUIADO and report.execution_id == base.id:
-        previas = [
-            c["step_id"]
-            for c in (report.guided_result or {}).get("cambiadas") or []
-            if isinstance(c, dict) and isinstance(c.get("step_id"), int)
-        ]
-        previas += [
-            sid for sid in (report.guided_result or {}).get("previas") or [] if isinstance(sid, int)
-        ]
-    report.origin = Origin.GUIADO
-    report.execution = base
-    report.guided_execution = outcome.execution
-    # Con qué criterio se generó: si el ejecutivo lo cambia después, el informe
-    # ya no lo refleja y la interfaz lo avisa.
-    report.guided_result = {
-        "base": guided_basis(project.context_notes),
-        **({"previas": sorted(set(previas))} if previas else {}),
-    }
-    report.document = None
-    report.reader_execution = None
-    report.save()
+    buscar = _buscador_de_pasos(base)
+    cambiadas: list[dict] = []
+    sin_destino: list[str] = []
+    reemplazadas: list[str] = []
+    with transaction.atomic():
+        for titulo, contenido in secciones:
+            if not contenido:
+                continue
+            target = buscar(titulo)
+            if target is None:
+                sin_destino.append(titulo)
+                continue
+            existing = ExecutionSectionEdit.objects.filter(
+                execution=base, step_id=target["step_id"]
+            ).first()
+            if existing is not None and existing.has_unpublished_changes:
+                reemplazadas.append(titulo)
+            publish_section_content(base, target["step_id"], contenido, user)
+            cambiadas.append({"titulo": target.get("title") or titulo, "step_id": target["step_id"]})
+
+        report.origin = Origin.GUIADO
+        report.execution = base
+        report.guided_execution = None
+        # Con qué criterio se generó: si el ejecutivo lo cambia después, el informe
+        # ya no lo refleja y la interfaz lo avisa.
+        report.guided_result = {
+            "base": guided_basis(project.context_notes),
+            "cambiadas": cambiadas,
+            "sin_cambios": [],
+            "sin_destino": sin_destino,
+            "borradores_reemplazados": reemplazadas,
+            "restauradas": [],
+            "publicado": True,
+            "aplicado_en": timezone.now().isoformat(),
+        }
+        report.document = None
+        report.reader_execution = None
+        report.save()
     return report
+
+
+def _buscador_de_pasos(execution):
+    """Cómo ubicar una sección del informe por su título.
+
+    Si el título cambió (p. ej. se afinó en el Studio), se busca por código,
+    pero sólo si el código es único: la IET tiene varios "D.2." (un paso por
+    criterio) y adivinar entre ellos volcaría el texto en otra sección.
+    """
+    steps = [
+        step
+        for step in (execution.output_structured or {}).get("steps") or []
+        if isinstance(step, dict) and isinstance(step.get("step_id"), int)
+    ]
+    by_title = {_norm_title(step.get("title")): step for step in steps}
+    codes = [_code(step.get("title")) for step in steps]
+    by_code = {code: step for code, step in zip(codes, steps) if code and codes.count(code) == 1}
+    return lambda title: by_title.get(_norm_title(title)) or by_code.get(_code(title))
 
 
 SIN_CAMBIOS = "sin cambios"
@@ -310,7 +312,9 @@ def _sources_footer(citations) -> str:
 
 
 def apply_guided_result(run) -> dict | None:
-    """Publica en el informe del ejecutivo lo que el guiado reescribió.
+    """Publica lo que escribió una corrida guiada de antes del guiado sin IA.
+
+    Sólo sirve para las corridas que ya estaban en marcha.
 
     Cada paso del guiado tiene el título de la sección de la IET que reescribe.
     Los que dicen «SIN CAMBIOS» no tocan nada, salvo que la generación anterior
@@ -337,19 +341,7 @@ def apply_guided_result(run) -> dict | None:
     if report.guided_result.get("aplicado_en"):
         return report.guided_result
 
-    base_steps = [
-        step
-        for step in (report.execution.output_structured or {}).get("steps") or []
-        if isinstance(step, dict) and isinstance(step.get("step_id"), int)
-    ]
-    by_title = {_norm_title(step.get("title")): step for step in base_steps}
-    # Si el título cambió (p. ej. se afinó en el Studio), se busca por código,
-    # pero sólo si el código es único: la IET tiene varios "D.2." (un paso por
-    # criterio) y adivinar entre ellos volcaría el texto en otra sección.
-    codes = [_code(step.get("title")) for step in base_steps]
-    by_code = {
-        code: step for code, step in zip(codes, base_steps) if code and codes.count(code) == 1
-    }
+    buscar = _buscador_de_pasos(report.execution)
     author = run.owner or report.created_by
 
     previas = set(report.guided_result.get("previas") or [])
@@ -364,7 +356,7 @@ def apply_guided_result(run) -> dict | None:
                 continue
             title = str(step.get("title") or "")
             content = str(step.get("content") or "").strip()
-            target = by_title.get(_norm_title(title)) or by_code.get(_code(title))
+            target = buscar(title)
             if not content or _is_sin_cambios(content):
                 sin_cambios.append(title)
                 if target is not None and target["step_id"] in previas:
