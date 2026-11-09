@@ -85,3 +85,73 @@ class ExecutionSummaryListTestCase(APITestCase):
         row = self._list()[self.original.pk]
         self.assertIn("output_structured", row)
         self.assertEqual(len(row["output_structured"]["steps"]), 3)
+
+
+class ExecutionStepListTestCase(APITestCase):
+    """``?view=step``: una sección de cada corrida, sin traer el informe."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="s@example.com", password="x", username="s")
+        self.project = Project.objects.create(owner=self.user, name="Op")
+        self.skill = Skill.objects.create(
+            owner=self.user, name="IET", skill_type=SkillType.COPILOT, allowed_contexts=["project"]
+        )
+        self.execution = SkillExecution.objects.create(
+            skill=self.skill,
+            owner=self.user,
+            project=self.project,
+            status=ExecutionStatus.COMPLETED,
+            output="# Informe\n" + "texto " * 5000,
+            output_structured={
+                "steps": [
+                    {"title": "B.1. Marco", "content": "y " * 5000, "citations": [_cita(True)]},
+                    {
+                        "title": "S.2. Componentes",
+                        "table": {"rows": [{"componente": "Vivienda", "monto_usd": 3500000}]},
+                        "citations": [_cita(True)],
+                    },
+                ]
+            },
+            metadata={"sources": [{"document_slug": "d"}] * 500},
+        )
+        self.client.force_authenticate(self.user)
+        self.url = reverse("skill-execution-list")
+
+    def _row(self, **params):
+        response = self.client.get(self.url, {"view": "step", "step": "S.2", **params})
+        self.assertEqual(response.status_code, 200)
+        return next(r for r in response.json() if r["id"] == self.execution.pk)
+
+    def test_trae_solo_la_seccion_pedida(self):
+        steps = self._row()["output_structured"]["steps"]
+        self.assertEqual([s["title"] for s in steps], ["S.2. Componentes"])
+        self.assertEqual(steps[0]["table"]["rows"][0]["monto_usd"], 3500000)
+
+    def test_deja_afuera_lo_pesado(self):
+        row = self._row()
+        self.assertNotIn("citations", row["output_structured"]["steps"][0])
+        for field in ("output", "edited_output", "metadata"):
+            self.assertNotIn(field, row)
+
+    def test_conserva_los_datos_del_resumen(self):
+        row = self._row()
+        self.assertEqual(row["sections_count"], 1)
+        self.assertEqual(row["status"], ExecutionStatus.COMPLETED)
+        self.assertEqual(row["project_slug"], self.project.slug)
+
+    def test_corrida_sin_esa_seccion_viene_vacia(self):
+        self.assertEqual(self._row(step="Z.9")["output_structured"], {"steps": []})
+
+    def test_el_prefijo_no_se_interpreta_como_consulta(self):
+        self.assertEqual(self._row(step="S.2' || '")["output_structured"], {"steps": []})
+
+    def test_sin_seccion_es_un_error(self):
+        response = self.client.get(self.url, {"view": "step"})
+        self.assertEqual(response.status_code, 400)
+
+    def test_no_abre_corridas_ajenas(self):
+        otro = User.objects.create_user(email="z@example.com", password="x", username="z")
+        self.client.force_authenticate(otro)
+        response = self.client.get(self.url, {"view": "step", "step": "S.2"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])

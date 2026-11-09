@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
+
 from django.db import connection, transaction
-from django.db.models import IntegerField, Prefetch, Q
+from django.db.models import IntegerField, JSONField, Prefetch, Q
 from django.db.models.expressions import RawSQL
 from django.db.models.fields.json import KT
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -30,6 +32,7 @@ from apps.skill.api.serializers import (
     SkillDefinitionVersionSerializer,
     HEAVY_EXECUTION_FIELDS,
     SkillExecutionSerializer,
+    SkillExecutionStepSerializer,
     SkillExecutionSummarySerializer,
     SkillExecutionVersionSerializer,
     SCOPE_FORBIDDEN_MESSAGE,
@@ -524,6 +527,24 @@ def _summary_annotations() -> dict:
     }
 
 
+def _requested_steps_annotation(prefix: str) -> RawSQL:
+    """Sólo los pasos cuyo título empieza con ``prefix``, filtrados en Postgres.
+
+    El prefijo viaja como variable de jsonpath y no dentro del texto de la
+    consulta: viene del query string.
+    """
+    column = (
+        f"{connection.ops.quote_name(SkillExecution._meta.db_table)}."
+        f"{connection.ops.quote_name('output_structured')}"
+    )
+    return RawSQL(
+        f"jsonb_path_query_array({column}, "
+        "'$.steps[*] ? (@.title starts with $prefix)', %s::jsonb)",
+        (json.dumps({"prefix": prefix}),),
+        output_field=JSONField(),
+    )
+
+
 class SkillExecutionViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
@@ -535,15 +556,21 @@ class SkillExecutionViewSet(
     Supports filtering by skill, status, repository, project.
 
     ``?view=summary`` en el listado devuelve cada corrida sin su informe (ver
-    ``SkillExecutionSummarySerializer``).
+    ``SkillExecutionSummarySerializer``). ``?view=step&step=S.2`` agrega al
+    resumen las secciones cuyo título empieza así, sin traer el resto.
     """
     permission_classes = [IsAuthenticated]
     serializer_class = SkillExecutionSerializer
 
+    def _list_view(self) -> str | None:
+        return self.request.query_params.get("view") if self.action == "list" else None
+
     def _is_summary(self) -> bool:
-        return self.action == "list" and self.request.query_params.get("view") == "summary"
+        return self._list_view() in ("summary", "step")
 
     def get_serializer_class(self):
+        if self._list_view() == "step":
+            return SkillExecutionStepSerializer
         if self._is_summary():
             return SkillExecutionSummarySerializer
         return super().get_serializer_class()
@@ -569,6 +596,11 @@ class SkillExecutionViewSet(
             qs = qs.filter(status=status_filter)
         if self._is_summary():
             qs = qs.defer(*HEAVY_EXECUTION_FIELDS).annotate(**_summary_annotations())
+        if self._list_view() == "step":
+            step = (self.request.query_params.get("step") or "").strip()
+            if not step:
+                raise ValidationError({"step": "Indicá con qué título empieza la sección."})
+            qs = qs.annotate(requested_steps=_requested_steps_annotation(step))
         return qs
 
     def get_object(self):

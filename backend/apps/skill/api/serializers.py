@@ -963,6 +963,30 @@ class SkillExecutionSummarySerializer(SkillExecutionSerializer):
             return None
 
 
+class SkillExecutionStepSerializer(SkillExecutionSummarySerializer):
+    """El resumen de una corrida más una sección de su informe (``?view=step``).
+
+    Para las pantallas que recorren muchas corridas pero leen una sola sección,
+    como el % verde del tablero, que sale de la tabla S.2. Pedir los informes
+    completos para eso llegó a 13,6 MB en una respuesta. La sección viaja sin
+    sus citas: llevan el texto citado y ninguno de estos listados las muestra.
+    """
+
+    output_structured = serializers.SerializerMethodField()
+
+    class Meta(SkillExecutionSummarySerializer.Meta):
+        fields = SkillExecutionSummarySerializer.Meta.fields + ("output_structured",)
+        read_only_fields = fields
+
+    def get_output_structured(self, obj) -> dict:
+        return {
+            "steps": [
+                {key: value for key, value in step.items() if key != "citations"}
+                for step in obj.requested_steps or []
+            ]
+        }
+
+
 class SkillDefinitionVersionSerializer(serializers.ModelSerializer):
     """Una versión de la definición, para poder leer con qué se corrió."""
 
