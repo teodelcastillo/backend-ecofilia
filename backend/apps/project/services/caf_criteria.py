@@ -12,6 +12,9 @@ este módulo cambie.
 """
 from __future__ import annotations
 
+import re
+import unicodedata
+
 # (clave, etiqueta)
 CRITERIOS: list[tuple[str, str]] = [
     ("ct_a1", "CT A1 — Análisis de riesgos climáticos"),
@@ -325,15 +328,161 @@ def _table_rows(step: dict) -> list[dict]:
     return _list_of_dicts(table.get("rows")) if isinstance(table, dict) else []
 
 
+# ── Actividades elegibles leídas del informe ───────────────────────────
+# Misma lectura que el portal (``ecofiliaV2/lib/caf-informe-lectura.ts``): el
+# informe trae una tabla por actividad (Campo | Detalle) en su sección de
+# co-beneficios. Lo que dice ahí manda; ``S.2.`` es su copia y queda para los
+# análisis anteriores a esas tablas. Cualquier cambio va en los dos.
+
+_CAMPOS_ACTIVIDAD = (
+    ("subcategoria", re.compile(r"^subcategoria")),
+    ("componente", re.compile(r"componente")),
+    ("monto", re.compile(r"^monto")),
+    ("categoria", re.compile(r"^categoria")),
+    ("actividad", re.compile(r"actividad (elegible|de financiamiento)|nivel 4")),
+    ("justificacion", re.compile(r"^justificacion")),
+)
+_SEPARADOR = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
+_CODIGO_NIVEL_4 = re.compile(r"\b([ABM]\.\d+\.\d+\.\d+)\b")
+_SIN_DESGLOSE = re.compile(r"no (disponible|se desagrega|desglosad|desagregad)|sin desglos|sin desagreg", re.I)
+_MONTO_DEL_COMPONENTE = re.compile(r"completo|entero|total del componente|forma parte|compartid|incluye (todo|la totalidad)", re.I)
+_MONTO_INICIAL = re.compile(r"^\s*(?:USD|US\$|\$)?\s*(\d[\d.,]*)\s*(millones|mill\.?|MM|M)?\b", re.I)
+_OBJETIVO_POR_LETRA = {"A": "Adaptación", "M": "Mitigación", "B": "Biodiversidad y otros objetivos ambientales"}
+
+
+def _normal(texto: str) -> str:
+    sin_acentos = unicodedata.normalize("NFD", texto)
+    sin_acentos = "".join(c for c in sin_acentos if unicodedata.category(c) != "Mn")
+    return re.sub(r"[*_`]", "", sin_acentos).lower().strip()
+
+
+def _campo(rotulo: str) -> str | None:
+    n = _normal(rotulo)
+    for campo, patron in _CAMPOS_ACTIVIDAD:
+        if patron.search(n):
+            return campo
+    return None
+
+
+def _celdas(linea: str) -> list[str]:
+    return [c.strip() for c in linea.strip().strip("|").split("|")]
+
+
+def _numero(texto: str) -> float | None:
+    """«27.495.000», «39,5», «1,500,000»: el separador decimal es el último si hay dos tipos."""
+    if "." in texto and "," in texto:
+        decimal = "," if texto.rfind(",") > texto.rfind(".") else "."
+        miles = "." if decimal == "," else ","
+        texto = texto.replace(miles, "").replace(decimal, ".")
+    elif "." in texto or "," in texto:
+        sep = "." if "." in texto else ","
+        partes = texto.split(sep)
+        de_miles = len(partes) > 2 or (len(partes[1]) == 3 and partes[0] != "0")
+        texto = "".join(partes) if de_miles else ".".join(partes)
+    try:
+        return float(texto)
+    except ValueError:
+        return None
+
+
+def _monto_de_la_actividad(texto: str) -> float | None:
+    """El monto con que empieza la celda; no el del componente entero ni uno sin desagregar."""
+    from apps.skill.citations import strip_cell_citations
+
+    limpio = re.sub(r"[*_`]", "", strip_cell_citations(texto or "")).strip()
+    if not limpio or _SIN_DESGLOSE.search(limpio):
+        return None
+    m = _MONTO_INICIAL.match(limpio)
+    if not m or _MONTO_DEL_COMPONENTE.search(limpio[m.end():]):
+        return None
+    numero = _numero(m.group(1))
+    if numero is None:
+        return None
+    return numero * 1_000_000 if m.group(2) else numero
+
+
+def _es_seccion_de_actividades_verdes(title: str) -> bool:
+    if not title or title.startswith("S.") or re.search(r"\bCT\s*[AM]\s*\d\b", title, re.I):
+        return False
+    if re.match(r"^\s*[A-Z](\.\d+)*\.?\s+Recomendaciones\b", title, re.I) or "Concepto de la DATBC" in title:
+        return False
+    if re.search(r"determinaci[oó]n", title, re.I) and re.search(r"Objetivo\s*[12]", title, re.I):
+        return False
+    return bool(re.search(r"co-?beneficios|financiamiento verde|actividades elegibles", title, re.I))
+
+
+def _actividades_del_informe(step: dict) -> list[dict] | None:
+    """Las tablas de actividades de la sección de co-beneficios; None si no las tiene."""
+    from apps.skill.citations import strip_cell_citations
+
+    lineas = str(step.get("content") or "").split("\n")
+    out: list[dict] = []
+    reconocida = False
+    vistos: set[tuple[str, float]] = set()
+    i = 0
+    while i < len(lineas):
+        linea = lineas[i].strip()
+        if not (linea.startswith("|") and i + 1 < len(lineas) and _SEPARADOR.match(lineas[i + 1].strip())):
+            i += 1
+            continue
+        filas = []
+        i += 2
+        while i < len(lineas) and lineas[i].strip().startswith("|"):
+            filas.append(_celdas(lineas[i]))
+            i += 1
+        campos: dict[str, str] = {}
+        for fila in filas:
+            campo = _campo(fila[0]) if len(fila) >= 2 else None
+            if campo and campo not in campos:
+                campos[campo] = " | ".join(fila[1:]).strip()
+        if len(campos) < 3:
+            continue
+        reconocida = True
+        componente_y_actividad = re.sub(r"[*_`]", "", strip_cell_citations(campos.get("componente", ""))).strip()
+        componente = componente_y_actividad.split(":", 1)[0].strip()
+        actividad = re.sub(r"[*_`]", "", strip_cell_citations(campos.get("actividad", ""))).strip()
+        encontrado = _CODIGO_NIVEL_4.search(actividad)
+        codigo = encontrado.group(1) if encontrado else ""
+        monto = _monto_de_la_actividad(campos.get("monto", ""))
+        # El mismo monto en varias actividades de un componente es el del componente.
+        if monto is not None:
+            if (componente.lower(), monto) in vistos:
+                monto = None
+            else:
+                vistos.add((componente.lower(), monto))
+        if not componente and not actividad:
+            continue
+        out.append({
+            "componente": componente,
+            "actividad_elegible": _CODIGO_NIVEL_4.sub("", actividad, count=1).strip(" .") if codigo else actividad,
+            "codigo_actividad": codigo,
+            "objetivo": _OBJETIVO_POR_LETRA.get(codigo[:1], ""),
+            "categoria": strip_cell_citations(campos.get("categoria", "")).strip(),
+            "monto_usd": monto,
+            "fundamento": strip_cell_citations(campos.get("justificacion", "")).strip(),
+        })
+    return out if reconocida else None
+
+
 def ecofilia_green_components(execution) -> list[dict]:
-    """Los componentes con potencial de financiamiento verde según la IET de
-    Ecofilia: la tabla de ``S.2.``, sin las marcas de cita de sus celdas. Vacío
-    si la corrida no la tiene (IET anterior a la 0040)."""
+    """Las actividades con potencial de financiamiento verde según el informe de
+    Ecofilia, sin marcas de cita.
+
+    Salen de las tablas de su sección de co-beneficios (C.1 en IDO, B.1 en DEC)
+    cuando las tiene; si no, de la tabla de ``S.2.``. Vacío si no hay ninguna de
+    las dos (IET anterior a la 0040)."""
     from apps.skill.citations import strip_cell_citations
 
     if execution is None:
         return []
-    for step in _steps(execution):
+    steps = _steps(execution)
+    for step in steps:
+        if _es_seccion_de_actividades_verdes(str(step.get("title") or "").strip()):
+            actividades = _actividades_del_informe(step)
+            if actividades is not None:
+                return actividades
+            break
+    for step in steps:
         if not str(step.get("title") or "").strip().startswith("S.2"):
             continue
         return [

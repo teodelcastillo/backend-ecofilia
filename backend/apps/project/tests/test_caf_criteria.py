@@ -232,6 +232,69 @@ class EcofiliaGreenComponentsTestCase(TestCase):
         self.assertEqual(components[0]["componente"], "Planta potabilizadora")
         self.assertEqual(components[0]["monto_usd"], 12000000)
 
+    def test_the_components_come_from_the_report_tables_before_s2(self):
+        c1 = (
+            "Resumen [[c:1]].\n\n"
+            "**1. Paneles solares**\n\n"
+            "| Campo | Detalle |\n|---|---|\n"
+            "| Componente y actividad de la operación | Componente 1 – Centro: paneles solares [[c:2]] |\n"
+            "| Monto (USD) | USD 27.495.000 (34,4% del total) |\n"
+            "| Categoría (nivel 2) | M.8 Eficiencia energética |\n"
+            "| Subcategoría (nivel 3) | M.8.1 Edificios |\n"
+            "| Actividad elegible (nivel 4) | **M.8.1.1** Medidas que reduzcan el consumo |\n"
+            "| Justificación y evidencia | El diseño incluye paneles. |\n\n"
+            "**2. Captación de lluvia**\n\n"
+            "| Campo | Detalle |\n|---|---|\n"
+            "| Componente y actividad de la operación | Componente 1 – Centro: captación |\n"
+            "| Monto (USD) | No disponible desglosado; forma parte del Componente 1 (USD 77.600.000) |\n"
+            "| Categoría (nivel 2) | A.1 Agua |\n"
+            "| Actividad elegible (nivel 4) | A.1.1.2 Instalación de equipos de captura |\n"
+            "| Justificación y evidencia | Potencial. |\n\n"
+            "**3. Arbolado**\n\n"
+            "| Campo | Detalle |\n|---|---|\n"
+            "| Componente y actividad de la operación | Componente 2 – Obras |\n"
+            "| Monto (USD) | USD 75,5 MM (Componente 2 completo) |\n"
+            "| Categoría (nivel 2) | B.2 Biodiversidad |\n"
+            "| Actividad elegible (nivel 4) | B.2.1.4 Arbolado urbano |\n"
+        )
+        run = _Run([
+            {"step_id": 1, "title": "C.1. Evaluación preliminar de los co-beneficios ambientales", "content": c1},
+            {"step_id": 2, "title": "S.2. Componentes con potencial de financiamiento verde", "content": "",
+             "table": {"rows": [{"componente": "Otra cosa", "objetivo": "Mitigación"}]}},
+        ])
+        components = ecofilia_green_components(run)
+        self.assertEqual([c["codigo_actividad"] for c in components], ["M.8.1.1", "A.1.1.2", "B.2.1.4"])
+        self.assertEqual([c["objetivo"] for c in components], ["Mitigación", "Adaptación", "Biodiversidad y otros objetivos ambientales"])
+        self.assertEqual(components[0]["componente"], "Componente 1 – Centro")
+        self.assertEqual(components[0]["monto_usd"], 27495000)
+        # Sin desagregar o el del componente entero: no se cuenta en la actividad.
+        self.assertIsNone(components[1]["monto_usd"])
+        self.assertIsNone(components[2]["monto_usd"])
+
+    def test_a_report_section_without_tables_falls_back_to_s2(self):
+        run = _Run([
+            {"step_id": 1, "title": "C.1. Actividades elegibles para financiamiento verde", "content": "Sólo prosa."},
+            {"step_id": 2, "title": "S.2. Componentes con potencial de financiamiento verde", "content": "",
+             "table": {"rows": [{"componente": "Planta", "objetivo": "Adaptación"}]}},
+        ])
+        self.assertEqual([c["componente"] for c in ecofilia_green_components(run)], ["Planta"])
+
+    def test_the_dec_co_benefits_section_is_found_by_its_title(self):
+        tabla = (
+            "| Campo | Detalle |\n|---|---|\n"
+            "| Componente y actividad de la operación | Componente A |\n"
+            "| Monto (USD) | 1.600.000 |\n"
+            "| Actividad elegible (nivel 4) | M.11.6.8 Educación |\n"
+        )
+        run = _Run([
+            {"step_id": 1, "title": "A.3. Misión de Evaluación", "content": "x"},
+            {"step_id": 2, "title": "B.1. Evaluación de los co-beneficios ambientales, climáticos y de biodiversidad", "content": tabla},
+            {"step_id": 3, "title": "C.1.1. Criterio Técnico de desarrollo resiliente al clima 1 (CT A1): Análisis", "content": tabla},
+        ])
+        components = ecofilia_green_components(run)
+        self.assertEqual(len(components), 1)
+        self.assertEqual(components[0]["monto_usd"], 1600000)
+
     def test_an_iet_without_s2_suggests_nothing(self):
         self.assertEqual(ecofilia_green_components(_Run([_s1([])])), [])
         self.assertEqual(ecofilia_green_components(None), [])
