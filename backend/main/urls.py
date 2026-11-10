@@ -19,6 +19,7 @@ urlpatterns = [
     path('api/evaluations/', include('apps.evaluation.api.urls')),
     path('api/evaluation-templates/', include('apps.evaluation.api.urls_templates')),
     path('api/auth/', include('apps.authentication.api.urls')),
+    path('api/proyeccion/', include('apps.proyeccion.api.urls')),
 ]
 if settings.DEBUG:
     # El login de la API navegable sólo existe en local: en producción sería un

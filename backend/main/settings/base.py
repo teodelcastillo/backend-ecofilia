@@ -80,6 +80,8 @@ LOCAL_APPS = [
     "apps.skill",
     "apps.evaluation",
     "apps.authentication",
+    # Módulo de propuesta, aislado: sus tablas y rutas no tocan al resto.
+    "apps.proyeccion",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
