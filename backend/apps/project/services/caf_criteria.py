@@ -493,6 +493,73 @@ def ecofilia_green_components(execution) -> list[dict]:
     return []
 
 
+# ── Recomendaciones leídas del informe ─────────────────────────────────
+# Misma lectura que el portal (``recomendacionesDelInforme`` en
+# ``ecofiliaV2/lib/caf-informe-lectura.ts``): la sección «Recomendaciones…»
+# (E.3 en IDO, D.1 en DEC) con sus subtítulos y una viñeta por recomendación.
+
+_SUBTITULO = re.compile(r"^#{2,6}\s+(.*)$|^\*\*([A-Z](?:\.\d+)+\.?\s.+?)\*\*\s*$")
+_VINETA = re.compile(r"^(?:[-*•]|\d+[.)])\s+(.*)$")
+
+
+def _es_seccion_de_recomendaciones(title: str) -> bool:
+    return bool(title) and not title.startswith("S.") and bool(
+        re.match(r"^\s*[A-Z](\.\d+)*\.?\s+Recomendaciones\b", title, re.I)
+    )
+
+
+def ecofilia_recommendations(execution) -> list[dict]:
+    """Las recomendaciones del informe de Ecofilia, agrupadas por subtítulo:
+    ``[{"titulo", "items"}]``, sin marcas de cita. Vacío si no tiene la sección."""
+    from apps.skill.citations import strip_cell_citations
+
+    if execution is None:
+        return []
+    step = next(
+        (s for s in _steps(execution) if _es_seccion_de_recomendaciones(str(s.get("title") or "").strip())),
+        None,
+    )
+    if step is None:
+        return []
+    grupos: list[dict] = []
+    actual: dict | None = None
+    item: list[str] | None = None
+
+    def cerrar():
+        nonlocal item
+        if item and actual is not None:
+            texto = " ".join(" ".join(item).split())
+            if texto:
+                limpio = re.sub(r"\s+([.,;:])", r"\1", strip_cell_citations(texto)).strip()
+                actual["items"].append(limpio)
+        item = None
+
+    for cruda in str(step.get("content") or "").split("\n"):
+        linea = cruda.strip()
+        m = _SUBTITULO.match(linea)
+        if m:
+            cerrar()
+            actual = {"titulo": (m.group(1) or m.group(2) or "").strip(), "items": []}
+            grupos.append(actual)
+            continue
+        if linea.startswith("# "):
+            continue
+        v = _VINETA.match(linea)
+        if v:
+            cerrar()
+            if actual is None:
+                actual = {"titulo": "", "items": []}
+                grupos.append(actual)
+            item = [v.group(1)]
+            continue
+        if item and linea and re.match(r"^\s{2,}\S", cruda):
+            item.append(linea)
+        else:
+            cerrar()
+    cerrar()
+    return [g for g in grupos if g["items"]]
+
+
 def _name(value) -> str:
     return " ".join(_text(value).lower().split())
 

@@ -379,6 +379,15 @@ def _compose_messages(
         {"role": str(MessageRole.SYSTEM), "content": system_text},
     ]
 
+    # El contexto de la operación (datos, determinación del ejecutivo y lo que
+    # sugiere el informe de Ecofilia), recién leído y con el origen de cada dato.
+    if session.project_id is not None:
+        from apps.project.services.chat_context import operation_context
+
+        contexto = operation_context(session.project)
+        if contexto:
+            base_messages.append({"role": str(MessageRole.SYSTEM), "content": contexto})
+
     if retrieval.context_block:
         doc_count = retrieval.diagnostics.get("documents_in_scope") or session.allowed_documents.count()
         query_type = retrieval.analysis.query_type if retrieval.analysis else None
@@ -654,6 +663,10 @@ class ChatMessageViewSet(
             metadata["citations"] = citation_payload["citations"]
             metadata["retrieval_chunk_ids"] = citation_payload["retrieval_chunk_ids"]
             metadata["citation_integrity"] = citation_payload["citation_integrity"]
+            if session.project_id is not None:
+                from apps.project.services.chat_context import origins_cited
+
+                metadata["fuentes_operacion"] = origins_cited(answer_text)
 
             assistant_message = ChatMessage.objects.create(
                 session=session,
@@ -844,6 +857,10 @@ class ChatMessageStreamView(APIView):
                 metadata["citations"] = citation_payload["citations"]
                 metadata["retrieval_chunk_ids"] = citation_payload["retrieval_chunk_ids"]
                 metadata["citation_integrity"] = citation_payload["citation_integrity"]
+                if session.project_id is not None:
+                    from apps.project.services.chat_context import origins_cited
+
+                    metadata["fuentes_operacion"] = origins_cited(answer_text)
 
                 assistant_message = ChatMessage.objects.create(
                     session=session,
