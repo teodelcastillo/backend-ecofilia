@@ -339,7 +339,9 @@ _CAMPOS_ACTIVIDAD = (
     ("componente", re.compile(r"componente")),
     ("monto", re.compile(r"^monto")),
     ("categoria", re.compile(r"^categoria")),
-    ("actividad", re.compile(r"actividad (elegible|de financiamiento)|nivel 4")),
+    # «Actividad», «Actividad elegible (nivel 4)», «Actividad de financiamiento elegible»…
+    # Las de categoría y subcategoría se reconocen antes.
+    ("actividad", re.compile(r"^actividad\b|nivel 4")),
     ("justificacion", re.compile(r"^justificacion")),
 )
 _SEPARADOR = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$")
@@ -456,12 +458,24 @@ def _actividades_del_informe(step: dict) -> list[dict] | None:
             "componente": componente,
             "actividad_elegible": _CODIGO_NIVEL_4.sub("", actividad, count=1).strip(" .") if codigo else actividad,
             "codigo_actividad": codigo,
-            "objetivo": _OBJETIVO_POR_LETRA.get(codigo[:1], ""),
+            "objetivo": _OBJETIVO_POR_LETRA.get(codigo[:1], "") or _objetivo_de_la_categoria(campos),
             "categoria": strip_cell_citations(campos.get("categoria", "")).strip(),
             "monto_usd": monto,
             "fundamento": strip_cell_citations(campos.get("justificacion", "")).strip(),
         })
     return out if reconocida else None
+
+
+_LETRA_DE_CODIGO = re.compile(r"(?:^|[\s(])([ABM])\.\s?\d")
+
+
+def _objetivo_de_la_categoria(campos: dict[str, str]) -> str:
+    """El objetivo por el código de la categoría o subcategoría, si la actividad no trae el suyo."""
+    for clave in ("actividad", "subcategoria", "categoria"):
+        letra = _LETRA_DE_CODIGO.search(re.sub(r"[*_`]", "", campos.get(clave, "")))
+        if letra:
+            return _OBJETIVO_POR_LETRA.get(letra.group(1), "")
+    return ""
 
 
 def ecofilia_green_components(execution) -> list[dict]:

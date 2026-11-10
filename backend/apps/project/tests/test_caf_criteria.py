@@ -271,6 +271,31 @@ class EcofiliaGreenComponentsTestCase(TestCase):
         self.assertIsNone(components[1]["monto_usd"])
         self.assertIsNone(components[2]["monto_usd"])
 
+    def test_the_plain_actividad_label_and_a_missing_code_still_classify(self):
+        c1 = (
+            "### 1. Remediación (ya elegible)\n\n"
+            "| Campo | Detalle |\n|---|---|\n"
+            "| **Componente y actividad de la operación** | Remediación de suelos |\n"
+            "| **Monto (USD)** | No desglosado específicamente para el tramo de CAF |\n"
+            "| **Categoría** | B.2 Protección y restauración |\n"
+            "| **Subcategoría** | B.2.1 Conservación |\n"
+            "| **Actividad** | B.2.1.6 Restauración de áreas degradadas |\n\n"
+            "### 2. Sin código\n\n"
+            "| Campo | Detalle |\n|---|---|\n"
+            "| Componente y actividad | Componente 2 |\n"
+            "| Categoría de la actividad elegible | M.8 Eficiencia |\n"
+            "| Subcategoría de la actividad elegible | M.8.1 Edificios |\n"
+            "| Actividad elegible | Medidas de eficiencia sin código |\n"
+        )
+        run = _Run([{"step_id": 1, "title": "C.1. Evaluación preliminar de los co-beneficios", "content": c1}])
+        components = ecofilia_green_components(run)
+        self.assertEqual([c["codigo_actividad"] for c in components], ["B.2.1.6", ""])
+        self.assertEqual(
+            [c["objetivo"] for c in components],
+            ["Biodiversidad y otros objetivos ambientales", "Mitigación"],
+        )
+        self.assertIsNone(components[0]["monto_usd"])
+
     def test_a_report_section_without_tables_falls_back_to_s2(self):
         run = _Run([
             {"step_id": 1, "title": "C.1. Actividades elegibles para financiamiento verde", "content": "Sólo prosa."},
