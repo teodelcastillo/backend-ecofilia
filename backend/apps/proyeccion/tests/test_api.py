@@ -8,7 +8,7 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.proyeccion import analisis
-from apps.proyeccion.models import EstadoAnalisis, EstadoFicha, FichaNDC, FuenteFicha, OperacionProyectada, Proyeccion
+from apps.proyeccion.models import EstadoAnalisis, FichaNDC, OperacionProyectada, Proyeccion
 from apps.proyeccion.tests.test_lectura import _csv
 from apps.user.models import Organization
 from apps.user.tests.fixtures import make_superadmin
@@ -39,10 +39,9 @@ def _modelo_simulado(mensajes, esquema, *, modelo, max_tokens):
 
     pedido = mensajes[-1]["content"]
     if "conoce" in esquema["properties"]:
-        if "Brasil" in pedido.split("</ndc>")[-1][:200]:
-            return {"conoce": False, "version": "", "contenido": ""}, {"input_tokens": 10, "output_tokens": 5}
+        texto = pedido.split("<ndc>")[1].split("</ndc>")[0]
         return (
-            {"conoce": True, "version": "NDC 2025", "contenido": "**Mitigación**\n- Renovables"},
+            {"conoce": True, "version": "NDC " + texto.split("NDC-")[1][:4], "contenido": "**Mitigación**\n- Renovables"},
             {"input_tokens": 10, "output_tokens": 5},
         )
     operaciones = json.loads(pedido.split("<operaciones>")[1].split("</operaciones>")[0])
@@ -92,12 +91,35 @@ class _Base(APITestCase):
         self.admin_a = User.objects.create_user(email="admin@a.org", password="x", organization=self.org_a, role="admin")
         self.publico = User.objects.create_user(email="p@gmail.com", password="x")
         self.superadmin = make_superadmin()
+        # La biblioteca pública: dos NDC de Uruguay (vale la más nueva) y una de
+        # Brasil que no es pública (no cuenta).
+        from apps.document.models import Document, EvidenceTag
+
+        ndc = EvidenceTag.objects.get(slug="ndc", organization__isnull=True)
+        self.ndc_vieja = self._ndc(ndc, "NDC Uruguay 2017", "Uruguay", 2017)
+        self.ndc_uruguay = self._ndc(ndc, "NDC Uruguay 2022", "uruguay", 2022)
+        self._ndc(ndc, "NDC Brasil 2023", "Brasil", 2023, publica=False)
+        sin_etiqueta = Document.objects.create(
+            owner=self.superadmin, name="Otro de Chile", slug="otro-chile", region="Chile", is_public=True,
+            extracted_text="NDC-2099 no es una NDC",
+        )
+        self.assertFalse(sin_etiqueta.evidence_tags.exists())
         despacho = mock.patch("apps.proyeccion.tasks.despachar_analisis")
         self.despachar_analisis = despacho.start()
         self.addCleanup(despacho.stop)
         despacho_ficha = mock.patch("apps.proyeccion.tasks.despachar_ficha")
         self.despachar_ficha = despacho_ficha.start()
         self.addCleanup(despacho_ficha.stop)
+
+    def _ndc(self, etiqueta, nombre, pais, anio, publica=True):
+        from apps.document.models import Document
+
+        documento = Document.objects.create(
+            owner=self.superadmin, name=nombre, slug=nombre.lower().replace(" ", "-"), region=pais, year=anio,
+            is_public=publica, extracted_text=f"NDC-{anio} Contribución determinada a nivel nacional de {pais}.",
+        )
+        documento.evidence_tags.add(etiqueta)
+        return documento
 
     def _como(self, user):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(user).access_token}")
@@ -148,7 +170,7 @@ class AccesoTestCase(_Base):
         self.assertEqual(self._cargar(organization="inst-b").status_code, 201)
         FichaNDC.objects.create(organization=self.org_b, pais="Uruguay", contenido="de b")
         self.assertEqual(self.client.get("/api/proyeccion/meses/", {"organization": "inst-a"}).json(), [])
-        self.assertEqual(self.client.get("/api/proyeccion/fichas-ndc/", {"organization": "inst-a"}).json(), [])
+        self.assertEqual(self.client.get("/api/proyeccion/fichas-ndc/", {"organization": "inst-a"}).json()["fichas"], [])
         self.assertEqual(len(self.client.get("/api/proyeccion/meses/", {"organization": "inst-b"}).json()), 1)
         # El mismo mes en otra institución es otra proyección, no un reemplazo.
         self.assertEqual(self._cargar(organization="inst-a").status_code, 201)
@@ -226,10 +248,10 @@ class AnalisisTestCase(_Base):
         self.assertEqual(ancap["fuente_base"], "conocimiento_general")
 
         ute = ops["OP-002"]
-        self.assertEqual((ute["oportunidad_ndc"], ute["fuente_ndc"], ute["prioridad"]), ("VERDE", "conocimiento_general", ""))
+        self.assertEqual((ute["oportunidad_ndc"], ute["fuente_ndc"], ute["prioridad"]), ("VERDE", "ndc", ""))
 
-        # Brasil quedó sin ficha: la brecha que «encontró» el modelo no se guarda,
-        # ni una nota que no acompaña a ninguna alerta.
+        # Brasil no tiene NDC en la biblioteca pública: la brecha que «encontró»
+        # el modelo no se guarda, ni una nota que no acompaña a ninguna alerta.
         banco = ops["OP-003"]
         self.assertEqual((banco["brecha_ndc"], banco["nota_brecha"], banco["nota_riesgo"]), ("", "", ""))
         self.assertTrue(banco["analizada"])
@@ -244,10 +266,32 @@ class AnalisisTestCase(_Base):
         # Lo que ya no es pipeline no se analiza.
         self.assertFalse(ops["OP-005"]["analizada"])
 
-        fichas = {f.pais: f for f in FichaNDC.objects.filter(organization=self.org_a)}
-        self.assertEqual(fichas["Uruguay"].estado, EstadoFicha.LISTA)
-        self.assertEqual(fichas["Uruguay"].fuente, FuenteFicha.CONOCIMIENTO_GENERAL)
-        self.assertEqual(fichas["Brasil"].estado, EstadoFicha.SIN_DATOS)
+        # La ficha sale de la NDC vigente de la biblioteca: la más nueva del país.
+        ficha = FichaNDC.objects.get(organization=self.org_a)
+        self.assertEqual((ficha.pais, ficha.estado, ficha.documento, ficha.version_ndc), ("Uruguay", "lista", self.ndc_uruguay, "NDC 2022"))
+        self.assertEqual((ficha.documento_nombre, ficha.documento_anio), ("NDC Uruguay 2022", 2022))
+        self.assertIn("No hay NDC en la biblioteca pública de: Brasil", cuerpo["aviso"])
+
+    def test_la_ficha_se_reutiliza_y_se_rehace_cuando_la_biblioteca_tiene_una_ndc_mas_nueva(self):
+        pk, _ = self._analizar()
+        self.despachar_analisis.reset_mock()
+
+        def otra_vez():
+            self.client.post(f"/api/proyeccion/meses/{pk}/analizar/", {}, format="json")
+            with (
+                mock.patch.object(analisis, "_completar_json", side_effect=_modelo_simulado) as modelo,
+                mock.patch.object(analisis, "_completar_texto", return_value=("Resumen.", {})),
+            ):
+                analisis.analizar(pk)
+            return sum(1 for llamada in modelo.call_args_list if "<ndc>" in llamada.args[0][-1]["content"])
+
+        self.assertEqual(otra_vez(), 0)
+        from apps.document.models import EvidenceTag
+
+        nueva = self._ndc(EvidenceTag.objects.get(slug="ndc", organization__isnull=True), "NDC Uruguay 2025", "Uruguay", 2025)
+        self.assertEqual(otra_vez(), 1)
+        ficha = FichaNDC.objects.get(organization=self.org_a)
+        self.assertEqual((ficha.documento, ficha.version_ndc), (nueva, "NDC 2025"))
 
     def test_sin_ndc_no_se_arman_fichas_ni_alertas_de_ndc(self):
         pk, _ = self._analizar({"ndc": "ninguno"})
@@ -330,35 +374,66 @@ class AnalisisTestCase(_Base):
 
 
 class FichasTestCase(_Base):
-    def test_escribir_una_ficha_a_mano(self):
+    def test_el_listado_dice_que_ndc_hay_en_la_biblioteca(self):
         self._como(self.superadmin)
-        respuesta = self.client.post(
-            "/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "Perú", "contenido": "- Meta 2030", "version_ndc": "NDC 2025"}, format="json"
+        cuerpo = self.client.get("/api/proyeccion/fichas-ndc/", {"organization": "inst-a"}).json()
+        self.assertEqual(cuerpo["fichas"], [])
+        self.assertEqual(
+            [(d["pais"], d["documento_nombre"], d["documento_anio"]) for d in cuerpo["biblioteca"]],
+            [("uruguay", "NDC Uruguay 2022", 2022)],
         )
-        self.assertEqual(respuesta.status_code, 201, respuesta.content)
-        self.assertEqual((respuesta.json()["estado"], respuesta.json()["fuente"]), ("lista", "manual"))
-        self.despachar_ficha.assert_not_called()
-        # El mismo país, escrito distinto, es la misma ficha.
-        self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "peru", "contenido": "- Otra"}, format="json")
-        self.assertEqual(FichaNDC.objects.filter(organization=self.org_a).count(), 1)
 
-    def test_armar_la_ficha_desde_la_ndc_adjunta(self):
+    def test_armar_la_ficha_de_un_pais_desde_la_biblioteca(self):
         self._como(self.superadmin)
-        ndc = SimpleUploadedFile("ndc-peru.txt", ("Contribución determinada a nivel nacional. " * 30).encode())
-        respuesta = self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "Perú", "file": ndc}, format="multipart")
+        respuesta = self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "Uruguay"}, format="json")
         self.assertEqual(respuesta.status_code, 201, respuesta.content)
-        self.assertEqual(respuesta.json()["estado"], "generando")
+        self.assertEqual((respuesta.json()["estado"], respuesta.json()["documento_slug"]), ("generando", "ndc-uruguay-2022"))
         ficha = FichaNDC.objects.get(organization=self.org_a)
         self.despachar_ficha.assert_called_once_with(ficha.pk)
         with mock.patch.object(analisis, "_completar_json", side_effect=_modelo_simulado) as modelo:
             analisis.generar_ficha(ficha.pk)
-        self.assertIn("<ndc>", modelo.call_args.args[0][-1]["content"])
+        self.assertIn("NDC-2022", modelo.call_args.args[0][-1]["content"])
         ficha.refresh_from_db()
-        self.assertEqual((ficha.estado, ficha.fuente, ficha.version_ndc), ("lista", "ndc", "NDC 2025"))
+        self.assertEqual((ficha.estado, ficha.fuente, ficha.version_ndc), ("lista", "ndc", "NDC 2022"))
+        # El mismo país, escrito distinto, es la misma ficha.
+        self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "URUGUAY"}, format="json")
+        self.assertEqual(FichaNDC.objects.filter(organization=self.org_a).count(), 1)
 
-    def test_regional_no_tiene_ficha(self):
+    def test_sin_ndc_en_la_biblioteca_no_hay_ficha(self):
         self._como(self.superadmin)
-        self.assertEqual(self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": "Regional"}, format="json").status_code, 400)
+        for pais in ("Brasil", "Chile", "Regional"):
+            respuesta = self.client.post("/api/proyeccion/fichas-ndc/?organization=inst-a", {"pais": pais}, format="json")
+            self.assertEqual(respuesta.status_code, 400, pais)
+        self.assertFalse(FichaNDC.objects.exists())
+
+
+class LlamadasAlModeloTestCase(_Base):
+    """La falla de producción del 2026-11-10: el modelo agotaba la salida razonando."""
+
+    def test_se_pide_con_esfuerzo_bajo_y_limite_holgado(self):
+        with mock.patch.object(analisis, "anthropic_structured_completion", return_value=({}, {})) as claude:
+            analisis._completar_json([], {}, modelo="claude-sonnet-5", max_tokens=analisis._MAX_TOKENS)
+        self.assertEqual(claude.call_args.kwargs["effort"], "low")
+        self.assertGreaterEqual(claude.call_args.kwargs["max_tokens"], 16000)
+
+    def test_un_lote_que_no_sale_entero_se_parte(self):
+        self._como(self.superadmin)
+        pk = self._cargar().json()["id"]
+        self.client.post(f"/api/proyeccion/meses/{pk}/analizar/", {"ndc": "ninguno"}, format="json")
+
+        def solo_de_a_uno(mensajes, esquema, *, modelo, max_tokens):
+            operaciones = mensajes[-1]["content"].split("<operaciones>")[1].split("</operaciones>")[0]
+            if operaciones.count('"id"') > 1:
+                raise RuntimeError("El modelo agotó su límite de salida")
+            return _modelo_simulado(mensajes, esquema, modelo=modelo, max_tokens=max_tokens)
+
+        with (
+            mock.patch.object(analisis, "_completar_json", side_effect=solo_de_a_uno),
+            mock.patch.object(analisis, "_completar_texto", return_value=("Resumen.", {})),
+        ):
+            analisis.analizar(pk)
+        cuerpo = self.client.get(f"/api/proyeccion/meses/{pk}/").json()
+        self.assertEqual((cuerpo["estado"], cuerpo["analizadas"], cuerpo["aviso"]), ("listo", 4, ""))
 
 
 class SoloClaudeTestCase(_Base):

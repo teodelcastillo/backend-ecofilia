@@ -32,7 +32,7 @@ from apps.document.utils.llm import (
     is_anthropic_model,
     resolve_model,
 )
-from apps.proyeccion import prompts
+from apps.proyeccion import biblioteca, prompts
 from apps.proyeccion.lectura import en_pipeline, plegar
 from apps.proyeccion.models import (
     AlcanceNDC,
@@ -47,9 +47,16 @@ from apps.proyeccion.models import (
 
 logger = logging.getLogger(__name__)
 
-TAMANO_LOTE = int(os.environ.get("PROYECCION_TAMANO_LOTE", "15"))
+TAMANO_LOTE = int(os.environ.get("PROYECCION_TAMANO_LOTE", "10"))
 HILOS = int(os.environ.get("PROYECCION_HILOS", "4"))
 _TIMEOUT = 240.0
+# Claude razona antes de escribir, y ese razonamiento cuenta contra el límite
+# de salida. El screening es una clasificación con reglas explícitas: se pide
+# con esfuerzo bajo y con un límite holgado, que sólo se paga si se usa. Con el
+# esfuerzo por defecto y un límite ajustado al JSON esperado, el modelo agotaba
+# la salida razonando y no llegaba a escribir el semáforo (prod, 2026-11-10).
+ESFUERZO = os.environ.get("PROYECCION_ESFUERZO", "low")
+_MAX_TOKENS = 16_000
 _MAX_CARACTERES_NDC = 400_000
 DIAS_PROXIMA = 60
 
@@ -129,7 +136,7 @@ def _completar_json(mensajes: list[dict], esquema: dict, *, modelo: str, max_tok
     for intento in (1, 2):
         try:
             return anthropic_structured_completion(
-                mensajes, model=modelo, schema=esquema, max_tokens=max_tokens, timeout=_TIMEOUT
+                mensajes, model=modelo, schema=esquema, max_tokens=max_tokens, timeout=_TIMEOUT, effort=ESFUERZO
             )
         except Exception as exc:  # noqa: BLE001 — se informa arriba
             ultimo = exc
@@ -139,7 +146,9 @@ def _completar_json(mensajes: list[dict], esquema: dict, *, modelo: str, max_tok
 
 def _completar_texto(mensajes: list[dict], *, modelo: str, max_tokens: int) -> tuple[str, dict]:
     _solo_claude(modelo)
-    return anthropic_chat_completion(mensajes, model=modelo, max_tokens=max_tokens, timeout=_TIMEOUT)
+    return anthropic_chat_completion(
+        mensajes, model=modelo, max_tokens=max_tokens, timeout=_TIMEOUT, effort=ESFUERZO
+    )
 
 
 def motivo(exc: Exception) -> str:
@@ -180,23 +189,17 @@ def pais_con_ndc(pais: str) -> bool:
     return plegar(pais) not in _SIN_NDC
 
 
-def redactar_ficha(pais: str, texto_ndc: str = "", *, modelo: str | None = None) -> dict:
-    """La ficha de un país, desde la NDC adjunta o desde conocimiento general.
+def redactar_ficha(pais: str, texto_ndc: str, *, modelo: str | None = None) -> dict:
+    """La ficha de un país, armada con el texto de su NDC.
 
-    Devuelve ``estado``, ``fuente``, ``version_ndc``, ``contenido`` y ``uso``.
-    Sólo habla con el modelo: guardar es cosa de quien llama.
+    Devuelve ``estado``, ``version_ndc``, ``contenido`` y ``uso``. Sólo habla
+    con el modelo: guardar es cosa de quien llama.
     """
     modelo = modelo or modelo_del_screening()
-    texto_ndc = (texto_ndc or "").strip()
-    if texto_ndc:
-        fuente = FuenteFicha.NDC
-        pedido = (
-            f"<ndc>\n{texto_ndc[:_MAX_CARACTERES_NDC]}\n</ndc>\n\n"
-            + prompts.INSTRUCCIONES_FICHA.format(pais=pais, origen=prompts.ORIGEN_FICHA_ADJUNTA)
-        )
-    else:
-        fuente = FuenteFicha.CONOCIMIENTO_GENERAL
-        pedido = prompts.INSTRUCCIONES_FICHA.format(pais=pais, origen=prompts.ORIGEN_FICHA_CONOCIMIENTO)
+    pedido = (
+        f"<ndc>\n{texto_ndc[:_MAX_CARACTERES_NDC]}\n</ndc>\n\n"
+        + prompts.INSTRUCCIONES_FICHA.format(pais=pais, origen=prompts.ORIGEN_FICHA_ADJUNTA)
+    )
     mensajes = [
         {
             "role": "system",
@@ -207,28 +210,48 @@ def redactar_ficha(pais: str, texto_ndc: str = "", *, modelo: str | None = None)
         },
         {"role": "user", "content": pedido},
     ]
-    respuesta, uso = _completar_json(mensajes, _ESQUEMA_FICHA, modelo=modelo, max_tokens=2500)
+    respuesta, uso = _completar_json(mensajes, _ESQUEMA_FICHA, modelo=modelo, max_tokens=8000)
     contenido = str(respuesta.get("contenido") or "").strip()
     conoce = bool(respuesta.get("conoce")) and bool(contenido)
     return {
         "estado": EstadoFicha.LISTA if conoce else EstadoFicha.SIN_DATOS,
-        "fuente": fuente,
         "version_ndc": str(respuesta.get("version") or "").strip()[:255] if conoce else "",
         "contenido": contenido if conoce else "",
         "uso": uso,
     }
 
 
+def campos_de_documento(documento) -> dict:
+    """Lo que la ficha recuerda de la NDC de la biblioteca de la que salió."""
+    return {
+        "documento": documento,
+        "documento_nombre": (documento.name or "")[:255],
+        "documento_anio": documento.year,
+        "fuente": FuenteFicha.NDC,
+    }
+
+
+def ficha_al_dia(ficha: FichaNDC | None, documento) -> bool:
+    """Si la ficha ya está armada con esa NDC (no hay que rehacerla)."""
+    return bool(
+        ficha is not None
+        and ficha.documento_id == documento.pk
+        and ficha.estado in (EstadoFicha.LISTA, EstadoFicha.SIN_DATOS)
+    )
+
+
 def generar_ficha(ficha_id: int) -> None:
     """Completa una ficha que quedó en ``generando`` (la dispara la API)."""
     try:
-        ficha = FichaNDC.objects.get(pk=ficha_id)
+        ficha = FichaNDC.objects.select_related("documento").get(pk=ficha_id)
     except FichaNDC.DoesNotExist:
         return
     if ficha.estado != EstadoFicha.GENERANDO:
         return
     try:
-        resultado = redactar_ficha(ficha.pais, ficha.texto_ndc)
+        if ficha.documento is None:
+            raise RuntimeError("la NDC ya no está en la biblioteca pública")
+        resultado = redactar_ficha(ficha.pais, biblioteca.texto_de(ficha.documento))
     except Exception as exc:  # noqa: BLE001
         logger.exception("proyeccion: no se pudo armar la ficha NDC de %s", ficha.pais)
         FichaNDC.objects.filter(pk=ficha_id).update(
@@ -239,45 +262,11 @@ def generar_ficha(ficha_id: int) -> None:
         return
     FichaNDC.objects.filter(pk=ficha_id).update(
         estado=resultado["estado"],
-        fuente=resultado["fuente"],
         version_ndc=resultado["version_ndc"],
         contenido=resultado["contenido"],
         error="",
         actualizado_en=timezone.now(),
     )
-
-
-def texto_de_ndc(nombre: str, contenido: bytes) -> str:
-    """El texto de la NDC que se adjunta: PDF o texto plano."""
-    extension = (nombre or "").lower().rsplit(".", 1)[-1]
-    if extension in ("txt", "md"):
-        for codificacion in ("utf-8-sig", "cp1252"):
-            try:
-                return contenido.decode(codificacion)
-            except UnicodeDecodeError:
-                continue
-        return contenido.decode("latin-1", errors="replace")
-    if extension != "pdf":
-        raise ValueError("Subí la NDC como PDF o texto (.txt).")
-    import fitz  # pymupdf
-
-    try:
-        documento = fitz.open(stream=contenido, filetype="pdf")
-    except Exception as exc:  # noqa: BLE001
-        raise ValueError("No se pudo abrir el PDF.") from exc
-    with documento:
-        partes: list[str] = []
-        total = 0
-        for pagina in documento:
-            texto = pagina.get_text()
-            partes.append(texto)
-            total += len(texto)
-            if total > _MAX_CARACTERES_NDC:
-                break
-    texto = "\n".join(partes).replace("\x00", "").strip()
-    if len(texto) < 500:
-        raise ValueError("El PDF no tiene texto legible (¿está escaneado?).")
-    return texto
 
 
 # ---------------------------------------------------------------------------
@@ -329,13 +318,6 @@ _ESQUEMA_SCREENING = {
     "additionalProperties": False,
 }
 
-_FUENTE_DE_FICHA = {
-    FuenteFicha.NDC: "NDC adjunta",
-    FuenteFicha.MANUAL: "ficha cargada por el equipo",
-    FuenteFicha.CONOCIMIENTO_GENERAL: "conocimiento general, a validar",
-}
-
-
 def _clave_de_analisis(op: OperacionProyectada) -> tuple[str, str, str, str]:
     return (plegar(op.pais), plegar(op.cliente), plegar(op.descripcion), plegar(op.producto))
 
@@ -348,8 +330,8 @@ def _mensajes_del_lote(lote: list[OperacionProyectada], fichas: dict[str, FichaN
             paises.append(clave)
     if paises:
         bloques = [
-            f"## {fichas[clave].pais} (fuente: {_FUENTE_DE_FICHA.get(fichas[clave].fuente, 'ficha')})\n"
-            f"{fichas[clave].version_ndc}\n{fichas[clave].contenido}".strip()
+            f"## {fichas[clave].pais} — {fichas[clave].version_ndc or fichas[clave].documento_nombre}\n"
+            f"{fichas[clave].contenido}".strip()
             for clave in paises
         ]
         seccion_fichas = "<fichas_ndc>\n" + "\n\n".join(bloques) + "\n</fichas_ndc>"
@@ -514,7 +496,7 @@ def redactar_resumen(
         {"role": "system", "content": prompts.INSTRUCCIONES_GENERALES},
         {"role": "user", "content": pedido},
     ]
-    texto, uso = _completar_texto(mensajes, modelo=modelo, max_tokens=3000)
+    texto, uso = _completar_texto(mensajes, modelo=modelo, max_tokens=8000)
     return texto.strip(), uso
 
 
@@ -540,7 +522,13 @@ def _latido(proyeccion_id: int, **campos) -> None:
 def _preparar_fichas(
     proyeccion: Proyeccion, operaciones: list[OperacionProyectada], *, modelo: str, uso: dict, avisos: list[str]
 ) -> dict[str, FichaNDC]:
-    """Las fichas utilizables por país (clave plegada), armando las que falten si se pidió."""
+    """Las fichas utilizables por país (clave plegada).
+
+    Salen de la NDC vigente de cada país en la biblioteca pública. Una ficha se
+    arma la primera vez y se rehace sola cuando la biblioteca tiene una NDC más
+    nueva de ese país; mientras tanto se reutiliza todos los meses. Un país sin
+    NDC en la biblioteca queda sin alertas de NDC, y se avisa.
+    """
     alcance = (proyeccion.alcance or {}).get("ndc") or AlcanceNDC.TODOS
     if alcance == AlcanceNDC.NINGUNO:
         return {}
@@ -550,17 +538,36 @@ def _preparar_fichas(
         if pais_con_ndc(op.pais):
             paises.setdefault(plegar(op.pais), op.pais)
 
+    vigentes = biblioteca.ndc_vigentes()
     existentes = {plegar(f.pais): f for f in FichaNDC.objects.filter(organization=proyeccion.organization)}
+    sin_ndc = sorted(pais for clave, pais in paises.items() if clave not in vigentes)
+    if sin_ndc:
+        avisos.append(
+            "No hay NDC en la biblioteca pública de: " + ", ".join(sin_ndc) + ". "
+            "Sus operaciones quedaron sin alertas de NDC."
+        )
+
     if alcance == AlcanceNDC.TODOS:
-        faltan = [(clave, pais) for clave, pais in paises.items() if clave not in existentes]
+        faltan = [
+            (clave, pais, vigentes[clave])
+            for clave, pais in paises.items()
+            if clave in vigentes and not ficha_al_dia(existentes.get(clave), vigentes[clave])
+        ]
         if faltan:
             _latido(proyeccion.pk, etapa="fichas", progreso_hechas=0, progreso_total=len(faltan))
             hechas = 0
             fallidas: list[str] = []
             with ThreadPoolExecutor(max_workers=HILOS) as hilos:
-                pendientes = {hilos.submit(redactar_ficha, pais, "", modelo=modelo): (clave, pais) for clave, pais in faltan}
+                pendientes = {
+                    hilos.submit(redactar_ficha, pais, biblioteca.texto_de(documento), modelo=modelo): (
+                        clave,
+                        pais,
+                        documento,
+                    )
+                    for clave, pais, documento in faltan
+                }
                 for futuro in as_completed(pendientes):
-                    clave, pais = pendientes[futuro]
+                    clave, pais, documento = pendientes[futuro]
                     hechas += 1
                     try:
                         resultado = futuro.result()
@@ -570,12 +577,13 @@ def _preparar_fichas(
                         _latido(proyeccion.pk, progreso_hechas=hechas)
                         continue
                     _sumar_uso(uso, resultado["uso"])
+                    anterior = existentes.get(clave)
                     ficha, _ = FichaNDC.objects.update_or_create(
                         organization=proyeccion.organization,
-                        pais=pais,
+                        pais=anterior.pais if anterior is not None else pais,
                         defaults={
+                            **campos_de_documento(documento),
                             "estado": resultado["estado"],
-                            "fuente": resultado["fuente"],
                             "version_ndc": resultado["version_ndc"],
                             "contenido": resultado["contenido"],
                             "error": "",
@@ -588,7 +596,15 @@ def _preparar_fichas(
                     "No se pudo armar la ficha NDC de: " + ", ".join(sorted(fallidas)) + ". "
                     "Sus operaciones quedaron sin alertas de NDC."
                 )
-    return {clave: ficha for clave, ficha in existentes.items() if clave in paises and ficha.utilizable}
+    # Sólo cuentan las fichas armadas con la NDC que hoy está vigente en la biblioteca.
+    return {
+        clave: ficha
+        for clave, ficha in existentes.items()
+        if clave in paises
+        and clave in vigentes
+        and ficha.utilizable
+        and ficha.documento_id == vigentes[clave].pk
+    }
 
 
 def _analizar(proyeccion: Proyeccion) -> None:
@@ -621,10 +637,24 @@ def _analizar(proyeccion: Proyeccion) -> None:
     resueltas: set[int] = set()
 
     def correr(lote: list[OperacionProyectada]) -> tuple[dict, dict]:
-        # Un lote grande son ~200 tokens por operación; el tope va holgado.
-        return _completar_json(
-            _mensajes_del_lote(lote, fichas), _ESQUEMA_SCREENING, modelo=modelo, max_tokens=400 * len(lote) + 1000
-        )
+        try:
+            return _completar_json(
+                _mensajes_del_lote(lote, fichas), _ESQUEMA_SCREENING, modelo=modelo, max_tokens=_MAX_TOKENS
+            )
+        except Exception:
+            # Un lote que no sale entero se parte en dos: si lo que falló fue
+            # el tamaño de la respuesta, las mitades entran.
+            if len(lote) < 2:
+                raise
+            mitad = len(lote) // 2
+            primera, uso_a = correr(lote[:mitad])
+            segunda, uso_b = correr(lote[mitad:])
+            uso_total: dict = {}
+            _sumar_uso(uso_total, uso_a)
+            _sumar_uso(uso_total, uso_b)
+            return {
+                "operaciones": [*(primera.get("operaciones") or []), *(segunda.get("operaciones") or [])]
+            }, uso_total
 
     with ThreadPoolExecutor(max_workers=HILOS) as hilos:
         pendientes = {hilos.submit(correr, lote): lote for lote in lotes}

@@ -17,9 +17,9 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.proyeccion import servicios, tasks
+from apps.proyeccion import biblioteca, servicios, tasks
 from apps.proyeccion.acceso import organizacion_del_pedido, puede_entrar
-from apps.proyeccion.analisis import pais_con_ndc, texto_de_ndc
+from apps.proyeccion.analisis import campos_de_documento, pais_con_ndc
 from apps.proyeccion.api import serializers
 from apps.proyeccion.lectura import MAX_BYTES, ArchivoInvalido, leer_proyeccion, plegar
 from apps.proyeccion.models import (
@@ -27,11 +27,9 @@ from apps.proyeccion.models import (
     EstadoAnalisis,
     EstadoFicha,
     FichaNDC,
-    FuenteFicha,
     Proyeccion,
 )
 
-_MAX_BYTES_NDC = 40 * 1024 * 1024
 
 
 def _periodo(valor) -> date:
@@ -170,69 +168,50 @@ class AnalizarView(APIView):
 
 
 class FichasView(APIView):
-    """Las fichas NDC de la institución, y armar o escribir la de un país."""
-
-    parser_classes = (MultiPartParser, FormParser, JSONParser)
+    """Las fichas NDC de la institución y qué NDC hay en la biblioteca pública."""
 
     def get(self, request):
         organization = organizacion_del_pedido(request)
-        return Response([serializers.ficha(f) for f in FichaNDC.objects.filter(organization=organization)])
+        fichas = FichaNDC.objects.filter(organization=organization).select_related("documento")
+        return Response(
+            {
+                "fichas": [serializers.ficha(f) for f in fichas],
+                # Qué países tienen NDC en la biblioteca, para mostrar de dónde
+                # sale (o saldría) cada ficha.
+                "biblioteca": [serializers.ndc_de_biblioteca(d) for d in biblioteca.ndc_vigentes().values()],
+            }
+        )
 
     def post(self, request):
-        """Tres formas, según lo que venga:
-
-        - ``file``: la NDC del país (PDF o texto) → la ficha se arma de ahí;
-        - ``contenido``: la ficha escrita o corregida a mano;
-        - nada más que ``pais``: se arma con conocimiento general, marcada para validar.
-        """
+        """Arma (o vuelve a armar) la ficha de un país con su NDC vigente de la biblioteca."""
         organization = organizacion_del_pedido(request)
         pais = re.sub(r"\s+", " ", str(request.data.get("pais") or "")).strip()[:120]
         if not pais:
             raise ValidationError({"pais": ["Indicá el país."]})
-        if not pais_con_ndc(pais):
-            raise ValidationError({"pais": ["Eso no es un país con NDC propia."]})
+        documento = biblioteca.ndc_de(pais) if pais_con_ndc(pais) else None
+        if documento is None:
+            raise ValidationError(
+                {"pais": [f"No hay una NDC de {pais} en la biblioteca pública: cargala ahí, con la etiqueta NDC y el país."]}
+            )
 
         ficha = next(
             (f for f in FichaNDC.objects.filter(organization=organization) if plegar(f.pais) == plegar(pais)),
             None,
         ) or FichaNDC(organization=organization, pais=pais)
+        for campo, valor in campos_de_documento(documento).items():
+            setattr(ficha, campo, valor)
         ficha.actualizado_por = request.user
         ficha.error = ""
-
-        archivo = request.FILES.get("file")
-        contenido = request.data.get("contenido")
-        if archivo is not None:
-            if archivo.size > _MAX_BYTES_NDC:
-                raise ValidationError({"file": ["El archivo pesa más de 40 MB."]})
-            try:
-                ficha.texto_ndc = texto_de_ndc(archivo.name, archivo.read())
-            except ValueError as exc:
-                raise ValidationError({"file": [str(exc)]}) from exc
-            ficha.archivo_nombre = archivo.name[:255]
-            ficha.estado = EstadoFicha.GENERANDO
-        elif isinstance(contenido, str):
-            if not contenido.strip():
-                raise ValidationError({"contenido": ["La ficha no puede quedar vacía."]})
-            ficha.contenido = contenido.strip()
-            ficha.version_ndc = str(request.data.get("version_ndc") or ficha.version_ndc or "").strip()[:255]
-            ficha.fuente = FuenteFicha.MANUAL
-            ficha.estado = EstadoFicha.LISTA
-        else:
-            # Volver a armarla: desde la NDC adjunta si la hay; si no, conocimiento general.
-            if str(request.data.get("sin_adjunto", "")).lower() in ("1", "true"):
-                ficha.texto_ndc = ""
-                ficha.archivo_nombre = ""
-            ficha.estado = EstadoFicha.GENERANDO
+        ficha.estado = EstadoFicha.GENERANDO
         ficha.save()
 
-        if ficha.estado == EstadoFicha.GENERANDO:
-            try:
-                tasks.despachar_ficha(ficha.pk)
-            except Exception as exc:  # noqa: BLE001
-                FichaNDC.objects.filter(pk=ficha.pk).update(
-                    estado=EstadoFicha.ERROR, error=f"No se pudo poner en la cola de trabajo ({exc})."
-                )
-                ficha.refresh_from_db()
+        try:
+            tasks.despachar_ficha(ficha.pk)
+        except Exception as exc:  # noqa: BLE001
+            FichaNDC.objects.filter(pk=ficha.pk).update(
+                estado=EstadoFicha.ERROR, error=f"No se pudo poner en la cola de trabajo ({exc})."
+            )
+            ficha.refresh_from_db()
         return Response(serializers.ficha(ficha), status=status.HTTP_201_CREATED)
 
 

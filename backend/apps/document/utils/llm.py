@@ -427,8 +427,13 @@ def anthropic_structured_completion(
     schema: dict,
     max_tokens: int | None = None,
     timeout: float | None = None,
+    effort: str | None = None,
 ) -> Tuple[dict, dict]:
     """Respuesta de Claude restringida a un JSON Schema (``output_config.format``).
+
+    ``effort`` es cuánto razona el modelo antes de escribir. El razonamiento
+    cuenta contra ``max_tokens``: una extracción simple con el esfuerzo por
+    defecto puede agotar el límite razonando y no llegar a escribir el JSON.
 
     Existe porque pedir "respondé sólo JSON" en el prompt no alcanza: el
     extractor de objetivo y componentes falló en producción con respuestas que
@@ -440,7 +445,7 @@ def anthropic_structured_completion(
     import json
 
     client = _anthropic_client()
-    params = _build_request(messages, model=model, temperature=None, max_tokens=max_tokens)
+    params = _build_request(messages, model=model, temperature=None, max_tokens=max_tokens, effort=effort)
     params.setdefault("output_config", {})["format"] = {"type": "json_schema", "schema": schema}
     caller = client.with_options(timeout=timeout) if timeout else client
     response = caller.messages.create(**params)

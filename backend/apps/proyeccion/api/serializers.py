@@ -119,11 +119,22 @@ def ficha(f: FichaNDC) -> dict:
         "id": f.pk,
         "pais": f.pais,
         "estado": f.estado,
-        "fuente": f.fuente,
         "version_ndc": f.version_ndc,
         "contenido": f.contenido,
-        "archivo_nombre": f.archivo_nombre,
-        "tiene_ndc_adjunta": bool(f.texto_ndc),
+        # La NDC de la biblioteca con la que se armó.
+        "documento_slug": f.documento.slug if f.documento_id and f.documento else None,
+        "documento_nombre": f.documento_nombre,
+        "documento_anio": f.documento_anio,
         "error": f.error,
         "actualizado_en": f.actualizado_en.isoformat(),
+    }
+
+
+def ndc_de_biblioteca(documento) -> dict:
+    return {
+        "pais": documento.region,
+        "documento_id": documento.pk,
+        "documento_slug": documento.slug,
+        "documento_nombre": documento.name,
+        "documento_anio": documento.year,
     }

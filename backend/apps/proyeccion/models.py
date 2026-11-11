@@ -14,7 +14,8 @@ preliminar con cuatro alertas tempranas:
 El módulo es una propuesta y vive aparte a propósito: tiene sus tablas, sus
 rutas (``/api/proyeccion/``) y su sección en el portal, y no lee ni escribe
 operaciones, documentos ni corridas. Lo único que comparte con el resto es la
-institución (``Organization``), el usuario y el cliente del modelo de lenguaje.
+institución (``Organization``), el usuario, el cliente del modelo de lenguaje
+y —sólo para leer— las NDC de la biblioteca pública.
 
 Quién lo ve: sólo el superadmin de Ecofilia (ver ``apps.proyeccion.acceso``).
 Y sólo usa modelos de Claude (ver ``apps.proyeccion.analisis``).
@@ -160,8 +161,9 @@ class EstadoFicha(models.TextChoices):
 class FichaNDC(models.Model):
     """La referencia breve de la NDC de un país, que usan las alertas 3 y 4.
 
-    Se arma una vez y se reutiliza los meses siguientes; se actualiza sólo
-    cuando el país presenta una NDC nueva.
+    Se arma con la NDC vigente del país en la biblioteca pública
+    (``apps.proyeccion.biblioteca``), una vez, y se reutiliza los meses
+    siguientes; se rehace sola cuando la biblioteca tiene una NDC más nueva.
     """
 
     organization = models.ForeignKey(
@@ -172,6 +174,13 @@ class FichaNDC(models.Model):
     fuente = models.CharField(
         max_length=24, choices=FuenteFicha.choices, default=FuenteFicha.CONOCIMIENTO_GENERAL
     )
+    # La NDC de la biblioteca pública con la que se armó la ficha. Si la
+    # biblioteca pasa a tener una más nueva de ese país, la ficha se rehace.
+    documento = models.ForeignKey(
+        "document.Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    documento_nombre = models.CharField(max_length=255, blank=True)
+    documento_anio = models.IntegerField(null=True, blank=True)
     version_ndc = models.CharField(max_length=255, blank=True)
     contenido = models.TextField(blank=True)
     # El texto de la NDC adjunta, para volver a armar la ficha sin subirla otra vez.

@@ -127,12 +127,6 @@ ORIGEN_FICHA_ADJUNTA = (
     "Si el texto no es la NDC del país o no permite completar la ficha, responde con \"conoce\": false."
 )
 
-ORIGEN_FICHA_CONOCIMIENTO = (
-    "No hay NDC adjunta: usa tu conocimiento general de la NDC vigente del país. "
-    "Si no conoces la NDC con suficiente seguridad (o no es un país con NDC propia, "
-    "por ejemplo una operación regional), responde con \"conoce\": false y no completes la ficha."
-)
-
 INSTRUCCIONES_RESUMEN = """\
 Con base en el screening de {mes}, elabora un resumen mensual breve para la Dirección de la DATBC. Los números detallados ya están en la tabla semáforo: aquí solo interesa contar en pocas líneas qué se encontró y en qué operaciones.
 
