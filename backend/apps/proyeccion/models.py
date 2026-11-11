@@ -179,7 +179,10 @@ class FichaNDC(models.Model):
     documento = models.ForeignKey(
         "document.Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
-    documento_nombre = models.CharField(max_length=255, blank=True)
+    # ``db_default``: durante un despliegue el worker anterior sigue escribiendo
+    # fichas sin conocer esta columna; sin el default en la base, falla (pasó el
+    # 2026-11-11, mientras se reemplazaban los workers).
+    documento_nombre = models.CharField(max_length=255, blank=True, db_default="")
     documento_anio = models.IntegerField(null=True, blank=True)
     version_ndc = models.CharField(max_length=255, blank=True)
     contenido = models.TextField(blank=True)
