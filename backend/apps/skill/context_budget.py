@@ -100,11 +100,6 @@ DEGRADED_DOC_TOKENS = int(os.environ.get("SKILL_DEGRADED_DOC_TOKENS", "20000"))
 SKILL_MAX_OUTPUT_TOKENS = int(os.environ.get("SKILL_MAX_OUTPUT_TOKENS", "64000"))
 
 
-# Lo que se resta además del exceso cuando la API rechaza un pedido por largo:
-# el error del estimador no es parejo entre documentos, y achicar justo lo que
-# sobró deja el reintento al borde.
-CONTEXT_OVERFLOW_EXTRA = int(os.environ.get("SKILL_CONTEXT_OVERFLOW_EXTRA", "50000"))
-
 _OVERFLOW = None
 
 
@@ -127,10 +122,57 @@ def context_overflow(exc: Exception) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
-def shrink_window(window: int, sent: int, maximum: int) -> int:
-    """La ventana para el reintento: la actual, menos lo que sobró y un colchón."""
-    excess = max(0, sent - maximum)
-    return max(SHORT_CONTEXT_WINDOW // 2, window - excess - CONTEXT_OVERFLOW_EXTRA)
+# Colchón sobre la escala recalibrada: el pedido del reintento no es idéntico
+# (cambian los documentos degradados), y el error del estimador tampoco es
+# parejo entre documentos.
+RECALIBRATION_CUSHION = 1.05
+
+# Techo de la escala. Ni un texto todo números baja de un carácter por token,
+# que contra los 2,3 del estimador da 2,3; más que eso es que el pedido creció
+# por algo que no es el corpus (resultados de herramientas, por ejemplo), y
+# escalar el corpus en proporción lo fragmentaría entero sin arreglar nada.
+MAX_TOKEN_SCALE = 4.0
+
+
+def recalibrate_scale(scale: float, *, sent: int, estimated: int) -> float:
+    """La escala del estimador después de que la API rechazó un pedido.
+
+    Achicar la ventana en lo que sobró sólo sirve si el estimador se equivocó
+    por poco. El 17 de noviembre de 2026 una IET sobre el BUR de Costa Rica
+    —tablas de inventario, casi todo números— se estimó muy por debajo de lo
+    real: con la ventana achicada el plan seguía creyendo que todo entraba, el
+    reintento mandó el mismo pedido byte a byte (1.033.145 tokens) y cada
+    «Reanudar» repetía el rechazo. El rechazo trae el conteo real; la relación
+    entre ese conteo y lo que estimamos es la corrección que le faltaba al
+    estimador para *este* corpus.
+
+    ``estimated`` es la estimación *sin escala* del pedido rechazado (ver
+    ``estimate_messages_tokens``), así que el cociente es la corrección
+    absoluta. Nunca baja de la escala anterior: si un segundo rechazo da un
+    cociente menor es porque cambió qué documentos viajaron, no porque el
+    estimador haya mejorado.
+    """
+    if estimated <= 0 or sent <= 0:
+        ratio = 1.0
+    else:
+        ratio = sent / estimated
+    return min(MAX_TOKEN_SCALE, max(1.0, scale, ratio) * RECALIBRATION_CUSHION)
+
+
+def estimate_messages_tokens(messages: list[dict]) -> int:
+    """Lo que estimamos para un pedido ya armado, con el estimador sin escala."""
+    total = 0
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, str):
+            total += estimate_tokens(content)
+            continue
+        for block in content or []:
+            if block.get("type") == "text":
+                total += estimate_tokens(block.get("text") or "")
+            elif block.get("type") == "document":
+                total += estimate_tokens((block.get("source") or {}).get("data") or "")
+    return total
 
 
 def output_reserve(model: str | None = None) -> int:
@@ -206,6 +248,8 @@ class ContextPlan:
     # Documentos degradados de los que no se pudo traer ni un fragmento, por
     # slug y motivo. Lo llena el runner después de intentar la recuperación.
     partial_failures: dict = field(default_factory=dict)
+    # Corrección del estimador aplicada a este plan (1 salvo en un reintento).
+    token_scale: float = 1.0
 
     @property
     def blueprint(self) -> DocumentDelivery | None:
@@ -256,6 +300,7 @@ class ContextPlan:
                 self.blueprint is not None and self.blueprint.mode == PARTIAL
             ),
             "chars_per_token": CHARS_PER_TOKEN,
+            **({"token_scale": round(self.token_scale, 3)} if self.token_scale != 1.0 else {}),
         }
 
 
@@ -267,6 +312,7 @@ def plan_context(
     texts: dict | None = None,
     context_window: int | None = None,
     max_document_tokens: int | None = None,
+    token_scale: float = 1.0,
 ) -> ContextPlan:
     """Decide, documento por documento, qué entra entero y qué se degrada.
 
@@ -290,6 +336,9 @@ def plan_context(
     separa "cabe" de "conviene": leer un millón de tokens en cada paso cabe,
     pero cuesta varias veces más que leer el principal entero y fragmentos de
     los anexos.
+
+    ``token_scale`` corrige el estimador cuando la API ya dijo cuánto pesaba de
+    verdad el pedido (ver ``recalibrate_scale``). Fuera de ese reintento es 1.
     """
     window = context_window or CONTEXT_WINDOW
     # Dos presupuestos: lo que entra en la ventana (física) y lo que conviene
@@ -305,7 +354,7 @@ def plan_context(
         text = (texts or {}).get(document.id) if texts else None
         if text is None:
             text = document.extracted_text or ""
-        tokens = estimate_tokens(text)
+        tokens = math.ceil(estimate_tokens(text) * max(1.0, token_scale))
         if not tokens:
             deliveries.append(
                 DocumentDelivery(
@@ -415,6 +464,7 @@ def plan_context(
         budget_tokens=budget,
         corpus_tokens=_total(),
         reserved_tokens=max(0, reserved_tokens),
+        token_scale=max(1.0, token_scale),
     )
     if _total() > window_budget:
         # Todo degradado y todavía no entra. Puede pasar con muchísimos

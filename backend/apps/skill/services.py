@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass
 from typing import List
@@ -1517,7 +1518,11 @@ def _retrieve_partial_blocks(
     collected: list = []
     failures: dict[str, str] = {}
     for delivery in plan.degraded:
-        wanted = context_budget.chunks_for_budget(delivery.tokens)
+        # Con el estimador recalibrado, cada fragmento pesa más de lo que dice
+        # ``TOKENS_PER_CHUNK``: se piden menos para no volver a pasarse.
+        wanted = context_budget.chunks_for_budget(
+            int(delivery.tokens / max(1.0, getattr(plan, "token_scale", 1.0)))
+        )
         try:
             retrieval = retrieve_for_chat(
                 user=execution.owner,
@@ -1582,6 +1587,7 @@ def build_step_corpus(
     retrieve_partials: bool = True,
     context_window: int | None = None,
     max_document_tokens: int | None = None,
+    token_scale: float = 1.0,
 ) -> "StepCorpus":
     """La base documental de un paso, tal como la va a ver el modelo.
 
@@ -1604,6 +1610,7 @@ def build_step_corpus(
         texts=document_texts,
         context_window=context_window,
         max_document_tokens=max_document_tokens,
+        token_scale=token_scale,
     )
     if retrieve_partials:
         partial_blocks, chunks, failures = _retrieve_partial_blocks(
@@ -2075,11 +2082,15 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             model_for_step = _resolve_model(skill, tier_used)
             # La ventana contra la que se presupuesta. Si la API igual rechaza
             # el pedido por largo (el estimador es por caracteres y puede
-            # quedarse corto), se achica en lo que sobró y se arma de nuevo una
-            # vez: degradar un anexo es mejor que perder la corrida.
+            # quedarse corto), el rechazo trae el conteo real: con él se
+            # recalibra el estimador para este corpus y el paso se arma de
+            # nuevo. Degradar un anexo es mejor que perder la corrida. Achicar
+            # sólo la ventana no alcanzaba: si el estimador se equivocó por
+            # mucho, el plan no cambia y el reintento es el mismo pedido.
             window = context_budget.context_window_for(model_for_step)
+            token_scale = 1.0
             context_retry: dict | None = None
-            for attempt in (1, 2):
+            for attempt in (1, 2, 3):
                 corpus = None
                 if use_context_first:
                     # El presupuesto documental es lo que queda de la ventana una
@@ -2088,8 +2099,13 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     # secciones previas largas tiene menos lugar para documentos
                     # que uno del principio, y esa diferencia es la que decide.
                     reserved = (
-                        context_budget.estimate_tokens(system_prompt)
-                        + context_budget.estimate_tokens(prompt)
+                        math.ceil(
+                            (
+                                context_budget.estimate_tokens(system_prompt)
+                                + context_budget.estimate_tokens(prompt)
+                            )
+                            * token_scale
+                        )
                         + context_budget.output_reserve(model_for_step)
                     )
                     corpus = build_step_corpus(
@@ -2102,6 +2118,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                         strategy=effective_retrieval_strategy,
                         context_window=window,
                         max_document_tokens=skill.max_document_tokens,
+                        token_scale=token_scale,
                     )
                     chunks = corpus.chunks
                     plan = corpus.plan
@@ -2133,17 +2150,26 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     break
                 except Exception as exc:  # noqa: BLE001 — se vuelve a levantar si no es esto
                     overflow = context_budget.context_overflow(exc)
-                    if attempt == 2 or corpus is None or overflow is None:
+                    if attempt == 3 or corpus is None or overflow is None:
                         raise
                     sent, maximum = overflow
-                    shrunk = context_budget.shrink_window(window, sent, maximum)
+                    estimated = context_budget.estimate_messages_tokens(messages)
+                    token_scale = context_budget.recalibrate_scale(
+                        token_scale, sent=sent, estimated=estimated
+                    )
                     logger.warning(
                         "Paso %s de la ejecución %s: el pedido excedió la ventana "
-                        "(%d > %d tokens). Se reintenta con una ventana de %d.",
-                        step.id, execution.id, sent, maximum, shrunk,
+                        "(%d > %d tokens; estimado %d). Se reintenta con el "
+                        "estimador escalado a %.3f.",
+                        step.id, execution.id, sent, maximum, estimated, token_scale,
                     )
-                    context_retry = {"sent_tokens": sent, "maximum": maximum, "window": shrunk}
-                    window = shrunk
+                    context_retry = {
+                        "sent_tokens": sent,
+                        "maximum": maximum,
+                        "estimated_tokens": estimated,
+                        "token_scale": round(token_scale, 3),
+                        "attempts": attempt + 1,
+                    }
 
             if corpus is not None:
                 seen_chunk_ids.update(c.id for c in chunks)
