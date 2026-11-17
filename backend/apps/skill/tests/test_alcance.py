@@ -311,8 +311,27 @@ class SeedLocalInstitucionesTestCase(TestCase):
         call_command("seed_local_instituciones", stdout=StringIO())
         call_command("seed_local_instituciones", stdout=StringIO())
         self.assertEqual(User.objects.filter(email__endswith="@local.test").count(), 5)
-        self.assertEqual(Project.objects.filter(slug__startswith="local-").count(), 3)
+        self.assertEqual(Project.objects.filter(slug__startswith="local-").count(), 5)
         caf = Organization.objects.get(slug="caf")
+        # El flujo de CAF como en producción: DEC con su informe, y una corrida
+        # completada del informe de cada etapa, que el portal lee sin IA.
+        from apps.project.services.caf_criteria import ecofilia_green_components
+        from apps.skill.models import SkillExecution
+
+        dec_report = "dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion"
+        dec = next(s for s in caf.config["stages"] if s["slug"] == "dec")
+        self.assertEqual(dec.get("report"), dec_report)
+        self.assertIn(dec_report, dec["launches"])
+        for slug, stage, skill in (
+            ("local-caf-ido", "ido_cci", "caf-iet-datbc-evaluacion-tecnica"),
+            ("local-caf-dec", "dec", dec_report),
+        ):
+            runs = SkillExecution.objects.filter(project__slug=slug, stage=stage, skill__slug=skill)
+            self.assertEqual(runs.count(), 1)
+            run = runs.get()
+            self.assertEqual(run.status, "completed")
+            self.assertEqual(run.steps_completed, Skill.objects.get(slug=skill).steps.count())
+            self.assertEqual(len(ecofilia_green_components(run)), 3)
         self.assertTrue(Skill.objects.filter(slug__startswith="caf-", organization=caf).exists())
         self.assertEqual(EvidenceTag.objects.get(slug="ido").organization, caf)
         for slug in ("metodologia-caf", "salvaguardas-cesas"):

@@ -18,6 +18,11 @@ dejaron todo en plataforma/global. Además suma una segunda institución
 (``otra``), un usuario público y un superadmin, con una operación, un documento
 y un informe emitido cada uno, para que se vea qué ve cada nivel.
 
+Para el flujo de CAF (``apps/user/seed_local``): pisa la IET de IDO, la de DEC y
+el guiado con la copia de producción de ``seed_local/workflows/`` y suma una
+operación por etapa (``local-caf-ido``, ``local-caf-dec``) con una corrida
+completada del informe, inventada y con la estructura de producción.
+
 Es idempotente: correrlo dos veces no duplica nada.
 """
 from __future__ import annotations
@@ -38,6 +43,8 @@ from apps.project.models import Project, ProjectDocument, ProjectStageReport, Pr
 from apps.project.services.stages import INSUMO_SLUG
 from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillScope, SkillType
 from apps.user.models import Organization, UserRole
+from apps.user.seed_local import operaciones as seed_operaciones
+from apps.user.seed_local import workflows as seed_workflows
 
 User = get_user_model()
 
@@ -134,7 +141,15 @@ class Command(BaseCommand):
         importlib.import_module("apps.skill.migrations.0050_asignar_alcance_skills").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0025_etiquetas_de_operacion_caf").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0026_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
+        importlib.import_module("apps.document.migrations.0027_mision_de_evaluacion_caf").seed(django_apps, None)
         importlib.import_module("apps.user.migrations.0009_config_caf").aplicar(django_apps, None)
+        # Los workflows de CAF como están hoy en producción (IET de IDO, IET de
+        # DEC y guiado): las migraciones ya no los describen y el de DEC no lo
+        # siembra ninguna. Recién con el de DEC presente, ``user/0016`` le da a
+        # la etapa DEC su informe.
+        informes = seed_workflows.cargar_todos(caf)
+        importlib.import_module("apps.skill.migrations.0052_s2_por_actividad_mision_y_lectura_verde").aplicar(django_apps, None)
+        importlib.import_module("apps.user.migrations.0016_caf_dec_y_mision").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 
@@ -232,6 +247,14 @@ class Command(BaseCommand):
                 output="Corrida de prueba de otra.",
             )
         op_caf.enabled_skills.add(*caf_skills)
+        # Una operación por etapa con informes de Ecofilia: IDO y DEC, cada una
+        # con su corrida completada (contenido inventado, estructura de prod).
+        etapas = seed_operaciones.sembrar(caf, caf_member, {
+            "ido_cci": informes[seed_workflows.IET_IDO],
+            "dec": informes[seed_workflows.IET_DEC],
+        })
+        for project in etapas:
+            project.enabled_skills.add(*caf_skills)
 
         self._report(password, superadmin, caf_admin, caf_member, otra_member, public)
 
@@ -241,9 +264,9 @@ class Command(BaseCommand):
         w("")
         w("Usuario                         Nivel                     Debería ver")
         rows = [
-            (users[0], "superadmin", "todo: las 3 operaciones, todas las skills y etiquetas"),
+            (users[0], "superadmin", "todo: las 5 operaciones (DEC sólo lo ve él en el front), skills y etiquetas"),
             (users[1], "admin de CAF", "operaciones de CAF; skills públicas y caf-* habilitadas; etiquetas CAF + globales"),
-            (users[2], "miembro de CAF", "su operación; skills públicas y caf-* habilitadas; etiquetas CAF + globales"),
+            (users[2], "miembro de CAF", "sus 3 operaciones; skills públicas y caf-* habilitadas; etiquetas CAF + globales"),
             (users[3], "miembro de otra", "su operación; local-publica y local-de-otra; propia-de-otra + globales"),
             (users[4], "público", "su operación; local-publica y la suya; sólo etiquetas globales"),
         ]
@@ -251,5 +274,6 @@ class Command(BaseCommand):
             w(f"{user.email:<31} {level:<25} {sees}")
         w("")
         w("Nadie salvo el superadmin ve local-plataforma. evaluation-records exige ?organization=<slug>.")
+        w("Flujo CAF: local-caf-ido (IDO) y local-caf-dec (DEC), con su informe de Ecofilia completado.")
         w(f"El superadmin tiene MFA: secreto TOTP {LOCAL_MFA_SECRET} (código: pyotp.TOTP(secreto).now()).")
         w("Configuración: GET /api/organizations/me/config/ (caf: la de CAF; otra: borrador → revisión → cerrada).")

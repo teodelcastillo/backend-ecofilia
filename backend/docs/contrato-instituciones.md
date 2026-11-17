@@ -105,29 +105,135 @@ institución, un usuario público y un superadmin.
 | Operación | `local-doc-caf` | de `caf-miembro`, institución `caf` |
 | Operación | `local-doc-otra` | de `otra-miembro`, institución `otra` |
 | Operación | `local-doc-publico` | de `publico`, sin institución |
+| Operación | `local-caf-ido` | de `caf-miembro`, institución `caf`, etapa IDO, con su informe de Ecofilia (ver «Prueba local del flujo CAF») |
+| Operación | `local-caf-dec` | de `caf-miembro`, institución `caf`, etapa DEC, con el informe de IDO y el de DEC |
 | Documento | `doc-caf`, `doc-otra`, `doc-publico` | uno por operación |
-| Informe emitido | uno por operación | etapa `ido_cci` |
+| Documento | `doc-local-caf-ido` (`ido`), `doc-local-caf-dec-ido` (`ido`), `doc-local-caf-dec` (`dec`) | de las operaciones de etapa |
+| Informe emitido | uno por operación de `local-doc-*` | etapa `ido_cci` |
 | Corrida | una en `local-doc-otra` | skill `local-de-otra` |
+| Corrida | completadas, inventadas, en `local-caf-ido` y `local-caf-dec` | IET de IDO y de DEC (`metadata.seed`) |
 | Skill | `local-plataforma` | `platform` |
 | Skill | `local-publica` | `public` |
 | Skill | `local-de-otra` | `organization` / `otra` |
 | Skill | `caf-*` (de las migraciones) | `organization` / `caf`; habilitadas para CAF salvo `caf-insumo-ejecutivo` |
+| Skill | `caf-iet-datbc-evaluacion-tecnica`, `caf-iet-guiado-ejecutivo`, `dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion` | `organization` / `caf`; **pisadas con la definición de producción** (ver «Prueba local del flujo CAF») |
 | Skill | `local-propia-del-publico` | `user` / dueño `publico` |
 | Etiqueta | `propia-de-otra` | institución `otra` |
-| Etiqueta | `ido`, `dec`, `ias`, `ibat`, …, `metodologia-caf`, `salvaguardas-cesas` | institución `caf` (11) |
+| Etiqueta | `ido`, `dec`, `ias`, `ibat`, …, `metodologia-caf`, `salvaguardas-cesas`, `mision-evaluacion` | institución `caf` (12) |
 | Etiqueta | `ndc`, `nap`, `lts`, … | globales (las 9 de país) |
 
 **Lo que tiene que ver cada uno** (verificado con `verificar_contrato_local.py`):
 
 | Usuario | `GET /api/skills/` | Operaciones y emitidos | Etiquetas con institución | `evaluation-records` sin org / `caf` / `otra` | `GET /api/skills/local-plataforma/` |
 |---|---|---|---|---|---|
-| superadmin | todas | las 3 | las de `caf` y `otra` | 400 / 200 / 200 | 200 |
-| caf-admin, caf-miembro | 4 `caf-*` + `local-publica` | la de CAF | las 11 de `caf` | 400 / 200 / 403 | 404 |
+| superadmin | todas | las 5 | las de `caf` y `otra` | 400 / 200 / 200 | 200 |
+| caf-admin, caf-miembro | 4 `caf-*` + la IET de DEC + `local-publica` | las 3 de CAF | las 12 de `caf` | 400 / 200 / 403 | 404 |
 | otra-miembro | `local-de-otra` + `local-publica` | la suya | `propia-de-otra` | 400 / 403 / 200 | 404 |
 | publico | `local-publica` + `local-propia-del-publico` | la suya | ninguna | 400 / 403 / 403 | 404 |
 
 Todos ven las 9 etiquetas globales (las de país). Ninguna etiqueta de CAF le
 llega a `otra` ni al público.
+
+### Prueba local del flujo CAF (IDO y DEC)
+
+Con el seed, la base local tiene el ciclo de CAF como está **hoy en
+producción**, incluido DEC, y una operación lista para mirar en cada etapa. No
+hace falta ninguna clave de LLM: las corridas ya están completadas.
+
+**Qué siembra además de lo anterior**
+
+- **Los workflows de CAF como están en producción**, desde
+  `apps/user/seed_local/workflows/*.json`: la IET de IDO
+  (`caf-iet-datbc-evaluacion-tecnica`, con «D.1.1. … (CT A1)», E.1/E.2/E.3,
+  S.1/S.2), la IET de DEC
+  (`dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion`, que no siembra
+  ninguna migración) y el guiado (`caf-iet-guiado-ejecutivo`, cuyos títulos son
+  las secciones del ejecutivo). En producción el staff los ajusta en el Studio y
+  las migraciones ya no los describen: el seed los **pisa** con esa copia. Los
+  pasos se actualizan por posición, así que sus ids no cambian al re-sembrar.
+- Con la IET de DEC presente, vuelve a aplicar `user/0016`: la etapa DEC tiene
+  su informe (`stages[].report`) y lo lanza. También `document/0027` y
+  `skill/0052` (Misión de Evaluación).
+- **`local-caf-ido`** (etapa `ido_cci`, «Agua y energía resiliente en Valle
+  Azul») y **`local-caf-dec`** (etapa `dec`, «Riego y energía solar en Río
+  Claro»), de `caf-miembro`, con su documento principal etiquetado, el
+  recorrido de etapas y una corrida **completada** del informe de la etapa (la
+  de DEC tiene también la de IDO). El contenido es inventado y tiene la
+  estructura de producción: C.1 (B.1 en DEC) con una tabla Campo | Detalle por
+  actividad y las tres variantes del rótulo de la actividad («Actividad»,
+  «Actividad elegible (nivel 4)», «Actividad de financiamiento elegible»); cada
+  CT con su prosa y el cierre `**Conclusión:**` / `**Información faltante:**`;
+  las recomendaciones (E.3 / D.1) con subtítulos `E.3.1`–`E.3.4` y viñetas; S.1
+  y S.2 como tablas (la IET de DEC no los tiene, igual que en producción). Al
+  re-sembrar, esas corridas se reescriben en el lugar: un informe del ejecutivo
+  ya empezado sobre ellas no se pierde.
+
+**Levantar de cero**
+
+```bash
+cd backend
+docker compose -f docker-compose.dev.yml down -v      # borra la base local
+docker compose -f docker-compose.dev.yml up --build   # migra sola al arrancar
+docker exec -it ecofilia-backend-dev ./manage.py seed_local_instituciones
+```
+
+Para no tocar la base dev de todos los días, se puede usar una base aparte en el
+mismo Postgres y un segundo backend en el puerto 8001:
+
+```bash
+docker exec ecofilia-db-dev psql -U postgres -c "CREATE DATABASE ecofilia_seed"
+docker exec ecofilia-db-dev psql -U postgres -d ecofilia_seed -c "CREATE EXTENSION IF NOT EXISTS vector"
+docker exec -e POSTGRES_NAME=ecofilia_seed ecofilia-backend-dev ./manage.py migrate
+docker exec -e POSTGRES_NAME=ecofilia_seed ecofilia-backend-dev ./manage.py seed_local_instituciones
+# Backend sobre esa base, en :8001, con el mismo entorno que el dev:
+docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' ecofilia-backend-dev \
+  | grep -v '^POSTGRES_NAME=' | grep -v '^$' | { cat; echo POSTGRES_NAME=ecofilia_seed; } \
+  | docker run -d --name ecofilia-backend-seed --network backend_app-network \
+      -v "$PWD":/code -w /code -p 8001:80 --env-file /dev/stdin \
+      ecofilia-backend:dev ./manage.py runserver 0:80
+# Front contra ese backend (en ecofiliaV2):
+NEXT_PUBLIC_API_URL=http://localhost:8001/api pnpm exec next dev
+```
+
+Para tirarla: `docker rm -f ecofilia-backend-seed` y
+`docker exec ecofilia-db-dev psql -U postgres -c "DROP DATABASE ecofilia_seed"`.
+
+**Entrar.** Mientras el bloqueo de DEC siga activo en el front
+(`ecofiliaV2/lib/dec-bloqueado.ts`), **DEC sólo lo ve el superadmin**:
+`caf-miembro` ve `local-caf-ido` y no `local-caf-dec`. El superadmin pide
+código TOTP al iniciar sesión (`pyotp.TOTP("JBSWY3DPEHPK3PXP").now()`, cada
+código sirve una vez). Para no pasar por el login, un JWT de la base local:
+
+```bash
+docker exec -i ecofilia-backend-dev ./manage.py shell -v 0 -c "from rest_framework_simplejwt.tokens import RefreshToken; from django.contrib.auth import get_user_model; r = RefreshToken.for_user(get_user_model().objects.get(email='superadmin@local.test')); print(r.access_token); print(r)"
+```
+
+y en la consola del navegador, sobre `localhost:3000`:
+`localStorage.setItem("access_token", "<access>")` y
+`localStorage.setItem("refresh_token", "<refresh>")`. **Volver a correr el seed
+cambia las claves**, y con eso invalida las sesiones abiertas: hay que volver a
+entrar.
+
+**Qué mirar** (en `localhost:3000/caf/operaciones/<slug>`):
+
+| Operación | Insumo IA | Informe IET | Guiado («Empezar informe») |
+|---|---|---|---|
+| `local-caf-ido` | 3 actividades (A.1.1.6, M.8.1.1, B.2.1.6); Obj. 1 «Con brechas por CT A2», Obj. 2 «Alineada en el CT M2»; falta información en A1, A2 y M4 | el informe IA de IDO, con las secciones del ejecutivo en blanco | 16 pasos; recomendaciones precargadas desde E.3.1–E.3.4 |
+| `local-caf-dec` | 3 actividades (M.1.1.1, A.1.1.2, B.2.1.8), leídas de B.1; Obj. 1 «Alineada», Obj. 2 «Con brechas» | el informe IA de DEC | 15 pasos; componentes verdes desde B.1 |
+
+**Refrescar los workflows de producción.** Cuando el staff cambie una de las
+tres en el Studio, se baja su definición (sólo lectura, con una sesión de
+superadmin en producción: `GET https://api.ecofilia.site/api/skills/<slug>/`),
+se guarda la respuesta como `respuesta.json` y se limpia (sin dueño ni ids):
+
+```bash
+docker exec -i ecofilia-backend-dev ./manage.py shell -v 0 -c "import json, sys; from apps.user.seed_local.workflows import limpiar; json.dump(limpiar(json.load(sys.stdin)), sys.stdout, ensure_ascii=False, indent=2); print()" \
+  < respuesta.json > apps/user/seed_local/workflows/<slug>.json
+```
+
+Copia tomada de producción el 17 de noviembre de 2026. Antes de commitear una
+copia nueva, revisar que no traiga datos de clientes (`document_slugs`,
+`pinned_document_slugs`, ejemplos en las instrucciones).
 
 ---
 
