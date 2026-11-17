@@ -3,7 +3,7 @@ Fase 7 de punta a punta: versión de definición, repetir y comparar corridas.
 
 Usa skills QUICK porque el runner asigna la versión de definición antes de
 bifurcar a QUICK o COPILOT — no hace falta el motor de pasos para probar esto,
-y mockear ``generate_chat_completion``/``fetch_relevant_chunks`` alcanza para
+y mockear ``generate_chat_completion``/``retrieve_for_chat`` alcanza para
 correr una ejecución completa de punta a punta, igual que en
 ``test_services.py``.
 """
@@ -17,6 +17,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument, ProjectShare, ProjectShareRole
 from apps.skill.models import (
@@ -93,7 +94,7 @@ class VersioningAPITestCase(APITestCase):
         self.assertEqual(response.data["parameter_issues"][0]["problem"], "invalid_enum")
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_run_applies_the_declared_default_when_omitted(
         self, mock_fetch_chunks, mock_completion
     ):
@@ -112,7 +113,7 @@ class VersioningAPITestCase(APITestCase):
     # -- versión de definición --------------------------------------------
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_completed_execution_is_pinned_to_a_definition_version(
         self, mock_fetch_chunks, mock_completion
     ):
@@ -131,7 +132,7 @@ class VersioningAPITestCase(APITestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_editing_the_skill_between_runs_produces_a_new_version(
         self, mock_fetch_chunks, mock_completion
     ):
@@ -154,7 +155,7 @@ class VersioningAPITestCase(APITestCase):
 
     def test_definition_versions_endpoint_lists_them_newest_first(self):
         with patch("apps.skill.services.generate_chat_completion") as mock_completion, \
-             patch("apps.skill.services.fetch_relevant_chunks") as mock_fetch:
+             patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock) as mock_fetch:
             mock_fetch.return_value = [
                 SimpleNamespace(document=self.doc, chunk_index=0, content="x")
             ]
@@ -197,7 +198,7 @@ class RerunAndCompareAPITestCase(APITestCase):
 
     def _completed_execution(self, content="Resultado uno"):
         with patch("apps.skill.services.generate_chat_completion") as mock_completion, \
-             patch("apps.skill.services.fetch_relevant_chunks") as mock_fetch:
+             patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock) as mock_fetch:
             mock_fetch.return_value = [
                 SimpleNamespace(document=self.doc, chunk_index=0, content="x")
             ]
@@ -213,7 +214,7 @@ class RerunAndCompareAPITestCase(APITestCase):
         original.save(update_fields=["extra_instructions"])
 
         with patch("apps.skill.services.generate_chat_completion") as mock_completion, \
-             patch("apps.skill.services.fetch_relevant_chunks") as mock_fetch:
+             patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock) as mock_fetch:
             mock_fetch.return_value = [
                 SimpleNamespace(document=self.doc, chunk_index=0, content="x")
             ]

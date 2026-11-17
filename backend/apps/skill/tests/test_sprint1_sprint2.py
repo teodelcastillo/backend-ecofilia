@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, call, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument
 from apps.skill.models import (
@@ -22,6 +23,7 @@ from apps.skill.models import (
     SkillType,
 )
 from apps.skill.services import _render_prompt_variables, execute_skill
+from apps.skill.tests.prompts import user_prompt
 from apps.skill.tools import (
     SkillToolContext,
     _execute_calculate_ghg,
@@ -159,7 +161,7 @@ class QuickSkillWithInputValuesTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_input_values_rendered_into_prompt(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("Report text", {"total_tokens": 10})
@@ -408,7 +410,7 @@ class QuickSkillToolsEnabledTestCase(TestCase):
 
     @patch("apps.skill.services.generate_with_tools")
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_tools_enabled_uses_generate_with_tools(
         self, mock_fetch, mock_completion, mock_with_tools
     ):
@@ -438,7 +440,7 @@ class QuickSkillToolsEnabledTestCase(TestCase):
 
     @patch("apps.skill.services.generate_with_tools")
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_tools_disabled_uses_generate_chat_completion(
         self, mock_fetch, mock_completion, mock_with_tools
     ):
@@ -493,7 +495,7 @@ class CopilotResearchPhaseTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_research_phase_fetches_before_steps(self, mock_fetch, mock_completion):
         # Each call must return distinct chunk ids to avoid dedup dropping them
         call_counter = [0]
@@ -503,6 +505,14 @@ class CopilotResearchPhaseTestCase(TestCase):
         mock_fetch.side_effect = make_fresh_chunk
         mock_completion.return_value = ("Step output", {"total_tokens": 5})
 
+        # Cada búsqueda anota si ya se había llamado al modelo: el relevamiento
+        # tiene que terminar antes de que se escriba el primer paso.
+        model_called_before = []
+        def record_and_fetch(*args, **kwargs):
+            model_called_before.append(mock_completion.called)
+            return make_fresh_chunk(*args, **kwargs)
+        mock_fetch.side_effect = record_and_fetch
+
         execution = SkillExecution.objects.create(
             skill=self.skill, owner=self.user, project=self.project
         )
@@ -510,11 +520,14 @@ class CopilotResearchPhaseTestCase(TestCase):
         execution.refresh_from_db()
 
         self.assertEqual(execution.status, "completed")
-        # Research phase (≥1 query) + 2 steps = at least 3 fetch calls
-        self.assertGreaterEqual(mock_fetch.call_count, 3)
+        # Una búsqueda de relevamiento por paso (no hay `research_queries`
+        # explícitas). Con contexto-primero —el default— los pasos reciben los
+        # documentos enteros y no vuelven a buscar: antes eran 2 + 2.
+        self.assertEqual(mock_fetch.call_count, 2)
+        self.assertEqual(model_called_before, [False, False])
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_research_phase_scratchpad_appears_in_step_prompt(self, mock_fetch, mock_completion):
         call_counter = [0]
         def make_fresh_chunk(*args, **kwargs):
@@ -529,11 +542,11 @@ class CopilotResearchPhaseTestCase(TestCase):
         execute_skill(execution)
 
         # The first step's prompt should contain the research scratchpad section label
-        first_step_prompt = mock_completion.call_args_list[0].args[0][1]["content"]
+        first_step_prompt = user_prompt(mock_completion.call_args_list[0].args[0])
         self.assertIn("Relevamiento previo del expediente", first_step_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_research_phase_uses_explicit_queries_when_set(self, mock_fetch, mock_completion):
         self.skill.research_queries = ["What are the biodiversity risks?"]
         self.skill.save()
@@ -555,7 +568,7 @@ class CopilotResearchPhaseTestCase(TestCase):
         self.assertIn("What are the biodiversity risks?", all_queries)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_research_phase_disabled_skips_pre_fetch(self, mock_fetch, mock_completion):
         self.skill.research_phase_enabled = False
         self.skill.save()
@@ -568,13 +581,14 @@ class CopilotResearchPhaseTestCase(TestCase):
         )
         execute_skill(execution)
 
-        # Exactly 2 fetch calls (one per step), no research phase
-        self.assertEqual(mock_fetch.call_count, 2)
-        first_step_prompt = mock_completion.call_args_list[0].args[0][1]["content"]
+        # Sin relevamiento no hay búsqueda previa, y con contexto-primero —el
+        # default— los pasos tampoco buscan: leen los documentos enteros.
+        self.assertEqual(mock_fetch.call_count, 0)
+        first_step_prompt = user_prompt(mock_completion.call_args_list[0].args[0])
         self.assertNotIn("Relevamiento previo del expediente", first_step_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_research_metadata_recorded(self, mock_fetch, mock_completion):
         call_counter = [0]
         def make_fresh_chunk(*args, **kwargs):

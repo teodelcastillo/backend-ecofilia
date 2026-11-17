@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument
 from apps.skill.models import (
@@ -49,12 +50,12 @@ class SkillRunnerServiceTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_quick_comparative_mode_enforces_prompt_and_hybrid_strategy(
         self, mock_fetch_chunks, mock_completion
     ):
-        chunk_a = SimpleNamespace(document=self.doc_a, chunk_index=0, content="Goal A")
-        chunk_b = SimpleNamespace(document=self.doc_b, chunk_index=1, content="Goal B")
+        chunk_a = SimpleNamespace(document=self.doc_a, document_id=self.doc_a.id, chunk_index=0, content="Goal A")
+        chunk_b = SimpleNamespace(document=self.doc_b, document_id=self.doc_b.id, chunk_index=1, content="Goal B")
         mock_fetch_chunks.return_value = [chunk_a, chunk_b]
         mock_completion.return_value = ("Result", {"total_tokens": 42})
 
@@ -87,11 +88,11 @@ class SkillRunnerServiceTestCase(TestCase):
         self.assertIn("Sin evidencia en fuentes provistas", rendered_prompt)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_quick_table_mode_uses_schema_and_normalizes_output(
         self, mock_fetch_chunks, mock_completion
     ):
-        chunk_a = SimpleNamespace(document=self.doc_a, chunk_index=0, content="Doc A row")
+        chunk_a = SimpleNamespace(document=self.doc_a, document_id=self.doc_a.id, chunk_index=0, content="Doc A row")
         mock_fetch_chunks.return_value = [chunk_a]
         mock_completion.return_value = (
             '{"type":"table","rows":[{"titulo":"A","anio":"2025","cumple":"si","estado":"ok"}]}',
@@ -188,9 +189,9 @@ class CopilotTabularStepsTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_copilot_runs_text_then_table_step(self, mock_fetch_chunks, mock_completion):
-        chunk = SimpleNamespace(document=self.doc, chunk_index=0, content="Document chunk")
+        chunk = SimpleNamespace(document=self.doc, document_id=self.doc.id, chunk_index=0, content="Document chunk")
         mock_fetch_chunks.return_value = [chunk]
 
         mock_completion.side_effect = [
@@ -227,7 +228,7 @@ class CopilotTabularStepsTestCase(TestCase):
         self.assertIs(table_step["table"]["rows"][1]["cumple"], False)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_lenient_table_step_invalid_json_falls_back_to_text(
         self, mock_fetch_chunks, mock_completion
     ):
@@ -241,7 +242,7 @@ class CopilotTabularStepsTestCase(TestCase):
         paso.output_validation = OutputValidation.LENIENT
         paso.save(update_fields=["output_validation"])
 
-        chunk = SimpleNamespace(document=self.doc, chunk_index=0, content="Document chunk")
+        chunk = SimpleNamespace(document=self.doc, document_id=self.doc.id, chunk_index=0, content="Document chunk")
         mock_fetch_chunks.return_value = [chunk]
         mock_completion.side_effect = [
             ("Resumen breve.", {"total_tokens": 5}),
@@ -264,7 +265,7 @@ class CopilotTabularStepsTestCase(TestCase):
         self.assertEqual(steps[1]["content"], "Esto no es JSON valido")
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_strict_table_step_does_not_silently_become_text(
         self, mock_fetch_chunks, mock_completion
     ):
@@ -279,7 +280,7 @@ class CopilotTabularStepsTestCase(TestCase):
         paso.output_validation = OutputValidation.STRICT
         paso.save(update_fields=["output_validation"])
 
-        chunk = SimpleNamespace(document=self.doc, chunk_index=0, content="Document chunk")
+        chunk = SimpleNamespace(document=self.doc, document_id=self.doc.id, chunk_index=0, content="Document chunk")
         mock_fetch_chunks.return_value = [chunk]
         mock_completion.side_effect = [
             ("Resumen breve.", {"total_tokens": 5}),

@@ -520,6 +520,16 @@ class ProjectWriteSerializer(ProjectSerializer):
             )
         return attrs
 
+    def to_representation(self, instance):
+        # `blueprint_document_slug` se redeclara acá como sólo-escritura (entra
+        # el slug elegido), y eso lo sacaba también de la respuesta: crear o
+        # editar una operación devolvía todo menos su documento principal. Se
+        # devuelve igual que en la lectura (`ProjectSerializer`).
+        data = super().to_representation(instance)
+        blueprint = getattr(instance, "blueprint_document", None)
+        data["blueprint_document_slug"] = blueprint.slug if blueprint else None
+        return data
+
     def create(self, validated_data):
         document_slugs = validated_data.pop("document_slugs", [])
         # Absent vs. explicitly empty are different intents: an omitted key

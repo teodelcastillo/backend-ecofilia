@@ -5,7 +5,7 @@ from rest_framework.test import APITestCase
 
 from apps.project.models import Project, ProjectShareRole
 from apps.repository.models import Repository, RepositoryShareRole, RepositoryType
-from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillType
+from apps.skill.models import ExecutionStatus, Skill, SkillExecution, SkillScope, SkillType
 
 User = get_user_model()
 
@@ -80,6 +80,14 @@ class SkillExecutionAccessTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_viewer_cannot_run_skill_on_shared_project(self):
+        # El viewer tiene que poder ver la skill y correrla en general: si no la
+        # ve, la API responde 404 (una skill con dueño y sin alcance es `user`,
+        # sólo de su dueño); si no está abierta a no superadmins
+        # (`members_can_run`), 403. Lo que se prueba acá es lo que queda: el
+        # permiso sobre la operación, que un viewer no tiene para correr.
+        self.skill.scope = SkillScope.PUBLIC
+        self.skill.members_can_run = True
+        self.skill.save(update_fields=["scope", "members_can_run"])
         project = Project.objects.create(owner=self.owner, name="Shared Run")
         project.shares.create(user=self.viewer, role=ProjectShareRole.VIEWER)
         project.enabled_skills.add(self.skill)
@@ -93,3 +101,18 @@ class SkillExecutionAccessTestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("context_slug", response.data)
+
+    def test_viewer_cannot_see_the_owners_private_skill(self):
+        project = Project.objects.create(owner=self.owner, name="Private Run")
+        project.shares.create(user=self.viewer, role=ProjectShareRole.VIEWER)
+        project.enabled_skills.add(self.skill)
+
+        self.client.force_authenticate(self.viewer)
+        url = reverse("skill-run", kwargs={"slug": self.skill.slug})
+        response = self.client.post(
+            url,
+            {"context_type": "project", "context_slug": project.slug},
+            format="json",
+        )
+        self.assertEqual(self.skill.scope, SkillScope.USER)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

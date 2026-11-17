@@ -35,7 +35,7 @@ class AuthenticationAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertTrue(User.objects.filter(email="new@example.com").exists())
         self.assertEqual(len(mail.outbox), 1)
-        self.assertIn("Confirma tu email", mail.outbox[0].subject)
+        self.assertIn("Confirmá tu cuenta", mail.outbox[0].subject)
 
     def test_login_requires_email_verification(self):
         url = reverse("auth-login")
@@ -155,7 +155,9 @@ class AuthenticationAPITestCase(APITestCase):
         url = reverse("auth-register")
         payload = {
             "email": "common@example.com",
-            "password": "password12345678",
+            # Tiene que estar en la lista de Django (CommonPasswordValidator):
+            # "password12345678" no está y pasaba la validación.
+            "password": "password123",
             "first_name": "Common",
             "last_name": "Pass",
         }

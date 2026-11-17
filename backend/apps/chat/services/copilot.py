@@ -5,6 +5,7 @@ import os
 import re
 from typing import List
 
+from django.core.cache import cache
 from django.db.models import QuerySet
 
 from apps.chat.models import ChatMessage, ChatSession, MessageRole
@@ -27,6 +28,18 @@ MAX_HISTORY_MESSAGES = int(os.environ.get("COPILOT_HISTORY_MESSAGES", "20"))
 # a summary block injected as system context. Keeps the window coherent without
 # losing context from the start of long sessions.
 HISTORY_SUMMARY_THRESHOLD = int(os.environ.get("COPILOT_HISTORY_SUMMARY_THRESHOLD", "25"))
+
+# El resumen del proyecto se arma una vez por sesión y se reusa en los mensajes
+# siguientes. Vivía en ``session.metadata``, un campo que ``ChatSession`` nunca
+# tuvo (``metadata`` es de ``ChatMessage``): desde mayo de 2026 cada mensaje al
+# copilot caía con AttributeError y la API respondía 503. Va al caché y no a una
+# columna porque es derivable: si se pierde, o el pedido cae en otro proceso, se
+# vuelve a calcular.
+PROJECT_BRIEF_CACHE_SECONDS = int(os.environ.get("COPILOT_BRIEF_CACHE_SECONDS", str(6 * 3600)))
+
+
+def _project_brief_cache_key(session: ChatSession) -> str:
+    return f"copilot:project_brief:{session.pk}"
 
 # Delimiters used to wrap draft content the consultant can insert into the
 # editor as a clean section body. The optional `section=N` attribute lets the
@@ -342,16 +355,15 @@ def process_copilot_message(
 
     documents = _resolve_project_documents(project)
 
-    # Phase 3: project brief — compute once and persist in session metadata so
+    # Phase 3: project brief — compute once per session and cache it so
     # subsequent messages don't pay the retrieval cost again.
-    session_metadata = session.metadata or {}
-    project_brief = session_metadata.get("project_brief", "")
+    brief_key = _project_brief_cache_key(session)
+    project_brief = cache.get(brief_key) or ""
     if not project_brief:
         try:
             project_brief = build_project_brief(user, project, documents)
             if project_brief:
-                session.metadata = {**session_metadata, "project_brief": project_brief}
-                session.save(update_fields=["metadata"])
+                cache.set(brief_key, project_brief, PROJECT_BRIEF_CACHE_SECONDS)
         except Exception as exc:
             logger.warning("Copilot project brief failed, proceeding without it: %s", exc)
             project_brief = ""

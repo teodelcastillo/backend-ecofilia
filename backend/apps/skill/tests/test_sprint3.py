@@ -12,6 +12,7 @@ from unittest.mock import call, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument
 from apps.skill.models import (
@@ -61,7 +62,7 @@ class IncrementalStepOutputTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_steps_completed_increments_per_step(self, mock_fetch, mock_completion):
         """steps_completed in DB must increase by 1 after each step, not only at the end."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -99,7 +100,7 @@ class IncrementalStepOutputTestCase(TestCase):
         self.assertEqual(steps_completed_snapshots, [1, 2, 3])
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_output_structured_grows_per_step(self, mock_fetch, mock_completion):
         """output_structured in DB must contain exactly N steps after N completions."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -131,7 +132,7 @@ class IncrementalStepOutputTestCase(TestCase):
         self.assertEqual(output_structured_snapshots, [1, 2, 3])
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_final_state_after_full_run(self, mock_fetch, mock_completion):
         """After full run, steps_completed equals total steps and output is complete."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -152,7 +153,7 @@ class IncrementalStepOutputTestCase(TestCase):
         self.assertEqual(len(execution.output_structured["steps"]), 3)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_steps_completed_persisted_even_on_failure(self, mock_fetch, mock_completion):
         """If the run fails mid-way, the steps that completed should still be in output_structured."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -174,7 +175,7 @@ class IncrementalStepOutputTestCase(TestCase):
         self.assertEqual(execution.output_structured["steps"][0]["content"], "Step 1 output")
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_quick_skill_steps_completed_stays_zero(self, mock_fetch, mock_completion):
         """Quick skills don't use steps_completed — it should remain 0."""
         mock_fetch.return_value = [_make_chunk(self.doc)]

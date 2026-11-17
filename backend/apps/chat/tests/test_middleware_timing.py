@@ -111,16 +111,18 @@ class RetrievalModeRoutingTests(TestCase):
         self.assertIn(result.diagnostics["retrieval_mode"], ("light", "none"))
 
     # --- Mode: full (panorama / comparative / all-docs) ---
+    # Con más de un documento: una sesión de un solo documento recupera siempre
+    # en modo light (24de2df), lo que ya cubren los tests `single_doc_*`.
 
     def test_panorama_query_uses_full_mode(self):
         result = self._retrieve(
-            "Dame un resumen general de todos los documentos disponibles"
+            "Dame un resumen general de todos los documentos disponibles", doc_count=2
         )
         self.assertEqual(result.diagnostics["retrieval_mode"], "full")
 
     def test_comparative_query_uses_full_mode(self):
         result = self._retrieve(
-            "Compara las estrategias de mitigación entre los documentos"
+            "Compara las estrategias de mitigación entre los documentos", doc_count=2
         )
         self.assertEqual(result.diagnostics["retrieval_mode"], "full")
 
@@ -131,8 +133,14 @@ class RetrievalModeRoutingTests(TestCase):
             "reducción de emisiones con las políticas de adaptación al cambio "
             "climático descritas en cada uno de los documentos del repositorio"
         )
-        result = self._retrieve(long_q)
+        result = self._retrieve(long_q, doc_count=2)
         self.assertEqual(result.diagnostics["retrieval_mode"], "full")
+
+    def test_single_doc_panorama_query_uses_light_mode(self):
+        result = self._retrieve(
+            "Dame un resumen general de todos los documentos disponibles", doc_count=1
+        )
+        self.assertEqual(result.diagnostics["retrieval_mode"], "light")
 
 
 class ChatRetrievalParamsFastTests(TestCase):
@@ -236,16 +244,12 @@ class ContextualizeQueryGuardTests(TestCase):
 
         mock_contextualize.assert_not_called()
 
-    @patch("apps.chat.api.views.contextualize_query")
-    def test_long_query_with_history_calls_contextualization(self, mock_contextualize):
-        """Queries with >= 5 words should still call contextualize_query."""
+    def _run_with_history(self, query):
         from apps.chat.api.views import _run_retrieval
         from apps.chat.models import ChatMessage, MessageRole
 
-        mock_contextualize.return_value = "rewritten query"
-
         doc = Document.objects.create(
-            owner=self.user, name="Doc ctx", slug="doc-ctx-long"
+            owner=self.user, name="Doc ctx", slug=f"doc-ctx-{ChatSession.objects.count()}"
         )
         session = ChatSession.objects.create(owner=self.user, title="Long")
         session.allowed_documents.add(doc)
@@ -253,20 +257,28 @@ class ContextualizeQueryGuardTests(TestCase):
         ChatMessage.objects.create(
             session=session, role=MessageRole.ASSISTANT, content="Hola!"
         )
-
         with patch("apps.chat.api.views.retrieve_for_chat") as mock_retrieve:
             mock_retrieve.return_value = MagicMock(
                 chunks=[], context_block="", analysis=None,
                 diagnostics={}, recommended_documents=[],
                 chunk_ids=[], covered_document_ids=set(),
             )
-            _run_retrieval(
-                session,
-                "¿Cuáles son los objetivos de reducción de emisiones?",
-                self.user,
-            )
+            _run_retrieval(session, query, self.user)
 
+    @patch("apps.chat.api.views.contextualize_query")
+    def test_long_anaphoric_query_with_history_calls_contextualization(self, mock_contextualize):
+        """Una pregunta larga que depende de la anterior («¿y …?», «eso»…)
+        se reescribe con el historial."""
+        mock_contextualize.return_value = "rewritten query"
+        self._run_with_history("¿Y cuáles son sus metas de reducción para 2030?")
         mock_contextualize.assert_called_once()
+
+    @patch("apps.chat.api.views.contextualize_query")
+    def test_long_standalone_query_skips_contextualization(self, mock_contextualize):
+        """Una pregunta larga que se entiende sola no paga la llamada al LLM
+        (``_query_needs_context``, desde 82bfefd)."""
+        self._run_with_history("¿Cuáles son los objetivos de reducción de emisiones?")
+        mock_contextualize.assert_not_called()
 
 
 class SelectiveRerankerTests(TestCase):
@@ -283,6 +295,14 @@ class SelectiveRerankerTests(TestCase):
     def _retrieve(self, query_text, *, reranker_enabled="1"):
         session = ChatSession.objects.create(owner=self.user, title="R")
         session.allowed_documents.add(self.doc)
+        # Dos documentos: con uno solo el modo es siempre light (24de2df) y el
+        # camino panorama/comparativo, que es lo que se prueba, no se alcanza.
+        session.allowed_documents.add(
+            Document.objects.create(
+                owner=self.user, name="Reranker Doc 2",
+                slug=f"reranker-doc-2-{ChatSession.objects.count()}",
+            )
+        )
         env = {
             "RAG_RETRIEVAL_GATE_ENABLED": "1",
             "RAG_RERANKER_ENABLED": reranker_enabled,

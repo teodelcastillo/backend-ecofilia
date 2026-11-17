@@ -6,6 +6,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.evaluation.models import Evaluation, EvaluationRunStatus
 from apps.evaluation.tasks import run_evaluation_sync
@@ -91,7 +92,9 @@ class EvaluationAPITestCase(APITestCase):
     def test_share_management(self):
         evaluation = self._create_evaluation()
         url = reverse("evaluation-shares", kwargs={"slug": evaluation.slug})
-        payload = {"user_id": self.viewer.id, "role": "editor"}
+        # Se comparte por email (`resolve_share_target`), como el resto de los
+        # recursos compartibles; `user_id` ya no es parte del contrato.
+        payload = {"user_email": self.viewer.email, "role": "editor"}
         response = self.client.post(url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["role"], "editor")
@@ -106,7 +109,7 @@ class EvaluationAPITestCase(APITestCase):
             kwargs={"slug": evaluation.slug, "share_id": share_id},
         )
         patch_response = self.client.patch(
-            detail_url, {"role": "viewer", "user_id": self.viewer.id}, format="json"
+            detail_url, {"role": "viewer"}, format="json"
         )
         self.assertEqual(patch_response.status_code, status.HTTP_200_OK)
         self.assertEqual(patch_response.data["role"], "viewer")
@@ -116,7 +119,7 @@ class EvaluationAPITestCase(APITestCase):
 
     @patch("apps.evaluation.api.views.run_evaluation_task")
     @patch("apps.evaluation.services.generate_chat_completion")
-    @patch("apps.evaluation.services.fetch_relevant_chunks")
+    @patch("apps.evaluation.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_run_creation_uses_project_documents(
         self, mock_fetch_chunks, mock_completion, mock_task
     ):
@@ -124,6 +127,7 @@ class EvaluationAPITestCase(APITestCase):
         chunk = SimpleNamespace(
             id=999,
             document=self.doc_owned,
+            document_id=self.doc_owned.id,
             chunk_index=0,
             content="Contenido relevante",
             distance=0.1,
@@ -143,7 +147,7 @@ class EvaluationAPITestCase(APITestCase):
 
     @patch("apps.evaluation.api.views.run_evaluation_task")
     @patch("apps.evaluation.services.generate_chat_completion")
-    @patch("apps.evaluation.services.fetch_relevant_chunks")
+    @patch("apps.evaluation.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_run_failure_is_recorded(
         self, mock_fetch_chunks, mock_completion, mock_task
     ):
@@ -151,6 +155,7 @@ class EvaluationAPITestCase(APITestCase):
         chunk = SimpleNamespace(
             id=111,
             document=self.doc_owned,
+            document_id=self.doc_owned.id,
             chunk_index=0,
             content="Contenido relevante",
         )

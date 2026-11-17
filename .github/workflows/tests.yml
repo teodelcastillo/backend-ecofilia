@@ -95,81 +95,24 @@ jobs:
           poetry check --lock
           poetry install --no-root --only main
 
-      # ── Bloqueante ────────────────────────────────────────────────────
-      # El motor de workflows: lo que se construyó y verificó de punta a punta.
-      # Si esto se pone rojo, hay una regresión en trabajo reciente.
-      - name: Motor de workflows
-        working-directory: backend
-        run: |
-          python manage.py test --verbosity 2 \
-            apps.skill.tests.test_context_budget \
-            apps.skill.tests.test_citations \
-            apps.skill.tests.test_citation_anchors \
-            apps.skill.tests.test_deliverable_standard \
-            apps.skill.tests.test_table_contract \
-            apps.skill.tests.test_operation_context \
-            apps.skill.tests.test_model_tiers \
-            apps.skill.tests.test_services.CopilotTabularStepsTestCase \
-            apps.skill.tests.test_definition \
-            apps.skill.tests.test_definition_version \
-            apps.skill.tests.test_parameters \
-            apps.skill.tests.test_comparison \
-            apps.skill.tests.test_context_preview \
-            apps.skill.tests.test_workflow_versioning_api \
-            apps.skill.tests.test_reliability \
-            apps.skill.tests.test_resume \
-            apps.skill.tests.test_sprint4.StepApprovalGateTestCase \
-            apps.document.tests.test_document_list_memory \
-            apps.skill.tests.test_evidence_tags \
-            apps.project.tests.test_country_documents \
-            apps.project.tests.test_backfill_evidence_tags \
-            apps.project.tests.test_document_evidence_tags_api \
-            apps.project.tests.test_migration_move_evidence_tags \
-            apps.document.tests.test_document_create \
-            apps.document.tests.test_document_bulk_create \
-            apps.project.tests.test_ai_fill \
-            apps.document.tests.test_region_detector \
-            apps.skill.tests.test_dispatch_and_preflight \
-            apps.document.tests.test_bulk_evidence_tags \
-            apps.project.tests.test_alignment_history \
-            apps.skill.tests.test_run_permission \
-            apps.skill.tests.test_execution_summary \
-            apps.skill.tests.test_step_controls \
-            apps.skill.tests.test_run_isolation \
-            apps.document.tests.test_operation_document_visibility \
-            apps.user.tests.test_sharing \
-            apps.user.tests.test_error_logging \
-            apps.user.tests.test_organization_scope \
-            apps.project.tests.test_operation_roles \
-            apps.user.tests.test_institution_admin \
-            apps.document.tests.test_document_create.ReuploadLongNameTestCase \
-            apps.project.tests.test_stages \
-            apps.project.tests.test_stage_reports \
-            apps.project.tests.test_caf_criteria \
-            apps.skill.tests.test_caf_stage_workflows \
-            apps.skill.tests.test_cell_citations \
-            apps.skill.tests.test_context_overflow
-
       - name: Verificar que las migraciones están al día
         working-directory: backend
         # Un modelo cambiado sin su migración pasa todos los tests y rompe el
-        # deploy siguiente. Es más barato detectarlo acá.
+        # deploy siguiente. Es más barato detectarlo acá, y va antes de la
+        # suite porque tarda segundos.
         run: python manage.py makemigrations --check --dry-run
 
-      # ── Informativo ───────────────────────────────────────────────────
-      # La suite entera. No bloquea: la primera corrida encontró 32 fallos, y
-      # treinta y uno son anteriores a este trabajo — seis de ellos rotos desde
-      # `ef8eb92` (10-jun-2026), que movió copilot, research y evaluaciones a
-      # `retrieve_for_chat` y dejó los tests parcheando `fetch_relevant_chunks`,
-      # una función que el motor ya no llama.
+      # ── Bloqueante ────────────────────────────────────────────────────
+      # La suite entera. Hasta noviembre de 2026 bloqueaba sólo un subconjunto
+      # (el motor de workflows) y el resto corría informativo con 32 fallos
+      # heredados: tests que parcheaban `fetch_relevant_chunks` cuando el motor
+      # ya llamaba a `retrieve_for_chat` (`ef8eb92`), tests que no siguieron
+      # cambios de producto (entregables, permisos de ejecución, contexto
+      # primero) y tres bugs reales que esos tests venían avisando. Saldada esa
+      # deuda, todo test rojo frena: no hay una lista aparte que mantener.
       #
-      # No se marcan con `skip` a propósito: un skip los saca del reporte y los
-      # entierra. Acá siguen corriendo y el conteo real queda a la vista en cada
-      # push, que es lo que va a permitir saldarlos en una sesión dedicada.
-      #
-      # Cuando ese número llegue a cero, este paso se fusiona con el bloqueante
-      # y `continue-on-error` se borra.
-      - name: Suite completa (deuda conocida, no bloquea)
+      # Local: `docker exec ecofilia-backend-dev python manage.py test -t . apps`
+      # (`-t .` porque el código se monta en /code y choca con el módulo `code`).
+      - name: Suite completa
         working-directory: backend
-        continue-on-error: true
         run: python manage.py test --verbosity 1

@@ -320,7 +320,11 @@ class ChatAPITestCase(APITestCase):
         messages = _compose_messages(session, "Resúmelo", retrieval)
         system_content = messages[0]["content"]
         self.assertIn(self.document.name, system_content)
-        self.assertNotIn("seleccione", system_content.lower())
+        # Lo que no tiene que aparecer es la sugerencia de la biblioteca
+        # ("sugiérele que seleccione documentos"). El prompt de un documento
+        # nombra "seleccione" para prohibirlo: "No pidas … que seleccione".
+        self.assertNotIn("sugiérele que seleccione", system_content.lower())
+        self.assertIn("no pidas al usuario que cargue", system_content.lower())
         self.assertNotEqual(system_content, _CONVERSATIONAL_FALLBACK_PROMPT)
 
     def test_document_chat_session_post_persists_custom_system_prompt(self):

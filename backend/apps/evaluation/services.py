@@ -121,6 +121,7 @@ class EvaluationRunner:
         # DB writes happen after this block so there are no write-concurrency issues.
         max_workers = min(len(tasks), EVALUATION_MAX_WORKERS)
         metric_results: dict[tuple[int, int], MetricEvaluationResult] = {}
+        metric_errors: dict[tuple[int, int], Exception] = {}
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {
@@ -137,12 +138,25 @@ class EvaluationRunner:
                 key = future_map[future]
                 try:
                     metric_results[key] = future.result()
-                except Exception:
+                except Exception as exc:
+                    metric_errors[key] = exc
                     pillar_id, metric_id = key
                     logger.exception(
                         "Metric %s in pillar %s failed during parallel evaluation",
                         metric_id, pillar_id,
                     )
+
+        # Una métrica que falla no tumba la corrida: las demás siguen valiendo.
+        # Pero si fallaron todas no hay evaluación — típicamente el modelo está
+        # caído —, y marcarla `completed` (como hacía desde que las métricas
+        # corren en paralelo) muestra una corrida vacía como si hubiera salido
+        # bien. Se levanta para que `run()` la deje FAILED con el motivo.
+        if metric_errors and not metric_results:
+            first_error = next(iter(metric_errors.values()))
+            raise RuntimeError(
+                f"Fallaron las {len(metric_errors)} métricas de la evaluación. "
+                f"Primer error: {first_error}"
+            ) from first_error
 
         # Collect results and persist per pillar (sequential, fast).
         for pillar, metrics in pillar_data:

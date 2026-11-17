@@ -11,6 +11,7 @@ Covers:
 """
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,6 +19,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from apps.chat.tests.retrieval_mock import RetrievalMock
 from apps.document.models import Document
 from apps.project.models import Project, ProjectDocument
 from apps.skill.models import (
@@ -28,6 +30,7 @@ from apps.skill.models import (
     SkillType,
 )
 from apps.skill.services import approve_step, execute_skill, regenerate_step
+from apps.skill.tests.prompts import user_prompt
 
 User = get_user_model()
 
@@ -66,7 +69,7 @@ class StepApprovalGateTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_pauses_at_approval_gate(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("Scope output.", {"total_tokens": 5})
@@ -85,7 +88,7 @@ class StepApprovalGateTestCase(TestCase):
         self.assertEqual(steps[0]["title"], "Scope")
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_only_gated_step_runs_before_pause(self, mock_fetch, mock_completion):
         """The LLM should be called once (for step 1) before pausing — not for step 2."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -99,7 +102,7 @@ class StepApprovalGateTestCase(TestCase):
         self.assertEqual(mock_completion.call_count, 1)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_no_gate_completes_fully(self, mock_fetch, mock_completion):
         """Without approval gates, execution should complete normally."""
         # Remove the gate
@@ -156,7 +159,7 @@ class ReviewEachStepTestCase(TestCase):
         )
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_pauses_after_first_step_without_approval_flag(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("Scope output.", {"total_tokens": 5})
@@ -171,7 +174,7 @@ class ReviewEachStepTestCase(TestCase):
         self.assertEqual(mock_completion.call_count, 1)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_pauses_at_each_step_then_completes_on_last(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("step output", {"total_tokens": 5})
@@ -200,8 +203,11 @@ class ReviewEachStepTestCase(TestCase):
         self.assertEqual(len(execution.output_structured["steps"]), 3)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_per_step_and_global_sources_populated(self, mock_fetch, mock_completion):
+        """Con contexto-primero (el default) la fuente de un paso es el documento
+        que el modelo leyó, no un fragmento: ``chunk_index`` es None y la entrada
+        dice cómo viajó el documento. El paso no busca fragmentos."""
         mock_fetch.return_value = [_make_chunk(self.doc, index=2)]
         mock_completion.return_value = ("output", {"total_tokens": 5})
 
@@ -211,6 +217,27 @@ class ReviewEachStepTestCase(TestCase):
 
         step = execution.output_structured["steps"][0]
         self.assertTrue(step.get("sources"))
+        self.assertEqual(step["sources"][0]["document_slug"], "doc-review")
+        self.assertIsNone(step["sources"][0]["chunk_index"])
+        self.assertIn("delivery", step["sources"][0])
+        mock_fetch.assert_not_called()
+
+    @patch.dict(os.environ, {"SKILL_CONTEXT_FIRST": "0"})
+    @patch("apps.skill.services.generate_chat_completion")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
+    def test_per_step_sources_are_chunks_without_context_first(
+        self, mock_fetch, mock_completion
+    ):
+        """Con contexto-primero apagado (el camino de vuelta atrás) el paso busca
+        y sus fuentes son los fragmentos recuperados."""
+        mock_fetch.return_value = [_make_chunk(self.doc, index=2)]
+        mock_completion.return_value = ("output", {"total_tokens": 5})
+
+        execution = self._make_execution()
+        execute_skill(execution)
+        execution.refresh_from_db()
+
+        step = execution.output_structured["steps"][0]
         self.assertEqual(step["sources"][0]["document_slug"], "doc-review")
         self.assertEqual(step["sources"][0]["chunk_index"], 2)
 
@@ -291,7 +318,7 @@ class ApproveStepServiceTestCase(TestCase):
             approve_step(execution)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_resume_after_approve_runs_remaining_steps(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("Step 2 output.", {"total_tokens": 5})
@@ -309,7 +336,7 @@ class ApproveStepServiceTestCase(TestCase):
         self.assertEqual(execution.output_structured["steps"][1]["content"], "Step 2 output.")
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_override_content_flows_into_next_step_prompt(self, mock_fetch, mock_completion):
         """When the consultant edits step 1, step 2's prompt should include the edited text."""
         mock_fetch.return_value = [_make_chunk(self.doc)]
@@ -320,7 +347,7 @@ class ApproveStepServiceTestCase(TestCase):
         execute_skill(execution)
 
         # The prompt for step 2 should include the override
-        step2_prompt = mock_completion.call_args.args[0][1]["content"]
+        step2_prompt = user_prompt(mock_completion.call_args.args[0])
         self.assertIn("Consultant's improved scope.", step2_prompt)
 
 
@@ -389,7 +416,7 @@ class RegenerateStepServiceTestCase(TestCase):
             regenerate_step(execution)
 
     @patch("apps.skill.services.generate_chat_completion")
-    @patch("apps.skill.services.fetch_relevant_chunks")
+    @patch("apps.skill.services.retrieve_for_chat", new_callable=RetrievalMock)
     def test_regenerate_then_execute_reruns_step(self, mock_fetch, mock_completion):
         mock_fetch.return_value = [_make_chunk(self.doc)]
         mock_completion.return_value = ("Improved step 1.", {"total_tokens": 5})

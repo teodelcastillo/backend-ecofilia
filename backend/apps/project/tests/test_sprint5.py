@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from rest_framework.test import APIClient
 
@@ -23,6 +24,7 @@ from apps.chat.models import ChatSession, ChatSessionType
 from apps.document.models import Document
 from apps.project.models import (
     Project,
+    ProjectDeliverable,
     ProjectDocument,
     ProjectSection,
     ProjectSectionStatus,
@@ -33,6 +35,43 @@ from apps.project.models import (
 User = get_user_model()
 
 _chunk_id_counter = 0
+
+
+def _section(project, **fields):
+    """Una sección del entregable principal del proyecto.
+
+    Desde que un proyecto tiene varios entregables (mayo de 2026) una sección
+    cuelga de un entregable: la posición es única por entregable y la API de
+    estructura resuelve las secciones del principal. Una sección suelta, sin
+    entregable, no la encuentra nadie.
+    """
+    deliverable = ProjectDeliverable.objects.filter(project=project, is_primary=True).first()
+    if deliverable is None:
+        deliverable = ProjectDeliverable.objects.create(
+            project=project, name="Entregable principal", is_primary=True, position=1,
+        )
+    return ProjectSection.objects.create(project=project, deliverable=deliverable, **fields)
+
+
+def _isolate_copilot_retrieval(testcase):
+    """El copilot arma un resumen del proyecto y recomienda documentos de la
+    biblioteca con recuperación real (embeddings). Un test de mensajes no tiene
+    por qué salir a la red: se fijan los dos y se limpia el caché del resumen."""
+    from django.core.cache import cache
+
+    cache.clear()
+    brief = patch(
+        "apps.chat.services.copilot.build_project_brief",
+        return_value="Resumen del proyecto.",
+    )
+    recommendations = patch(
+        "apps.chat.services.copilot.suggest_related_library_documents",
+        return_value=[],
+    )
+    testcase.mock_brief = brief.start()
+    recommendations.start()
+    testcase.addCleanup(brief.stop)
+    testcase.addCleanup(recommendations.stop)
 
 
 def _make_chunk(doc, index=0):
@@ -71,28 +110,20 @@ class ProjectSectionModelTestCase(TestCase):
         self.project = Project.objects.create(owner=self.user, name="SecProject")
 
     def test_create_project_section(self):
-        section = ProjectSection.objects.create(
-            project=self.project, title="Intro", position=1
-        )
+        section = _section(self.project, title="Intro", position=1)
         self.assertEqual(section.status, ProjectSectionStatus.NOT_STARTED)
 
     def test_status_transitions(self):
-        section = ProjectSection.objects.create(
-            project=self.project, title="Intro", position=1
-        )
+        section = _section(self.project, title="Intro", position=1)
         section.status = ProjectSectionStatus.IN_PROGRESS
         section.save(update_fields=["status"])
         section.refresh_from_db()
         self.assertEqual(section.status, ProjectSectionStatus.IN_PROGRESS)
 
-    def test_unique_position_per_project(self):
-        ProjectSection.objects.create(
-            project=self.project, title="A", position=1
-        )
-        with self.assertRaises(Exception):
-            ProjectSection.objects.create(
-                project=self.project, title="B", position=1
-            )
+    def test_unique_position_per_deliverable(self):
+        _section(self.project, title="A", position=1)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            _section(self.project, title="B", position=1)
 
 
 # ---------------------------------------------------------------------------
@@ -129,9 +160,7 @@ class InitializeProjectStructureTestCase(TestCase):
     def test_reinitialize_replaces_existing(self):
         from apps.chat.services.copilot import initialize_project_structure
 
-        ProjectSection.objects.create(
-            project=self.project, title="Old", position=1
-        )
+        _section(self.project, title="Old", position=1)
         sections = initialize_project_structure(self.project, "init-template")
         self.assertEqual(len(sections), 2)
         self.assertEqual(ProjectSection.objects.filter(project=self.project).count(), 2)
@@ -158,12 +187,10 @@ class CopilotSystemPromptTestCase(TestCase):
         ProjectDocument.objects.create(
             project=self.project, document=self.doc, added_by=self.user
         )
-        ProjectSection.objects.create(
-            project=self.project, title="Scope", position=1,
+        _section(self.project, title="Scope", position=1,
             status=ProjectSectionStatus.COMPLETED,
         )
-        ProjectSection.objects.create(
-            project=self.project, title="Data", position=2,
+        _section(self.project, title="Data", position=2,
             status=ProjectSectionStatus.IN_PROGRESS, notes="Missing Q4",
         )
 
@@ -286,6 +313,9 @@ class CopilotRunSkillToolTestCase(TestCase):
         skill = Skill.objects.create(
             owner=self.user,
             name="Quick Analysis",
+            # Abierta a no superadmins: desde "Sólo superadmins ejecutan
+            # asistentes" un usuario común no corre nada que no lo permita.
+            members_can_run=True,
             skill_type=SkillType.QUICK,
             allowed_contexts=["project"],
             prompt_template="Analyze {{context}}",
@@ -313,6 +343,9 @@ class CopilotRunSkillToolTestCase(TestCase):
         skill = Skill.objects.create(
             owner=self.user,
             name="Copilot Skill",
+            # Abierta a no superadmins: desde "Sólo superadmins ejecutan
+            # asistentes" un usuario común no corre nada que no lo permita.
+            members_can_run=True,
             skill_type=SkillType.COPILOT,
             allowed_contexts=["project"],
             system_prompt="ESG.",
@@ -344,12 +377,10 @@ class CopilotProjectStructureToolTestCase(TestCase):
             email="struct@example.com", password="secret123", username="struct"
         )
         self.project = Project.objects.create(owner=self.user, name="StructProject")
-        ProjectSection.objects.create(
-            project=self.project, title="Scope", position=1,
+        _section(self.project, title="Scope", position=1,
             status=ProjectSectionStatus.COMPLETED,
         )
-        ProjectSection.objects.create(
-            project=self.project, title="Data", position=2,
+        _section(self.project, title="Data", position=2,
             status=ProjectSectionStatus.NOT_STARTED,
         )
 
@@ -452,6 +483,7 @@ class CopilotMessageProcessingTestCase(TestCase):
             title="Test Copilot",
         )
         self.session.allowed_documents.set([self.doc])
+        _isolate_copilot_retrieval(self)
 
     @patch("apps.chat.services.copilot.generate_with_tools")
     def test_process_copilot_message(self, mock_gen):
@@ -477,9 +509,7 @@ class CopilotMessageProcessingTestCase(TestCase):
     def test_extracts_draft_block_into_metadata(self, mock_gen):
         from apps.chat.services.copilot import process_copilot_message
 
-        ProjectSection.objects.create(
-            project=self.project, title="Resumen", position=1,
-        )
+        _section(self.project, title="Resumen", position=1)
         reply = (
             "Listo, te dejo un primer borrador.\n\n"
             "<<<DRAFT section=1>>>\n"
@@ -511,6 +541,24 @@ class CopilotMessageProcessingTestCase(TestCase):
         )
         self.assertIsNone(metadata["draft_section_position"])
         self.assertIn("Cuerpo", metadata["draft_markdown"])
+
+    @patch("apps.chat.services.copilot.generate_with_tools")
+    def test_project_brief_is_built_once_per_session(self, mock_gen):
+        """El resumen se arma en el primer mensaje y se reusa en los siguientes.
+
+        Antes se guardaba en ``session.metadata``, un campo que ``ChatSession``
+        no tiene: cada mensaje caía con AttributeError y la API daba 503."""
+        from apps.chat.services.copilot import process_copilot_message
+
+        mock_gen.return_value = ("Ok.", {"total_tokens": 5})
+        process_copilot_message(self.session, "Primera pregunta.", self.user)
+        process_copilot_message(self.session, "Segunda pregunta.", self.user)
+
+        self.assertEqual(self.mock_brief.call_count, 1)
+        # Viaja como segundo mensaje de sistema, también en el segundo pedido.
+        brief_message = mock_gen.call_args.args[0][1]
+        self.assertEqual(brief_message["role"], "system")
+        self.assertIn("Resumen del proyecto.", brief_message["content"])
 
     @patch("apps.chat.services.copilot.generate_with_tools")
     def test_no_project_raises_error(self, mock_gen):
@@ -621,8 +669,10 @@ class StructureTemplateAPITestCase(TestCase):
         self.assertEqual(created.sections.count(), 2)
 
     def test_partial_update_template_replaces_sections(self):
+        # Sobre la plantilla propia: las globales sólo las edita staff (ver
+        # `test_non_staff_cannot_edit_global_template`).
         response = self.client.patch(
-            "/api/projects/structure-templates/api-template/",
+            "/api/projects/structure-templates/my-template/",
             {
                 "description": "Updated desc",
                 "sections": [
@@ -633,12 +683,13 @@ class StructureTemplateAPITestCase(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 200)
-        self.template.refresh_from_db()
-        self.assertEqual(self.template.description, "Updated desc")
-        self.assertEqual(self.template.sections.count(), 2)
+        self.user_template.refresh_from_db()
+        self.assertEqual(self.user_template.description, "Updated desc")
+        self.assertEqual(self.user_template.sections.count(), 2)
         self.assertTrue(
-            self.template.sections.filter(title="Nuevo alcance", position=1).exists()
+            self.user_template.sections.filter(title="Nuevo alcance", position=1).exists()
         )
+        self.assertFalse(self.user_template.sections.filter(title="Mine S1").exists())
 
     def test_delete_template(self):
         response = self.client.delete("/api/projects/structure-templates/api-template/")
@@ -751,9 +802,7 @@ class ProjectStructureAPITestCase(TestCase):
         self.assertEqual(response.data[0]["title"], "Phase 1")
 
     def test_update_section_status(self):
-        ProjectSection.objects.create(
-            project=self.project, title="Phase 1", position=1
-        )
+        _section(self.project, title="Phase 1", position=1)
         response = self.client.patch(
             f"/api/projects/{self.project.slug}/structure/sections/1/",
             {"status": "in_progress", "notes": "Working on it."},
@@ -763,9 +812,7 @@ class ProjectStructureAPITestCase(TestCase):
         self.assertEqual(response.data["notes"], "Working on it.")
 
     def test_update_section_title_and_output_snapshot(self):
-        ProjectSection.objects.create(
-            project=self.project, title="Phase 1", position=1
-        )
+        _section(self.project, title="Phase 1", position=1)
         response = self.client.patch(
             f"/api/projects/{self.project.slug}/structure/sections/1/",
             {
@@ -789,8 +836,8 @@ class ProjectStructureAPITestCase(TestCase):
         self.assertEqual(response.data["title"], "Anexos")
 
     def test_create_section_inserted_in_middle_shifts_positions(self):
-        ProjectSection.objects.create(project=self.project, title="A", position=1)
-        ProjectSection.objects.create(project=self.project, title="B", position=2)
+        _section(self.project, title="A", position=1)
+        _section(self.project, title="B", position=2)
         response = self.client.post(
             f"/api/projects/{self.project.slug}/structure/sections/",
             {"title": "Inserted", "position": 2},
@@ -804,9 +851,9 @@ class ProjectStructureAPITestCase(TestCase):
         self.assertEqual(positions, ["A", "Inserted", "B"])
 
     def test_delete_section_compacts_positions(self):
-        ProjectSection.objects.create(project=self.project, title="A", position=1)
-        ProjectSection.objects.create(project=self.project, title="B", position=2)
-        ProjectSection.objects.create(project=self.project, title="C", position=3)
+        _section(self.project, title="A", position=1)
+        _section(self.project, title="B", position=2)
+        _section(self.project, title="C", position=3)
         response = self.client.delete(
             f"/api/projects/{self.project.slug}/structure/sections/2/"
         )
@@ -893,6 +940,7 @@ class CopilotMessageAPITestCase(TestCase):
             session_type=ChatSessionType.COPILOT, title="Test",
         )
         self.session.allowed_documents.set([self.doc])
+        _isolate_copilot_retrieval(self)
 
     @patch("apps.chat.services.copilot.generate_with_tools")
     def test_send_copilot_message(self, mock_gen):
