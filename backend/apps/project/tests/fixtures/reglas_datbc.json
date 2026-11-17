@@ -1,0 +1,7089 @@
+{
+ "_descripcion": "Casos de las reglas de la DATBC (CT -> objetivo y CT que no aplican), generados desde la referencia del backend (apps/project/services/caf_criteria.py). Los tests del front (tests/unit/caf-alineacion.test.ts) y del back (apps/project/tests/test_reglas_datbc_casos.py) leen este mismo archivo: si las reglas cambian, se regenera con `python manage.py generar_casos_reglas_datbc` y se copia a los dos repos.",
+ "objetivo_1": [
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo bajo",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo medio",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Riesgo alto",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Indeterminado",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A2",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Con brechas por CT A1",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "Sin análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": "Alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "No aplica análisis de riesgos (AR)",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": [
+    "ct_a2"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No suficientes",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No suficientes",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "Información insuficiente",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No aplica",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No aplica",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No aplica",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "No aplica",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "",
+    "ct_a3": "Consistencia"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "",
+    "ct_a3": "Potencialmente inconsistente"
+   },
+   "valor": "Con brechas por CT A3",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "",
+    "ct_a3": "Inconsistente"
+   },
+   "valor": "No alineada",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_a1": "",
+    "ct_a2": "",
+    "ct_a3": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  }
+ ],
+ "objetivo_2": [
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M2",
+   "no_aplican": [
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "Alineada en el CT M3",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M5",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Con brechas",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "Alineada en el CT M5",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "Con brechas",
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Sin actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "Contiene actividades no alineadas",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": "No alineada",
+   "no_aplican": [
+    "ct_m2",
+    "ct_m3",
+    "ct_m4",
+    "ct_m5"
+   ]
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Contiene actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "Sin actividades alineadas",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Consistencia",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Potencialmente inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "Inconsistente",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Consistencia",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Potencialmente inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "Inconsistente",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "No persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": "Persisten riesgos de transición"
+   },
+   "valor": null,
+   "no_aplican": []
+  },
+  {
+   "entrada": {
+    "ct_m1": "",
+    "ct_m2": "",
+    "ct_m3": "",
+    "ct_m4": "",
+    "ct_m5": ""
+   },
+   "valor": null,
+   "no_aplican": []
+  }
+ ]
+}
