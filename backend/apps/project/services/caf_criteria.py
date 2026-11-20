@@ -269,19 +269,96 @@ def guided_basis(notes) -> dict:
     }
 
 
-def ecofilia_determinations(execution) -> dict[str, dict]:
-    """La conclusión de Ecofilia por criterio, de la síntesis (``S.1.``) de su IET.
+# Las opciones de cada CT: la línea «**Conclusión:**» del informe tiene que
+# decir una de éstas. Son las mismas del portal (``lib/caf-alineacion.ts``).
+OPCIONES_CT: dict[str, tuple[str, ...]] = {
+    "ct_a1": (*A1_SIN_RIESGO, *A1_CON_RIESGO, *A1_SIN_ANALISIS),
+    "ct_a2": (A2_SUFICIENTES, *A2_CON_BRECHA, A2_NO_APLICA),
+    "ct_a3": (A3_CONSISTENCIA, A3_POTENCIALMENTE_INCONSISTENTE, A3_INCONSISTENTE),
+    "ct_m1": (M1_NO_ALINEADAS, M1_SIN_NO_ALINEADAS),
+    "ct_m2": (M2_ALINEADAS, M2_SIN_ALINEADAS),
+    "ct_m3": (A3_CONSISTENCIA, A3_POTENCIALMENTE_INCONSISTENTE, A3_INCONSISTENTE),
+    "ct_m4": (A3_CONSISTENCIA, A3_POTENCIALMENTE_INCONSISTENTE, A3_INCONSISTENTE),
+    "ct_m5": (M5_SIN_RIESGOS, M5_CON_RIESGOS),
+}
 
-    Devuelve ``{clave: {"determinacion", "fundamento", "informacion_faltante"}}``
-    con las claves de ``CRITERIOS``. Vacío si la corrida no tiene síntesis.
+_CT_EN_TITULO = re.compile(r"\(CT ([AM])(\d)\)")
+_CONCLUSION = re.compile(r"^\**\s*Conclusi[oó]n\s*:?\s*\**\s*:?\s*(.+)$", re.I)
+_FALTANTE = re.compile(r"^\**\s*Informaci[oó]n faltante\s*:?\s*\**\s*:?\s*(.+)$", re.I)
+_MARCAS_DE_CITA = re.compile(r"\[\[c:\d+\]\]|</?cite[^>]*>")
 
-    Los objetivos se recalculan con las reglas a partir de los CT de la misma
-    síntesis: si la prosa decía otra cosa, lo que dijo queda en
-    ``objetivo_1_texto`` / ``objetivo_2_texto`` y el fundamento pasa a ser el
-    motivo de la regla.
+
+def _limpiar_cierre(valor: str) -> str:
+    valor = _MARCAS_DE_CITA.sub("", valor)
+    valor = re.sub(r"[*_`«»\"]", "", valor)
+    return re.sub(r"\.\s*$", "", valor).strip()
+
+
+def cierre_del_criterio(content: str) -> tuple[str, str, str] | None:
+    """La línea de cierre de una sección de CT: ``(conclusión, faltante, cuerpo)``.
+
+    Es el formato fijo que se agrega al final de cada CT para que su conclusión
+    se lea del informe tal cual, sin pasar por la síntesis ``S.1``. Gana la
+    última que aparece. Misma lectura que ``cierreDelCriterio`` del portal
+    (``lib/caf-informe-lectura.ts``). El cuerpo es el texto sin esas líneas.
     """
-    if execution is None:
-        return {}
+    conclusion = faltante = ""
+    cuerpo: list[str] = []
+    for linea in str(content or "").split("\n"):
+        m = _CONCLUSION.match(linea.strip())
+        if m:
+            conclusion = _limpiar_cierre(m.group(1))
+            continue
+        m = _FALTANTE.match(linea.strip())
+        if m:
+            faltante = _limpiar_cierre(m.group(1))
+            continue
+        cuerpo.append(linea)
+    if not conclusion:
+        return None
+    return conclusion, faltante, "\n".join(cuerpo).strip()
+
+
+def _opcion(key: str, valor: str) -> str | None:
+    """La opción del CT que dice ``valor``, escrita como en el portal, o None."""
+    buscado = _normal(valor)
+    for opcion in OPCIONES_CT.get(key, ()):
+        if _normal(opcion) == buscado:
+            return opcion
+    return None
+
+
+def _fundamento_del_cuerpo(cuerpo: str, limite: int = 1200) -> str:
+    texto = " ".join(_MARCAS_DE_CITA.sub("", cuerpo).split())
+    return texto if len(texto) <= limite else texto[: limite - 1].rstrip() + "…"
+
+
+def _determinaciones_de_cierres(execution) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for step in _steps(execution):
+        titulo = str(step.get("title") or "")
+        if titulo.strip().startswith("S."):
+            continue
+        m = _CT_EN_TITULO.search(titulo)
+        if not m:
+            continue
+        key = f"ct_{m.group(1).lower()}{m.group(2)}"
+        cierre = cierre_del_criterio(step.get("content") or "")
+        if cierre is None:
+            continue
+        conclusion, faltante, cuerpo = cierre
+        opcion = _opcion(key, conclusion)
+        if opcion is None:
+            continue
+        out[key] = {
+            "determinacion": opcion,
+            "fundamento": _fundamento_del_cuerpo(cuerpo),
+            "informacion_faltante": "" if _normal(faltante) in ("ninguna", "ninguno") else faltante,
+        }
+    return out
+
+
+def _determinaciones_de_sintesis(execution) -> dict[str, dict]:
     by_label = {label: key for key, label in CRITERIOS}
     for step in _steps(execution):
         if not str(step.get("title") or "").strip().startswith("S.1"):
@@ -295,9 +372,30 @@ def ecofilia_determinations(execution) -> dict[str, dict]:
                     "fundamento": _text(row.get("fundamento")),
                     "informacion_faltante": _text(row.get("informacion_faltante")),
                 }
-        _recalcular_objetivos(out)
         return out
     return {}
+
+
+def ecofilia_determinations(execution) -> dict[str, dict]:
+    """La conclusión de Ecofilia por criterio, leída de su informe.
+
+    Devuelve ``{clave: {"determinacion", "fundamento", "informacion_faltante"}}``
+    con las claves de ``CRITERIOS``. Vacío si el informe no dice nada.
+
+    Cada CT sale de la línea «**Conclusión:**» de su sección del informe
+    visible; si no la tiene (informes anteriores), de la síntesis oculta
+    ``S.1.``. Los objetivos se recalculan con las reglas a partir de los CT:
+    si la prosa decía otra cosa, lo que dijo queda en ``objetivo_1_texto`` /
+    ``objetivo_2_texto`` y el fundamento pasa a ser el motivo de la regla.
+    """
+    if execution is None:
+        return {}
+    out = _determinaciones_de_sintesis(execution)
+    out.update(_determinaciones_de_cierres(execution))
+    if not out:
+        return {}
+    _recalcular_objetivos(out)
+    return out
 
 
 def _recalcular_objetivos(out: dict[str, dict]) -> None:

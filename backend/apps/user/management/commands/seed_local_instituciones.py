@@ -142,6 +142,7 @@ class Command(BaseCommand):
         importlib.import_module("apps.document.migrations.0025_etiquetas_de_operacion_caf").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0026_metodologia_y_salvaguardas_de_caf").asignar(django_apps, None)
         importlib.import_module("apps.document.migrations.0027_mision_de_evaluacion_caf").seed(django_apps, None)
+        importlib.import_module("apps.document.migrations.0028_iet_ido_caf").seed(django_apps, None)
         importlib.import_module("apps.user.migrations.0009_config_caf").aplicar(django_apps, None)
         # Los workflows de CAF como están hoy en producción (IET de IDO, IET de
         # DEC y guiado): las migraciones ya no los describen y el de DEC no lo
@@ -150,6 +151,8 @@ class Command(BaseCommand):
         informes = seed_workflows.cargar_todos(caf)
         importlib.import_module("apps.skill.migrations.0052_s2_por_actividad_mision_y_lectura_verde").aplicar(django_apps, None)
         importlib.import_module("apps.user.migrations.0016_caf_dec_y_mision").aplicar(django_apps, None)
+        # El DEC hereda el contexto del IDO y lee su IET emitido.
+        importlib.import_module("apps.user.migrations.0017_caf_dec_hereda_contexto").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 

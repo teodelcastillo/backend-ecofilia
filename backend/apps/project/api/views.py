@@ -1286,6 +1286,38 @@ class ProjectViewSet(viewsets.ModelViewSet):
         qs = Project.objects.for_user(user).filter(organization=organization)
         return Response(records_for(qs.order_by("id")))
 
+    @action(detail=False, methods=["get"], url_path="stage-summary")
+    def stage_summary(self, request):
+        """
+        El resumen por etapa de las operaciones visibles de una institución:
+        estado del informe del ejecutivo y su determinación en cada etapa (ver
+        ``services.stage_summary``). Es lo que lee el tablero.
+
+        GET /projects/stage-summary/?organization=caf
+
+        La institución es obligatoria (400 sin ella) y quien no es superadmin
+        sólo puede pedir la suya (403). El estado del análisis de la IA va sólo
+        para superadmins.
+        """
+        from apps.project.services.stage_summary import summary_for
+        from apps.user.access import is_ecofilia_admin
+        from apps.user.models import Organization
+
+        org_slug = (request.query_params.get("organization") or "").strip()
+        if not org_slug:
+            return Response(
+                {"detail": "Falta el parámetro 'organization' con el slug de la institución."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = request.user
+        superadmin = user.is_staff or is_ecofilia_admin(user)
+        own_slug = user.organization.slug if getattr(user, "organization_id", None) else None
+        if not superadmin and org_slug != own_slug:
+            raise PermissionDenied("Sólo podés ver el tablero de tu institución.")
+        organization = get_object_or_404(Organization, slug=org_slug)
+        qs = Project.objects.for_user(user).filter(organization=organization).select_related("organization")
+        return Response(summary_for(qs.order_by("id"), staff=superadmin))
+
     @action(detail=False, methods=["post"], url_path="historical-report")
     def historical_report(self, request):
         """

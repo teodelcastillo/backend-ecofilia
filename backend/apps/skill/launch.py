@@ -166,6 +166,7 @@ def launch_institutional(
     input_values: dict | None = None,
     launched_by: str,
     step_instructions: dict | None = None,
+    prefilled_steps: list[dict] | None = None,
 ) -> LaunchOutcome:
     """
     Lanza ``skill`` como parte del flujo de la operación.
@@ -178,6 +179,10 @@ def launch_institutional(
 
     ``owner`` queda como dueño de la corrida. Eso no le da permiso de
     relanzarla: ``rerun`` y ``resume`` exigen además poder ejecutar asistentes.
+
+    ``prefilled_steps`` son los primeros pasos ya escritos (heredados de otra
+    etapa, ver ``apps.project.services.stage_inheritance``): la corrida arranca
+    con ellos y el motor sigue desde el siguiente.
     """
     resolved, issues = parameters_module.resolve_input_values(
         skill.parameters.all(), input_values or {}
@@ -226,6 +231,10 @@ def launch_institutional(
     if instrucciones:
         execution.step_instructions = instrucciones
         execution.save(update_fields=["step_instructions"])
+    if prefilled_steps:
+        execution.output_structured = {"steps": list(prefilled_steps)}
+        execution.steps_completed = len(prefilled_steps)
+        execution.save(update_fields=["output_structured", "steps_completed"])
     outcome = LaunchOutcome(status="launched", execution=execution)
 
     def _dispatch() -> None:

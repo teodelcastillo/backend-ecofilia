@@ -284,7 +284,7 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
         if not isinstance(item, dict):
             errors.append(f"{path}: tiene que ser un objeto.")
             continue
-        unknown = sorted(set(item) - {"slug", "label", "principal_tag", "launches", "report"})
+        unknown = sorted(set(item) - {"slug", "label", "principal_tag", "launches", "report", "hereda"})
         if unknown:
             errors.append(f"{path}: claves desconocidas: {', '.join(unknown)}.")
         slug = item.get("slug")
@@ -316,6 +316,7 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
                 errors.append(error)
             elif report not in launches:
                 launches = [*launches, report]
+        hereda = _hereda(item.get("hereda"), path, seen - {slug}, tags, errors)
         out.append(
             {
                 "slug": slug,
@@ -323,9 +324,41 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
                 "principal_tag": principal or None,
                 "launches": list(dict.fromkeys(launches)),
                 **({"report": report} if report else {}),
+                **({"hereda": hereda} if hereda else {}),
             }
         )
     return out
+
+
+def _hereda(value, path: str, anteriores: set[str], tags: set[str], errors: list[str]) -> dict | None:
+    """Qué toma el informe de esta etapa del de una etapa anterior.
+
+    ``{"de": "ido_cci", "prefijo": "B.", "etiqueta": "iet-datbc-ido"}``: los
+    pasos cuyo título empieza con ``prefijo`` se copian del informe de ``de``
+    en vez de volver a generarse (en CAF, el contexto de clima del IDO en el
+    DEC), y el informe emitido de ``de`` se vincula a la operación con
+    ``etiqueta`` para que el análisis lo lea. ``etiqueta`` es opcional.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        errors.append(f"{path}.hereda: tiene que ser un objeto.")
+        return None
+    unknown = sorted(set(value) - {"de", "prefijo", "etiqueta"})
+    if unknown:
+        errors.append(f"{path}.hereda: claves desconocidas: {', '.join(unknown)}.")
+    de, prefijo = value.get("de"), _text(value.get("prefijo"))
+    etiqueta = value.get("etiqueta") or None
+    if etiqueta is not None and etiqueta not in tags:
+        errors.append(f"{path}.hereda.etiqueta: la etiqueta «{etiqueta}» no existe para esta institución.")
+        etiqueta = None
+    if de not in anteriores:
+        errors.append(f"{path}.hereda.de: tiene que ser una etapa anterior.")
+    if not prefijo:
+        errors.append(f"{path}.hereda.prefijo: no puede estar vacío.")
+    if de not in anteriores or not prefijo:
+        return None
+    return {"de": de, "prefijo": prefijo, **({"etiqueta": etiqueta} if etiqueta else {})}
 
 
 def _workflows(value, skills: set[str], errors: list[str]) -> dict:

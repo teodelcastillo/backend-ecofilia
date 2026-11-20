@@ -993,3 +993,66 @@ Detalle y evidencia en `backend/docs/seguridad.md`.
 | **Restablecer la contraseña ya no apaga el MFA** | Después del restablecer, el login sigue pidiendo el código si la cuenta tenía MFA. Quien perdió su app de MFA: «pedile a un administrador de Ecofilia que te lo reinicie» |
 | **`is_staff` solo no da alcance global.** Un staff que no es superadmin es, para la API, un usuario público: `is_ecofilia_admin: false`, `home_path: "/app"` | Nada: el front ya decide por `is_ecofilia_admin` y `home_path` |
 | El secreto MFA se guarda cifrado | Nada: `setup` devuelve el secreto y el `otpauth_url` como antes |
+
+## IDO → DEC (20 de noviembre de 2026)
+
+Cómo pasa una operación de IDO a DEC. La estructura del workflow DEC está en `docs/workflow-dec.md`.
+
+### Configuración
+
+`stages[].hereda`: `{"de": "ido_cci", "prefijo": "B.", "etiqueta": "iet-datbc-ido"}`. Va en la etapa DEC de CAF (`user/0017`).
+
+- **Contexto.** Si la operación tiene un informe de Ecofilia terminado en `de`, la corrida del informe de esta etapa arranca con los pasos cuyo título empieza con `prefijo`, copiados de ese informe. Se copia lo publicado por el ejecutivo si editó la sección; si no, lo que escribió el agente. Esos pasos no se vuelven a generar. Cada paso copiado lleva `heredado_de: {execution_id, stage}`.
+- **Informe emitido.** Al lanzar el informe, el informe emitido de `de` se vincula a la operación con `etiqueta`. Si se armó en Ecofilia, como documento de texto con `source = "informe-etapa:<id>"`; si se subió, ese mismo documento. Mientras el documento se procesa, el lanzamiento queda `blocked` y se retoma solo.
+
+### La mirada del ejecutivo por etapa
+
+Al avanzar desde una etapa con informe, `context_notes.por_etapa[<etapa>]` guarda:
+
+- `assessment`, con la misma forma que `emitted_assessment`;
+- `notas`, las claves del ejecutivo tal como estaban;
+- `informe_id`, `emitido_en` y `congelado_en`.
+
+Además:
+
+- `context_notes.precarga_de` dice de qué etapa viene la copia con la que arranca la etapa nueva.
+- `registro_trazabilidad` no se copia: cada informe tiene el suyo.
+- `estado`, `por_etapa` y `precarga_de` los escribe sólo el servidor. Editar la operación los preserva.
+
+### Fotos del historial
+
+`GET /projects/alignment-history/` y el historial de la operación traen:
+
+- `source`: `edit`, `backfill`, `transition` o `emission`.
+- `report_id`.
+
+La foto `transition` lleva la determinación de la etapa que se dejó: no es resultado de la etapa nueva. La foto `emission` es la mirada oficial de la etapa, la de su informe emitido.
+
+### `GET /api/projects/stage-summary/?organization=<slug>`
+
+Para el tablero. Sin `organization` responde 400, y con otra institución que no sea la propia, 403 (salvo superadmin).
+
+```json
+[{
+  "project_slug": "op", "estado": "dec", "ultima_actividad": "2026-11-20T…",
+  "etapas": [{
+    "stage": "ido_cci", "label": "IDO-CCI",
+    "informe": {"estado": "emitido", "report_id": 7, "origen": "guiado", "version": 1, "emitted_at": "…"},
+    "mirada": {"fuente": "emitido", "determinaciones": {"ct_a1": "Riesgo medio", "objetivo_1": "…"}, "enverdecimiento": {"componentes": [], "oportunidades": []}},
+    "ia": {"estado": "completed", "fecha": "…"}
+  }]
+}]
+```
+
+- `informe.estado`: `sin_informe`, `borrador` o `emitido`.
+- `mirada.fuente` dice de dónde sale la mirada:
+  - `emitido`: lo emitido;
+  - `congelado`: `por_etapa`;
+  - `vigente`: lo que se viene cargando en la etapa actual.
+
+  Si no hay nada, `null`.
+- `ia` va sólo para superadmins.
+
+### Conclusión de Ecofilia por criterio
+
+Cada CT sale de la línea `**Conclusión:**` de su sección del informe visible, y sólo si dice una opción válida del CT. Si no, sale de `S.1` como respaldo. Es lo que usan `evaluation-records`, el chat y el registro.

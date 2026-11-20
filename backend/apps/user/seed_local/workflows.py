@@ -9,6 +9,10 @@ ninguna migración. Cada JSON de ``workflows/`` es la respuesta de
 ``GET /api/skills/<slug>/`` de producción, sin dueño ni ids. Para refrescarlos,
 ver «Prueba local» en ``backend/docs/contrato-instituciones.md``.
 
+Excepción: la IET de DEC ya tiene la estructura propuesta en ``backend/docs/workflow-dec.md``
+(los mismos códigos que IDO y el contexto B.1–B.5 primero), que todavía no está en producción.
+Refrescarla desde producción la vuelve a la estructura vieja.
+
 Se cargan con ``update_or_create`` por slug, y los pasos por posición: las ids
 de los pasos que ya existían no cambian, así que correr el seed de nuevo no
 rompe las corridas que apuntan a ellos.

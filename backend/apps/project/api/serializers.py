@@ -575,12 +575,17 @@ class ProjectWriteSerializer(ProjectSerializer):
         # a IDO lanza el reporte de Ecofilia) y pasa sólo por la acción de
         # etapa (ver ``apps.project.services.stages``). Se preserva la del
         # servidor: un formulario con datos viejos no la revierte sin querer.
+        # Lo mismo la mirada congelada de cada etapa (``por_etapa``): la
+        # escribe sólo el cambio de etapa y nadie la pisa editando.
         if "context_notes" in validated_data and isinstance(validated_data["context_notes"], dict):
+            from apps.project.services.stages import SERVER_NOTE_KEYS
+
             incoming = dict(validated_data["context_notes"])
-            if "estado" in previous_notes:
-                incoming["estado"] = previous_notes["estado"]
-            else:
-                incoming.pop("estado", None)
+            for key in SERVER_NOTE_KEYS:
+                if key in previous_notes:
+                    incoming[key] = previous_notes[key]
+                else:
+                    incoming.pop(key, None)
             validated_data["context_notes"] = incoming
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -1033,6 +1038,7 @@ class ProjectAlignmentSnapshotSerializer(serializers.Serializer):
     monto = serializers.CharField()
     captured_at = serializers.DateTimeField()
     source = serializers.CharField()
+    report_id = serializers.IntegerField(allow_null=True)
 
 
 class ProjectHistorySnapshotSerializer(ProjectAlignmentSnapshotSerializer):

@@ -643,6 +643,9 @@ def emit(project: Project, user, markdown: str = "") -> ProjectStageReport:
         report.emitted_at = timezone.now()
         report.emitted_by = user
         report.save()
+        from apps.project.services.alignment_history import record_emission
+
+        record_emission(report, user)
     return report
 
 

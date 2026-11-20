@@ -30,8 +30,9 @@ from __future__ import annotations
 import logging
 
 from django.db import transaction
+from django.utils import timezone
 
-from apps.project.models import Project, ProjectStageTransition
+from apps.project.models import Project, ProjectAlignmentSnapshot, ProjectStageTransition
 from apps.project.services.alignment_history import record_if_changed
 from apps.user import institution_config
 
@@ -47,6 +48,29 @@ IET_SLUG = "caf-iet-datbc-evaluacion-tecnica"
 INSUMO_SLUG = "caf-insumo-ejecutivo"
 GUIADO_SLUG = "caf-iet-guiado-ejecutivo"
 LECTURA_SLUG = "caf-lectura-informe-ejecutivo"
+
+
+# Claves de ``context_notes`` que escribe sólo el servidor: la etapa y lo que
+# quedó congelado de cada etapa al salir de ella. Editar la operación las
+# preserva (``ProjectSerializer.update``).
+ESTADO_KEY = "estado"
+POR_ETAPA_KEY = "por_etapa"
+PRECARGA_KEY = "precarga_de"
+SERVER_NOTE_KEYS = (ESTADO_KEY, POR_ETAPA_KEY, PRECARGA_KEY)
+
+# Lo que el ejecutivo decide en una etapa. Al salir de ella se congela en
+# ``por_etapa``; la etapa siguiente arranca con una copia, salvo el registro
+# y trazabilidad, que es propio de cada informe.
+CLAVES_DEL_EJECUTIVO = (
+    "alineacion_paris",
+    "alineacion_fundamentos",
+    "alineacion_insumo",
+    "consideraciones_adicionales",
+    "enverdecimiento",
+    "motivos_diferencia",
+    "registro_trazabilidad",
+)
+CLAVES_PROPIAS_DE_LA_ETAPA = ("registro_trazabilidad",)
 
 
 class StageError(ValueError):
@@ -99,7 +123,7 @@ def stage_workflow_slugs(project: Project, stage: str) -> list[str]:
     """Qué workflows lanza la operación al entrar a ``stage``.
 
     Salen de ``stages[].launches`` de la institución de la operación (en CAF,
-    sólo IDO lanza algo: el IET). Es el único punto de ruteo a propósito: cuando
+    IDO lanza su IET y DEC la suya). Es el único punto de ruteo a propósito: cuando
     haya variantes por familia de producto o sector, se eligen acá a partir de
     los datos de la operación.
     """
@@ -166,11 +190,23 @@ def launch_stage_workflows(
     que hubo falló, tampoco: retomarla (o repetirla) es de un superadmin, que
     puede ver por qué falló antes de gastar otra corrida.
     """
+    from apps.project.services import stage_inheritance
     from apps.skill.launch import launch_institutional
     from apps.skill.models import ExecutionStatus, Skill
 
+    informe = institution_config.report_workflow(institution_config.config_for_project(project), stage)
+    pendientes = slugs if slugs is not None else stage_workflow_slugs(project, stage)
+    if informe in pendientes:
+        # El informe de la etapa anterior, como evidencia del de ésta (en CAF,
+        # el IET IDO emitido para el DEC). Recién vinculado se está procesando,
+        # así que el lanzamiento queda bloqueado y se retoma solo al terminar.
+        try:
+            stage_inheritance.vincular_informe_anterior(project, stage, user)
+        except Exception:  # noqa: BLE001
+            logger.exception("No se pudo vincular el informe anterior de la operación %s", project.pk)
+
     results: list[dict] = []
-    for slug in slugs if slugs is not None else stage_workflow_slugs(project, stage):
+    for slug in pendientes:
         skill = Skill.objects.filter(slug=slug).first()
         if skill is None:
             results.append(
@@ -215,6 +251,11 @@ def launch_stage_workflows(
             continue
 
         instrucciones = (step_instructions or {}).get(slug) or None
+        heredados = None
+        if slug == informe:
+            # Lo que el informe reusa de la etapa anterior (en CAF, el contexto
+            # de clima del IDO en el DEC): la corrida arranca con eso escrito.
+            heredados = stage_inheritance.pasos_heredados(project, stage, skill)
         outcome = launch_institutional(
             skill,
             owner=user,
@@ -222,6 +263,7 @@ def launch_stage_workflows(
             stage=stage,
             launched_by="stage",
             step_instructions=instrucciones,
+            prefilled_steps=heredados,
         )
         entry = outcome.as_dict(slug)
         if instrucciones and outcome.status == "blocked":
@@ -265,6 +307,70 @@ def informe_sin_emitir(project: Project, stage: str, to_stage: str) -> str | Non
     )
 
 
+def congelar_etapa(project: Project, notes: dict, stage: str) -> None:
+    """Congela en ``notes`` la mirada del ejecutivo de ``stage`` al salir de ella.
+
+    La determinación de una etapa es parte de la historia de la operación: la
+    de IDO no se pisa cuando el ejecutivo trabaja el DEC. Queda en
+    ``por_etapa[stage]`` con su informe emitido; la etapa siguiente arranca con
+    una copia (``precarga_de``) que el ejecutivo confirma o cambia. Sólo las
+    etapas con informe se congelan, y una vez: volver atrás y avanzar de nuevo
+    no reescribe lo congelado.
+    """
+    from apps.project.models import ProjectStageReport
+    from apps.project.services.caf_criteria import executive_assessment
+
+    config = institution_config.config_for_project(project)
+    if stage not in institution_config.report_stages(config):
+        return
+    por_etapa = dict(notes.get(POR_ETAPA_KEY) or {})
+    if stage in por_etapa:
+        return
+    informe = (
+        ProjectStageReport.objects.filter(
+            project=project, stage=stage, voided_at__isnull=True, superseded_at__isnull=True
+        )
+        .order_by("-id")
+        .first()
+    )
+    por_etapa[stage] = {
+        "assessment": executive_assessment(notes),
+        "notas": {key: notes[key] for key in CLAVES_DEL_EJECUTIVO if key in notes},
+        "informe_id": informe.pk if informe else None,
+        "emitido_en": informe.emitted_at.isoformat() if informe and informe.emitted_at else None,
+        "congelado_en": timezone.now().isoformat(),
+    }
+    notes[POR_ETAPA_KEY] = por_etapa
+    notes[PRECARGA_KEY] = stage
+    for key in CLAVES_PROPIAS_DE_LA_ETAPA:
+        notes.pop(key, None)
+
+
+def mirada_de_etapa(project: Project, stage: str) -> dict | None:
+    """Lo que el ejecutivo decidió en ``stage``, tal como quedó.
+
+    Lo congelado al salir de la etapa; para operaciones que salieron antes de
+    que existiera, lo emitido en su informe. Si la operación sigue en esa
+    etapa, None: la mirada vigente está en las notas.
+    """
+    from apps.project.models import ProjectStageReport
+
+    notes = project.context_notes if isinstance(project.context_notes, dict) else {}
+    congelada = (notes.get(POR_ETAPA_KEY) or {}).get(stage)
+    if isinstance(congelada, dict) and isinstance(congelada.get("assessment"), dict):
+        return congelada["assessment"]
+    if current_stage(project) == stage:
+        return None
+    informe = (
+        ProjectStageReport.objects.filter(
+            project=project, stage=stage, voided_at__isnull=True, emitted_at__isnull=False
+        )
+        .order_by("-emitted_at", "-id")
+        .first()
+    )
+    return dict(informe.emitted_assessment or {}) or None if informe else None
+
+
 def transition(
     project: Project, to_stage: str, user, *, step_instructions: dict[str, dict] | None = None
 ) -> ProjectStageTransition:
@@ -293,9 +399,13 @@ def transition(
         previous_notes = dict(locked.context_notes or {})
         notes = dict(previous_notes)
         notes["estado"] = to_stage
+        if stage_index(to_stage, locked) > stage_index(from_stage, locked):
+            congelar_etapa(locked, notes, from_stage)
         locked.context_notes = notes
         locked.save(update_fields=["context_notes", "updated_at"])
-        record_if_changed(locked, previous_notes, user)
+        record_if_changed(
+            locked, previous_notes, user, source=ProjectAlignmentSnapshot.Source.TRANSITION
+        )
         record = ProjectStageTransition.objects.create(
             project=locked,
             from_stage=from_stage,

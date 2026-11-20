@@ -258,6 +258,11 @@ class ProjectAlignmentSnapshot(models.Model):
     class Source(models.TextChoices):
         EDIT = "edit", _("Edición")
         BACKFILL = "backfill", _("Estado al activar el historial")
+        # Al cambiar de etapa: la determinación todavía es la de la etapa
+        # anterior, así que no cuenta como resultado de la nueva.
+        TRANSITION = "transition", _("Cambio de etapa")
+        # Al emitir el informe de la etapa: la mirada oficial de esa etapa.
+        EMISSION = "emission", _("Emisión del informe")
 
     project = models.ForeignKey(
         Project, related_name="alignment_snapshots", on_delete=models.CASCADE
@@ -279,6 +284,14 @@ class ProjectAlignmentSnapshot(models.Model):
         on_delete=models.SET_NULL,
     )
     source = models.CharField(max_length=20, choices=Source.choices, default=Source.EDIT)
+    # El informe emitido que originó la foto (``source=emission``).
+    report = models.ForeignKey(
+        "project.ProjectStageReport",
+        null=True,
+        blank=True,
+        related_name="+",
+        on_delete=models.SET_NULL,
+    )
 
     class Meta:
         ordering = ("captured_at", "id")
