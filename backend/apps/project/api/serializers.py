@@ -359,18 +359,14 @@ class ProjectDetailSerializer(ProjectSerializer):
     def get_guided_sections(self, obj):
         """Los títulos de las secciones del informe que escribe el ejecutivo.
 
-        Son las que reescribe el informe guiado (``workflows.guided``): en CAF,
-        C, D y E. Hasta que el ejecutivo las completa, su informe las muestra
-        en blanco.
+        Las del informe de Ecofilia de la etapa que escribe el guiado (CT,
+        determinaciones, co-beneficios, recomendaciones y concepto), con sus
+        títulos exactos (``stage_reports.guided_section_titles``). Hasta que el
+        ejecutivo las completa, su informe las muestra en blanco.
         """
-        from apps.skill.models import Skill
-        from apps.user import institution_config
+        from apps.project.services.stage_reports import guided_section_titles
 
-        slug = institution_config.workflow(institution_config.config_for_project(obj), "guided")
-        if not slug:
-            return []
-        skill = Skill.objects.filter(slug=slug).first()
-        return [step.title for step in skill.steps.order_by("position")] if skill else []
+        return guided_section_titles(obj)
 
 
 class EmittedStageReportSerializer(ProjectStageReportSerializer):

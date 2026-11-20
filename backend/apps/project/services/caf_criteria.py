@@ -511,6 +511,27 @@ def _es_seccion_de_actividades_verdes(title: str) -> bool:
     return bool(re.search(r"co-?beneficios|financiamiento verde|actividades elegibles", title, re.I))
 
 
+def es_seccion_guiada(title: str) -> bool:
+    """Si la sección del informe es de las que escribe el ejecutivo con el guiado.
+
+    Se reconoce por lo que dice el título, no por su código: en IDO las
+    determinaciones son E.1/E.2, en DEC D.1.4/D.2.6, y el mismo código puede
+    ser otra cosa en cada etapa. Son los CT, las determinaciones de los
+    objetivos, los co-beneficios, las recomendaciones y el concepto de la DATBC.
+    Misma lectura que el portal (``seccionesDelInformeGuiado``).
+    """
+    title = str(title or "").strip()
+    if not title or title.startswith("S."):
+        return False
+    if _CT_EN_TITULO.search(title):
+        return True
+    if re.search(r"determinaci[oó]n", title, re.I) and re.search(r"Objetivo\s*[12]", title, re.I):
+        return True
+    if _es_seccion_de_recomendaciones(title) or "Concepto de la DATBC" in title:
+        return True
+    return _es_seccion_de_actividades_verdes(title)
+
+
 def _actividades_del_informe(step: dict) -> list[dict] | None:
     """Las tablas de actividades de la sección de co-beneficios; None si no las tiene."""
     from apps.skill.citations import strip_cell_citations

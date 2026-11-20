@@ -370,3 +370,57 @@ class LanzamientoTestCase(_Base):
         run = SkillExecution.objects.get(project=self.project, skill=self.dec)
         self.assertEqual(run.steps_completed, 2)
         self.assertTrue(all("heredado_de" in s for s in run.output_structured["steps"]))
+
+
+class GuiadoConLaNumeracionDelDecTestCase(_Base):
+    """El guiado escribe sobre las secciones del informe de la etapa, por su contenido."""
+
+    DEC_STEPS = [
+        "B.1. Marco de políticas",
+        "A.3. Misión de Evaluación",
+        "C.1. Evaluación de los co-beneficios ambientales, climáticos y de biodiversidad",
+        "D.1.1. Criterio Técnico 1 (CT A1): Análisis de riesgos climáticos",
+        "D.1.4. Determinación de Alineación con el Objetivo 1: Desarrollo Resiliente al Clima",
+        "D.2.6. Determinación de Alineación con el Objetivo 2: Desarrollo bajo en emisiones de GEI",
+        "E.1. Recomendaciones para fortalecer la Alineación con el Acuerdo de París",
+        "E.2. Concepto de la DATBC",
+    ]
+
+    def _dec_run(self):
+        self.project.context_notes = {**self.project.context_notes, "estado": "dec"}
+        self.project.save(update_fields=["context_notes"])
+        return SkillExecution.objects.create(
+            skill=self.dec, owner=self.owner, project=self.project, status=ExecutionStatus.COMPLETED,
+            stage="dec", finished_at=timezone.now(),
+            output_structured={"steps": [
+                {"step_id": 700 + i, "title": t, "content": f"Texto de Ecofilia {i}."}
+                for i, t in enumerate(self.DEC_STEPS)
+            ]},
+        )
+
+    def test_the_sections_are_the_dec_report_ones(self):
+        from apps.project.services.stage_reports import guided_section_titles
+
+        self._dec_run()
+        self.assertEqual(guided_section_titles(self.project), self.DEC_STEPS[2:])
+
+    def test_in_ido_they_are_the_ido_report_ones(self):
+        from apps.project.services.stage_reports import guided_section_titles
+
+        # La corrida IDO del armado: sólo «C.1. Co-beneficios» es del ejecutivo.
+        self.assertEqual(guided_section_titles(self.project), ["C.1. Co-beneficios"])
+
+    def test_the_determination_goes_to_d14_and_not_to_the_recommendations(self):
+        from apps.project.services.stage_reports import generate_guiado
+
+        run = self._dec_run()
+        self._determinar()
+        generate_guiado(self.project, self.editor, [
+            {"titulo": self.DEC_STEPS[4], "contenido": "Determinación del ejecutivo, Objetivo 1."},
+            {"titulo": self.DEC_STEPS[6], "contenido": "Recomendaciones del ejecutivo."},
+        ])
+        publicado = {
+            e.step_id: e.published for e in ExecutionSectionEdit.objects.filter(execution=run)
+        }
+        self.assertEqual(publicado[704], "Determinación del ejecutivo, Objetivo 1.")
+        self.assertEqual(publicado[706], "Recomendaciones del ejecutivo.")

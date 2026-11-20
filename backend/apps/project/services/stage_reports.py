@@ -83,6 +83,61 @@ def report_skill(project: Project, stage: str):
     return Skill.objects.filter(slug=slug).first() if slug else None
 
 
+def guided_section_titles(project: Project) -> list[str]:
+    """Los títulos de las secciones que escribe el ejecutivo con el guiado.
+
+    Salen del informe de Ecofilia de la etapa (en CAF, el de IDO o el de DEC,
+    cada uno con su numeración), reconocidas por lo que dicen
+    (``caf_criteria.es_seccion_guiada``). Así el guiado escribe sobre las
+    secciones que ese informe tiene, con sus títulos exactos: los del
+    workflow guiado son los de IDO, y por código caerían en otra sección del
+    DEC. De la corrida vigente si la hay (su versión del workflow manda); si
+    no, de la definición del informe; si la etapa no tiene informe, de los
+    pasos del workflow guiado, como antes.
+    """
+    from apps.project.services.caf_criteria import es_seccion_guiada
+    from apps.skill.models import Skill
+
+    # Sin guiado en la institución, ninguna sección es «del ejecutivo».
+    slug = institution_config.workflow(institution_config.config_for_project(project), "guided")
+    if not slug:
+        return []
+    stage = _stage_con_informe(project)
+    if stage:
+        run = current_ecofilia_report(project, stage)
+        if run is not None:
+            titles = [
+                str(step.get("title") or "")
+                for step in (run.output_structured or {}).get("steps") or []
+                if isinstance(step, dict) and es_seccion_guiada(step.get("title"))
+            ]
+            if titles:
+                return titles
+        skill = report_skill(project, stage)
+        if skill is not None:
+            titles = [step.title for step in skill.steps.order_by("position") if es_seccion_guiada(step.title)]
+            if titles:
+                return titles
+    skill = Skill.objects.filter(slug=slug).first()
+    return [step.title for step in skill.steps.order_by("position")] if skill else []
+
+
+def _stage_con_informe(project: Project) -> str | None:
+    """La etapa actual si tiene informe; si no, la última anterior que lo tiene."""
+    from apps.project.services.stages import current_stage, stage_order
+
+    config = institution_config.config_for_project(project)
+    con_informe = set(institution_config.report_stages(config))
+    orden = stage_order(project)
+    actual = current_stage(project)
+    if actual not in orden:
+        return None
+    for stage in reversed(orden[: orden.index(actual) + 1]):
+        if stage in con_informe:
+            return stage
+    return None
+
+
 class StageReportError(ValueError):
     """Lo pedido no se puede hacer en el estado actual del informe."""
 
