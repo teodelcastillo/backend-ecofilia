@@ -334,10 +334,25 @@ class ProjectDetailSerializer(ProjectSerializer):
         return stage_history(obj)
 
     def get_stage_reports(self, obj):
+        # De la corrida y del guiado sólo se muestra el estado; del documento,
+        # nombre y estado; de la lectura, su ``output_structured``. Traerlas
+        # enteras cargaba informes, fotos de documentos y el texto de cada PDF
+        # en un pedido que el portal repite cada 10 segundos mientras algo
+        # corre (workers muertos por memoria el 20-nov-2026).
+        from apps.document.models import LIST_DEFERRED_COLUMNS
+        from apps.skill.api.serializers import HEAVY_EXECUTION_FIELDS
+
+        pesadas = (*HEAVY_EXECUTION_FIELDS, "document_snapshot")
         reports = (
             obj.stage_reports.select_related(
                 "execution__skill", "guided_execution", "document", "reader_execution",
                 "created_by", "emitted_by", "voided_by",
+            )
+            .defer(
+                *(f"execution__{c}" for c in pesadas),
+                *(f"guided_execution__{c}" for c in pesadas),
+                *(f"reader_execution__{c}" for c in pesadas if c != "output_structured"),
+                *(f"document__{c}" for c in LIST_DEFERRED_COLUMNS),
             )
             .order_by("created_at", "id")
         )

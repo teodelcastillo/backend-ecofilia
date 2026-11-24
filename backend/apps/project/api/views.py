@@ -23,7 +23,7 @@ from apps.chat.services.copilot import (
     initialize_project_structure,
     process_copilot_message,
 )
-from apps.document.models import Document
+from apps.document.models import LIST_DEFERRED_COLUMNS, Document
 from apps.evaluation.api.serializers import EvaluationRunSerializer
 from apps.evaluation.models import EvaluationRun, PillarEvaluationResult
 from apps.project.api.permissions import ProjectAccessPermission
@@ -152,12 +152,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return (
             qs
             .select_related("owner", "blueprint_document", "structure_template", "organization")
+            # Del documento principal y de cada vinculado sólo se muestran nombre,
+            # estado y etiquetas. Sin diferir el texto largo, el listado de CAF
+            # cargaba el texto completo de cada PDF, una copia por operación que
+            # lo vincula: +650 MB por pedido y 19 workers muertos el 20-nov-2026.
+            .defer(*(f"blueprint_document__{c}" for c in LIST_DEFERRED_COLUMNS))
             .prefetch_related(
                 Prefetch(
                     "project_documents",
-                    queryset=ProjectDocument.objects.select_related(
-                        "document"
-                    ).prefetch_related("tags", "document__evidence_tags"),
+                    queryset=ProjectDocument.objects.select_related("document")
+                    .defer(*(f"document__{c}" for c in LIST_DEFERRED_COLUMNS))
+                    .prefetch_related("tags", "document__evidence_tags"),
                 ),
                 Prefetch(
                     "shares",

@@ -25,6 +25,17 @@ class ChunkingStatus(models.TextChoices):
     ERROR = "error", "Error"
 
 
+# Columnas de texto largo de ``Document`` que ningún listado muestra.
+#
+# `extracted_text` es el texto completo del archivo —hay documentos de más de un
+# millón de caracteres—. Cargarlo para descartarlo al serializar cuesta cientos
+# de megabytes por pedido: mató a los workers de gunicorn el 31-ago-2026 (la
+# biblioteca) y el 20-nov-2026 (el listado y el detalle de operaciones, que lo
+# traían por cada documento vinculado). Todo queryset que llegue a documentos
+# sólo para mostrar su nombre, su estado o sus etiquetas debe diferirlas.
+LIST_DEFERRED_COLUMNS = ("extracted_text", "content_summary", "last_error")
+
+
 class Document(models.Model):
     owner = models.ForeignKey(User, related_name="document_owner", on_delete=models.CASCADE)
     name = models.CharField(max_length=255, blank=True)

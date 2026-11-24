@@ -27,6 +27,7 @@ from apps.document.models import (
     Category,
     ChunkingStatus,
     EvidenceTag,
+    LIST_DEFERRED_COLUMNS,
 )
 from apps.document.dispatch import dispatch_processing
 from apps.document.tasks import process_document_chunks
@@ -545,16 +546,8 @@ class PublicDocumentListPagination(PageNumberPagination):
 logger = logging.getLogger(__name__)
 
 
-# Columnas que el listado nunca muestra y que Django, por defecto, trae igual.
-#
-# `extracted_text` es el texto completo del archivo —en esta base hay documentos
-# de más de un millón de caracteres—. Sin diferirlo, listar la biblioteca de un
-# usuario carga en memoria el texto íntegro de cada documento para descartarlo
-# al serializar: cientos de megabytes por request. Es lo que mató a los workers
-# de gunicorn el 31-ago-2026 y dejó al balanceador sin destinos sanos.
-#
-# Los otros tres son texto largo que tampoco aparece en un listado.
-LIST_DEFERRED_COLUMNS = ("extracted_text", "content_summary", "last_error")
+# Columnas que el listado nunca muestra y que Django, por defecto, trae igual
+# (ver ``apps.document.models.LIST_DEFERRED_COLUMNS``).
 
 # Techo de una respuesta sin paginar. No trunca nada hoy —la biblioteca entera
 # es más chica— pero evita que el endpoint vuelva a ser ilimitado a medida que
