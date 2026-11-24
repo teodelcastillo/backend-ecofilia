@@ -416,9 +416,37 @@ def transition(
     project.refresh_from_db()
     # Fuera de la transacción: las corridas se encolan apenas existen.
     if stage_index(to_stage, project) > stage_index(from_stage, project):
-        record.launches = launch_stage_workflows(
-            project, to_stage, user, step_instructions=step_instructions
-        )
+        config = institution_config.config_for_project(project)
+        informe = institution_config.report_workflow(config, to_stage)
+        pendientes = stage_workflow_slugs(project, to_stage)
+        diferido = None
+        if informe in pendientes and institution_config.report_workflow(config, from_stage):
+            # De una etapa con informe a otra (en CAF, de IDO a DEC): la
+            # etapa nueva se configura antes de analizarse. El ejecutivo carga
+            # su documento principal (el DEC) y los complementarios, que en DEC
+            # suelen ser más, y el análisis lo lanza el alta al final
+            # («Generar», ``POST stage/launch/``). Lanzarlo acá lo dejaba
+            # bloqueado y arrancaba solo apenas se procesaba el principal, sin
+            # los complementarios.
+            pendientes = [slug for slug in pendientes if slug != informe]
+            etiqueta = institution_config.principal_tag(config, to_stage)
+            documento = f"el documento {etiqueta.upper()}" if etiqueta else "el documento principal"
+            diferido = {
+                "skill_slug": informe,
+                "status": "waiting",
+                "execution_id": None,
+                "reason": (
+                    f"se genera al terminar de configurar la etapa: cargá {documento} como "
+                    "principal y los documentos complementarios."
+                ),
+            }
+        record.launches = (
+            launch_stage_workflows(
+                project, to_stage, user, slugs=pendientes, step_instructions=step_instructions
+            )
+            if pendientes
+            else []
+        ) + ([diferido] if diferido else [])
         record.save(update_fields=["launches"])
     return record
 

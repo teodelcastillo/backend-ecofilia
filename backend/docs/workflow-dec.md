@@ -36,6 +36,10 @@ En el informe, el portal agrega al cierre de la Sección E las tablas del ejecut
   ejecutivo con el guiado se reconocen por lo que dicen (CT, determinación, co-beneficios,
   recomendaciones, concepto), así que el número exacto dentro de cada sección es libre.
 - **El IET IDO emitido se vincula solo** con la etiqueta `iet-datbc-ido` al lanzar el DEC.
+- **De IDO a DEC la etapa se configura antes de analizarse** (24/11/2026). Pasar a DEC no
+  lanza el análisis: el portal reabre el alta para cargar el documento DEC como principal y
+  los complementarios, y el análisis se lanza desde su último paso (`POST stage/launch/`). La
+  transición deja el informe como `waiting`, que no se reintenta solo.
 - **El IET IDO no es evidencia** (24/11/2026). Al análisis le llega aparte de la base
   documental, como texto rotulado «informe de una etapa anterior · no es evidencia», sin
   citas, y con reglas que pone el sistema: usarlo sólo para confirmar o cambiar lo del IDO

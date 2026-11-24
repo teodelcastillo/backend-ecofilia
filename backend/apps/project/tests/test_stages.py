@@ -305,16 +305,20 @@ class DecComoIdoTestCase(_StageBase):
         self.assertEqual(self.project.context_notes["estado"], "ido_cci")
         delay.assert_not_called()
 
-    def test_dec_waits_for_its_document_and_then_runs(self):
+    def test_dec_is_configured_before_its_analysis_runs(self):
+        """De IDO a DEC la etapa se configura primero: el documento DEC como
+        principal y los complementarios. El análisis no arranca solo al
+        procesarse el principal; lo lanza el «Generar» del alta."""
         self._emit("ido_cci")
         response, delay = self._move(self.editor, "dec")
         self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         launch = response.data["launches"][0]
-        self.assertEqual((launch["skill_slug"], launch["status"]), (self.DEC_SLUG, "blocked"))
+        self.assertEqual((launch["skill_slug"], launch["status"]), (self.DEC_SLUG, "waiting"))
         self.assertIn("documento DEC", launch["reason"])
+        self.assertIn("complementarios", launch["reason"])
         delay.assert_not_called()
 
-        # Sube el DEC y lo marca como principal: se lanza el análisis de DEC.
+        # Sube el DEC y lo marca como principal: todavía no se lanza nada.
         doc_dec = Document.objects.create(
             owner=self.owner, name="Documento DEC", slug="doc-dec", chunking_status="done", extracted_text="x",
         )
@@ -323,9 +327,14 @@ class DecComoIdoTestCase(_StageBase):
         self.project.refresh_from_db()
         self.project.blueprint_document = doc_dec
         self.project.save(update_fields=["blueprint_document"])
-        with patch(DELAY), self.captureOnCommitCallbacks(execute=True):
-            retried = retry_pending_stage_launches(self.project)
-        self.assertEqual(self._statuses(retried), {self.DEC_SLUG: "launched"})
+        with patch(DELAY) as retry_delay, self.captureOnCommitCallbacks(execute=True):
+            self.assertIsNone(retry_pending_stage_launches(self.project))
+        retry_delay.assert_not_called()
+
+        # «Generar» del alta: ahora sí.
+        response, _ = self._post(self.editor, "stage/launch/", {})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(self._statuses(response.data["launches"]), {self.DEC_SLUG: "launched"})
         run = SkillExecution.objects.get(project=self.project, skill=self.dec)
         self.assertEqual(run.stage, "dec")
 

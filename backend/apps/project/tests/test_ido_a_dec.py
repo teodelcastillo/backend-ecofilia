@@ -107,13 +107,21 @@ class _Base(APITestCase):
             emitted_markdown=markdown, emitted_assessment={"determinaciones": {"ct_a1": "Riesgo medio"}},
         )
 
-    def _a_dec(self):
+    def _a_dec(self, generar=False):
+        """Pasa a DEC; con ``generar``, también el «Generar» del alta.
+
+        Pasar de IDO a DEC no lanza el análisis: la etapa se configura primero
+        (documento DEC y complementarios) y el alta lo lanza al final.
+        """
         self.client.force_authenticate(self.editor)
         with patch(DELAY), patch(DOC_DISPATCH), self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 f"/api/projects/{self.project.slug}/stage/", {"to": "dec"}, format="json"
             )
-        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+            self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+            if generar:
+                response = self.client.post(f"/api/projects/{self.project.slug}/stage/launch/", {}, format="json")
+                self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
         self.project.refresh_from_db()
         return response
 
@@ -195,7 +203,7 @@ class HerenciaDelContextoTestCase(_Base):
 class InformeIdoComoEvidenciaTestCase(_Base):
     def test_entering_dec_links_the_emitted_ido_report_with_its_tag(self):
         self._emitir_ido()
-        response = self._a_dec()
+        response = self._a_dec(generar=True)
         link = ProjectDocument.objects.get(project=self.project, document__source__startswith="informe-etapa:")
         self.assertIn("iet-datbc-ido", list(link.document.evidence_tags.values_list("slug", flat=True)))
         self.assertTrue(link.document.file.name.endswith(".txt"))
@@ -205,7 +213,7 @@ class InformeIdoComoEvidenciaTestCase(_Base):
 
     def test_linking_is_idempotent_and_a_new_version_replaces_the_old(self):
         primero = self._emitir_ido()
-        self._a_dec()
+        self._a_dec(generar=True)
         with patch(DOC_DISPATCH):
             stage_inheritance.vincular_informe_anterior(self.project, "dec", self.owner)
         self.assertEqual(
@@ -225,7 +233,7 @@ class InformeIdoComoEvidenciaTestCase(_Base):
             project=self.project, stage="ido_cci", origin="subido", document=subido, created_by=self.owner,
             emitted_at=timezone.now(), emitted_by=self.owner,
         )
-        self._a_dec()
+        self._a_dec(generar=True)
         self.assertTrue(ProjectDocument.objects.filter(project=self.project, document=subido).exists())
 
 
@@ -234,7 +242,7 @@ class InformeIdoNoEsEvidenciaTestCase(_Base):
 
     def test_the_linked_report_and_an_uploaded_one_are_previous_stage_reports(self):
         self._emitir_ido()
-        self._a_dec()
+        self._a_dec(generar=True)
         vinculado = ProjectDocument.objects.get(project=self.project, document__source__startswith="informe-etapa:")
         tag = vinculado.document.evidence_tags.get(slug="iet-datbc-ido")
         externo = Document.objects.create(owner=self.owner, name="IET IDO de otra firma", slug="iet-externo")
@@ -374,7 +382,7 @@ class LanzamientoTestCase(_Base):
         link.tags_overridden = True
         link.save(update_fields=["tags_overridden"])
         self._emitir_ido()
-        response = self._a_dec()
+        response = self._a_dec(generar=True)
         self.assertEqual(response.data["launches"][0]["status"], "blocked")
         doc_dec = Document.objects.create(
             owner=self.owner, name="Documento DEC", slug="doc-dec", chunking_status="done", extracted_text="x",
