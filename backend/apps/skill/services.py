@@ -4,7 +4,7 @@ import json
 import logging
 import math
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 from django.db.models import Count, Max, Q, QuerySet
@@ -1573,6 +1573,9 @@ class StepCorpus:
     volatile: str
     chunks: list
     plan: "context_budget.ContextPlan"
+    # Los informes de etapas anteriores: viajan aparte y sin citas (ver
+    # ``context_budget.DocumentDelivery.is_reference``).
+    references: list = field(default_factory=list)
 
 
 def build_step_corpus(
@@ -1611,6 +1614,7 @@ def build_step_corpus(
         context_window=context_window,
         max_document_tokens=max_document_tokens,
         token_scale=token_scale,
+        reference_ids=_previous_stage_report_ids(execution, planned_documents),
     )
     if retrieve_partials:
         partial_blocks, chunks, failures = _retrieve_partial_blocks(
@@ -1625,7 +1629,20 @@ def build_step_corpus(
         volatile=context_budget.render_partials(plan, partial_blocks=partial_blocks),
         chunks=chunks,
         plan=plan,
+        references=context_budget.build_document_payloads(
+            plan, texts=document_texts, references=True
+        ),
     )
+
+
+def _previous_stage_report_ids(execution, documents) -> set[int]:
+    """Cuáles de los documentos del paso son el informe de una etapa anterior."""
+    project = getattr(execution, "project", None)
+    if project is None or getattr(project, "pk", None) is None or not documents:
+        return set()
+    from apps.project.services.stage_inheritance import informes_de_etapas_anteriores
+
+    return informes_de_etapas_anteriores(project) & {d.id for d in documents}
 
 
 def _run_skill_ref_step(
@@ -2130,6 +2147,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     corpus_volatile=corpus.volatile if corpus else "",
                     step_prompt=prompt,
                     model=model_for_step,
+                    references=corpus.references if corpus else [],
                 )
 
                 tool_ctx = SkillToolContext(user=execution.owner, allowed_documents=step_documents)

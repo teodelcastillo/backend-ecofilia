@@ -186,3 +186,32 @@ def vincular_informe_anterior(project: Project, stage: str, user=None):
         project=project, document=documento, defaults={"added_by": user if getattr(user, "is_authenticated", False) else None}
     )
     return documento
+
+
+def informes_de_etapas_anteriores(project: Project) -> set[int]:
+    """Los documentos de la operación que son el informe de una etapa anterior.
+
+    Son los que vinculó ``vincular_informe_anterior`` y los que alguien subió
+    con la etiqueta de herencia de alguna etapa (en CAF, un IET IDO hecho por
+    fuera, cargado con ``iet-datbc-ido``). El análisis los recibe aparte y sin
+    citas: no son evidencia de la etapa (ver
+    ``apps.skill.context_budget.DocumentDelivery.is_reference``).
+    """
+    from django.db.models import Q
+
+    from apps.project.models import ProjectDocument
+
+    config = institution_config.config_for_project(project)
+    etiquetas = {
+        s["hereda"]["etiqueta"]
+        for s in config.get("stages") or []
+        if isinstance(s.get("hereda"), dict) and s["hereda"].get("etiqueta")
+    }
+    criterio = Q(document__source__startswith=FUENTE_PREFIX)
+    if etiquetas:
+        criterio |= Q(document__evidence_tags__slug__in=etiquetas)
+    return set(
+        ProjectDocument.objects.filter(project=project)
+        .filter(criterio)
+        .values_list("document_id", flat=True)
+    )

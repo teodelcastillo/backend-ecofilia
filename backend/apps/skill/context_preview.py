@@ -298,7 +298,7 @@ def build_preview(
             max_document_tokens=getattr(skill, "max_document_tokens", None),
         )
         plan = corpus.plan
-        stable = "\n\n".join([corpus.inventory] + [d.text for d in corpus.documents])
+        stable = "\n\n".join([corpus.inventory] + [d.text for d in corpus.documents + corpus.references])
         stable_tokens = context_budget.estimate_tokens(stable)
         volatile_tokens = (
             context_budget.estimate_tokens(corpus.volatile) if measure_fragments else None

@@ -227,6 +227,11 @@ class DocumentDelivery:
     # demás son el marco contra el que se lo evalúa. No es una prioridad de
     # presupuesto, es una diferencia de naturaleza — ver `render_inventory`.
     is_blueprint: bool = False
+    # El informe ya emitido de una etapa anterior de la operación (en CAF, el
+    # IET IDO que lee el DEC). Tampoco es una prioridad: es otra naturaleza. No
+    # es evidencia de la etapa, es lo que se concluyó antes; viaja aparte, sin
+    # citas, para que el análisis lo confirme o lo cambie y no lo use de fuente.
+    is_reference: bool = False
 
     @property
     def slug(self) -> str:
@@ -254,6 +259,10 @@ class ContextPlan:
     @property
     def blueprint(self) -> DocumentDelivery | None:
         return next((d for d in self.deliveries if d.is_blueprint), None)
+
+    @property
+    def references(self) -> list[DocumentDelivery]:
+        return [d for d in self.deliveries if d.is_reference]
 
     @property
     def degraded(self) -> list[DocumentDelivery]:
@@ -292,6 +301,11 @@ class ContextPlan:
             "documents_omitted": [d.slug for d in self.omitted],
             "scope_complete": self.complete,
             "blueprint": (self.blueprint.slug if self.blueprint else None),
+            **(
+                {"previous_stage_reports": [d.slug for d in self.references]}
+                if self.references
+                else {}
+            ),
             # Se registra aparte de `documents_partial` porque no es un
             # documento degradado más: es el sujeto de la auditoría llegando
             # incompleto. Quien lea la corrida después tiene que tropezarse
@@ -313,6 +327,7 @@ def plan_context(
     context_window: int | None = None,
     max_document_tokens: int | None = None,
     token_scale: float = 1.0,
+    reference_ids: set[int] | frozenset[int] | None = None,
 ) -> ContextPlan:
     """Decide, documento por documento, qué entra entero y qué se degrada.
 
@@ -339,6 +354,10 @@ def plan_context(
 
     ``token_scale`` corrige el estimador cuando la API ya dijo cuánto pesaba de
     verdad el pedido (ver ``recalibrate_scale``). Fuera de ese reintento es 1.
+
+    ``reference_ids`` son los documentos que son el informe emitido de una
+    etapa anterior (ver ``DocumentDelivery.is_reference``). Se presupuestan
+    como cualquier anexo, pero no se presentan como evidencia.
     """
     window = context_window or CONTEXT_WINDOW
     # Dos presupuestos: lo que entra en la ventana (física) y lo que conviene
@@ -351,6 +370,7 @@ def plan_context(
     deliveries: list[DocumentDelivery] = []
     for document in documents:
         is_blueprint = blueprint_id is not None and document.id == blueprint_id
+        is_reference = not is_blueprint and document.id in (reference_ids or ())
         text = (texts or {}).get(document.id) if texts else None
         if text is None:
             text = document.extracted_text or ""
@@ -364,6 +384,7 @@ def plan_context(
                     full_tokens=0,
                     reason="el documento no tiene texto extraído",
                     is_blueprint=is_blueprint,
+                    is_reference=is_reference,
                 )
             )
         else:
@@ -374,6 +395,7 @@ def plan_context(
                     tokens=tokens,
                     full_tokens=tokens,
                     is_blueprint=is_blueprint,
+                    is_reference=is_reference,
                 )
             )
 
@@ -499,8 +521,10 @@ def render_inventory(plan: ContextPlan) -> str:
     inventario convierte esa distinción en algo que el modelo puede consultar.
     """
     lines = ["## Base documental asignada a este paso", ""]
-    if not plan.deliveries:
+    evidence = [d for d in plan.deliveries if not d.is_reference]
+    if not evidence:
         lines.append("(Este paso no tiene documentos asignados.)")
+        lines.extend(_reference_rules(plan))
         return "\n".join(lines)
 
     lines.append("Estos son los únicos documentos que tenés. No hay otros.")
@@ -523,13 +547,13 @@ def render_inventory(plan: ContextPlan) -> str:
     # marco no exige X", que son hallazgos distintos y se presentan con la
     # misma seguridad.
     blueprint = plan.blueprint
-    if blueprint is not None and len(plan.deliveries) > 1:
+    if blueprint is not None and len(evidence) > 1:
         lines.append("**Documento de la operación** — describe qué se financia:")
         lines.append(_entry(1, blueprint))
         lines.append("")
         lines.append("**Marco de referencia** — contra esto se evalúa la operación:")
         index = 2
-        for delivery in plan.deliveries:
+        for delivery in evidence:
             if delivery.is_blueprint:
                 continue
             lines.append(_entry(index, delivery))
@@ -550,7 +574,7 @@ def render_inventory(plan: ContextPlan) -> str:
                 "como limitación del análisis en vez de concluir sobre ella."
             )
     else:
-        for index, delivery in enumerate(plan.deliveries, start=1):
+        for index, delivery in enumerate(evidence, start=1):
             lines.append(_entry(index, delivery))
 
     lines.extend(["", "Reglas de uso de esta base:", ""])
@@ -589,7 +613,7 @@ def render_inventory(plan: ContextPlan) -> str:
             "en ellos, podés afirmarlo."
         )
 
-    if are_citations_enabled() and any(d.mode == FULL for d in plan.deliveries):
+    if are_citations_enabled() and any(d.mode == FULL for d in evidence):
         lines.extend(["", "Sobre las citas:", ""])
         lines.append(
             "- Los documentos completos llegan como documentos citables. Cuando "
@@ -607,7 +631,49 @@ def render_inventory(plan: ContextPlan) -> str:
                 "podés usarlos y nombrarlos en el texto, pero no generan una cita "
                 "verificable. Decilo así cuando te apoyes en ellos."
             )
+    lines.extend(_reference_rules(plan))
     return "\n".join(lines)
+
+
+def _reference_rules(plan: ContextPlan) -> list[str]:
+    """Cómo se usa el informe de una etapa anterior, cuando el paso lo tiene.
+
+    Lo pone el sistema y no el prompt del paso a propósito: el riesgo —que el
+    análisis de una etapa justifique sus conclusiones con lo que concluyó la
+    anterior («el IET IDO dice que esto es verde»)— existe en cualquier paso
+    que reciba el informe, lo diga o no su instrucción.
+    """
+    refs = plan.references
+    if not refs:
+        return []
+    names = ", ".join(f"[{d.slug}] {d.name}" for d in refs)
+    lines = [
+        "",
+        "## Informe de una etapa anterior — no es evidencia",
+        "",
+        f"También recibís {names}: lo que se concluyó sobre esta operación en una "
+        "etapa anterior. Llega aparte, después de los documentos, y **no forma parte "
+        "de la base documental**.",
+        "",
+        "- Usalo sólo como punto de partida: para saber qué se había determinado y "
+        "revisar si los documentos de esta etapa lo **confirman**, lo **cambian** o "
+        "**no lo respaldan**.",
+        "- **Nunca** lo cites como fuente ni lo uses para justificar una conclusión. "
+        "«El informe anterior dice que X» no es un fundamento: cada afirmación de "
+        "este paso se sostiene en un documento de la base documental, y se nombra "
+        "ese documento.",
+        "- Si algo del informe anterior no tiene respaldo en los documentos de esta "
+        "etapa, decilo así («en la etapa anterior se había determinado X; los "
+        "documentos de esta etapa no lo respaldan»). No lo des por confirmado.",
+        "- Si los documentos de esta etapa dicen otra cosa, prevalecen ellos: "
+        "señalá el cambio respecto de la etapa anterior.",
+    ]
+    if any(d.mode != FULL for d in refs):
+        lines.append(
+            "- Del informe anterior recibís sólo fragmentos o nada: no afirmes qué "
+            "concluyó en lo que no ves."
+        )
+    return lines
 
 
 def _header(index: int, total: int, delivery: DocumentDelivery) -> str:
@@ -682,19 +748,29 @@ class DocumentPayload:
     # El documento principal viaja primero y con su propio punto de caché: es
     # el único que está en todos los pasos (ver ``build_messages``).
     is_blueprint: bool = False
+    # El informe de una etapa anterior: viaja como texto, sin citas, después de
+    # los documentos (ver ``DocumentDelivery.is_reference``).
+    is_reference: bool = False
 
     @property
     def has_pages(self) -> bool:
         return bool(getattr(self.page_map, "has_pages", False))
 
 
-def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentPayload]:
+def build_document_payloads(
+    plan: ContextPlan, *, texts: dict, references: bool = False
+) -> list[DocumentPayload]:
     """Los documentos completos del plan, listos para viajar como bloques.
 
     Sólo los completos: de un documento degradado no se puede emitir una cita
     verificable —los offsets de un puñado de fragmentos no son offsets del
     documento— y prefiero que no tenga bloque citable a que tenga uno que
     apunte a la página equivocada.
+
+    Con ``references`` devuelve, en cambio, los informes de etapas anteriores
+    que entraron completos. Van separados porque no son bloques ``document``:
+    el orden de estos es el ``document_index`` de las citas, y un informe
+    anterior no tiene que ser citable.
     """
     from apps.document.page_map import build_page_map
 
@@ -703,7 +779,8 @@ def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentP
     # de los bloques es también el de ``document_index`` en las citas, así que
     # se decide acá una sola vez.
     full = sorted(
-        (d for d in plan.deliveries if d.mode == FULL), key=lambda d: not d.is_blueprint
+        (d for d in plan.deliveries if d.mode == FULL and d.is_reference == references),
+        key=lambda d: not d.is_blueprint,
     )
     for delivery in full:
         raw = texts.get(delivery.document.id) or ""
@@ -715,6 +792,7 @@ def build_document_payloads(plan: ContextPlan, *, texts: dict) -> list[DocumentP
                 text=page_map.text,
                 page_map=page_map,
                 is_blueprint=delivery.is_blueprint,
+                is_reference=delivery.is_reference,
             )
         )
     return payloads
@@ -740,6 +818,23 @@ def _document_block(payload: DocumentPayload, *, citations: bool) -> dict:
     if citations:
         block["citations"] = {"enabled": True}
     return block
+
+
+def render_references(payloads: list[DocumentPayload]) -> str:
+    """Los informes de etapas anteriores, como texto rotulado.
+
+    Texto y no bloque ``document``: así no hay cita posible, y el rótulo repite
+    en el lugar mismo lo que dice el inventario.
+    """
+    parts = []
+    for payload in payloads:
+        parts.append(
+            f"===== INFORME DE UNA ETAPA ANTERIOR · [{payload.slug}] {payload.name} · "
+            "NO ES EVIDENCIA: sólo punto de partida para confirmar o cambiar =====\n"
+            f"{payload.text}\n"
+            "===== FIN DEL INFORME DE LA ETAPA ANTERIOR ====="
+        )
+    return "\n\n".join(parts)
 
 
 def render_documents_inline(payloads: list[DocumentPayload]) -> str:
@@ -789,6 +884,7 @@ def build_messages(
     corpus_volatile: str,
     step_prompt: str,
     model: str,
+    references: list[DocumentPayload] | None = None,
 ) -> list[dict]:
     """Arma el pedido con el corpus como prefijo cacheable.
 
@@ -821,10 +917,15 @@ def build_messages(
 
     Si el modelo no es de Anthropic todo va inline, sin bloques, sin citas y
     sin caché: correcto pero caro. Es una ruta de escape, no el camino previsto.
+
+    ``references`` (los informes de etapas anteriores) van como texto después
+    de los documentos y antes del punto de caché: son estables en la corrida,
+    pero no son citables.
     """
     from apps.document.utils.llm import is_anthropic_model
 
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
+    reference_text = render_references(references or [])
 
     if not is_anthropic_model(model):
         pieces = [
@@ -832,6 +933,7 @@ def build_messages(
             for p in (
                 inventory,
                 render_documents_inline(documents),
+                reference_text,
                 corpus_volatile,
                 step_prompt,
             )
@@ -840,7 +942,7 @@ def build_messages(
         messages.append({"role": "user", "content": "\n\n".join(pieces)})
         return messages
 
-    if not inventory and not documents:
+    if not inventory and not documents and not reference_text:
         pieces = [p for p in (corpus_volatile, step_prompt) if p]
         messages.append({"role": "user", "content": "\n\n".join(pieces)})
         return messages
@@ -867,6 +969,8 @@ def build_messages(
         content.append({"type": "text", "text": inventory})
     for payload in rest:
         content.append(_document_block(payload, citations=citations))
+    if reference_text:
+        content.append({"type": "text", "text": reference_text})
 
     # El punto de caché del último bloque estable: el último documento, o el
     # principal si es el único, o el inventario cuando no hay ninguno completo.

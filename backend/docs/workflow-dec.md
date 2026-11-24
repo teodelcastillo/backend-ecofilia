@@ -36,6 +36,12 @@ En el informe, el portal agrega al cierre de la Sección E las tablas del ejecut
   ejecutivo con el guiado se reconocen por lo que dicen (CT, determinación, co-beneficios,
   recomendaciones, concepto), así que el número exacto dentro de cada sección es libre.
 - **El IET IDO emitido se vincula solo** con la etiqueta `iet-datbc-ido` al lanzar el DEC.
+- **El IET IDO no es evidencia** (24/11/2026). Al análisis le llega aparte de la base
+  documental, como texto rotulado «informe de una etapa anterior · no es evidencia», sin
+  citas, y con reglas que pone el sistema: usarlo sólo para confirmar o cambiar lo del IDO
+  con los documentos de la etapa, nunca como fuente ni justificación. Vale para el
+  vinculado automáticamente y para cualquier documento con la etiqueta `iet-datbc-ido`.
+  Aun así conviene pedir `iet-datbc-ido` sólo en A.4: en C.1 y en los CT no hace falta.
 
 ### Cierre de cada CT (IDO y DEC)
 

@@ -500,3 +500,86 @@ class LayeredCacheTests(SimpleTestCase):
         content = self._content([self.ido])
         self.assertEqual(sum("cache_control" in b for b in content), 1)
         self.assertIn("cache_control", content[-2])
+
+
+class PreviousStageReportTests(SimpleTestCase):
+    """El informe de una etapa anterior (el IET IDO en el DEC) no es evidencia.
+
+    Antes viajaba como un documento citable más, y el análisis DEC justificaba
+    con él («en el IET IDO dice que esto es verde») en vez de confirmar o
+    cambiar lo del IDO con los documentos de su etapa.
+    """
+
+    def setUp(self):
+        self.dec = FakeDocument(1, "dec", "DEC", 2, paged(["Componentes.", "Riego."]))
+        self.nap = FakeDocument(2, "nap", "NAP", 2, paged(["Metas.", "Fin."]))
+        self.iet = FakeDocument(3, "iet-ido", "IET IDO emitido", 2, paged(["Paneles: verde.", "Fin."]))
+        documents = [self.dec, self.nap, self.iet]
+        self.texts = {d.id: d.extracted_text for d in documents}
+        self.plan = cb.plan_context(
+            documents, reserved_tokens=10_000, blueprint_id=1, texts=self.texts, reference_ids={3}
+        )
+
+    def _content(self):
+        with mock.patch.object(cb, "cache_control", return_value={"type": "ephemeral"}):
+            return cb.build_messages(
+                system_prompt="SYS",
+                inventory=cb.render_inventory(self.plan),
+                documents=cb.build_document_payloads(self.plan, texts=self.texts),
+                corpus_volatile="",
+                step_prompt="INSTR",
+                model="claude-sonnet-5",
+                references=cb.build_document_payloads(self.plan, texts=self.texts, references=True),
+            )[1]["content"]
+
+    def test_it_is_not_a_citable_document(self):
+        content = self._content()
+        titles = [b["title"] for b in content if b["type"] == "document"]
+        self.assertEqual(titles, ["[dec] DEC", "[nap] NAP"])
+        reference = next(b for b in content if b["type"] == "text" and "INFORME DE UNA ETAPA ANTERIOR" in b["text"])
+        self.assertIn("NO ES EVIDENCIA", reference["text"])
+        self.assertIn("Paneles: verde.", reference["text"])
+        self.assertNotIn("citations", reference)
+
+    def test_it_goes_after_the_documents_inside_the_cached_prefix(self):
+        content = self._content()
+        kinds = [(b["type"], b.get("title", b.get("text", ""))[:7], "cache_control" in b) for b in content]
+        self.assertEqual(
+            kinds,
+            [
+                ("document", "[dec] D", True),
+                ("text", "## Base", False),
+                ("document", "[nap] N", False),
+                ("text", "===== I", True),
+                ("text", "INSTR", False),
+            ],
+        )
+
+    def test_the_inventory_lists_it_apart_with_its_rules(self):
+        inventory = cb.render_inventory(self.plan)
+        base, _, aparte = inventory.partition("## Informe de una etapa anterior")
+        self.assertNotIn("[iet-ido]", base)
+        self.assertIn("[iet-ido] IET IDO emitido", aparte)
+        self.assertIn("**Nunca** lo cites como fuente", aparte)
+        self.assertIn("no lo respaldan", aparte)
+        self.assertEqual(self.plan.diagnostics()["previous_stage_reports"], ["iet-ido"])
+
+    def test_without_references_nothing_changes(self):
+        plan = cb.plan_context([self.dec, self.nap], reserved_tokens=10_000, blueprint_id=1, texts=self.texts)
+        self.assertNotIn("etapa anterior", cb.render_inventory(plan))
+        self.assertEqual(cb.build_document_payloads(plan, texts=self.texts, references=True), [])
+        self.assertNotIn("previous_stage_reports", plan.diagnostics())
+
+    def test_other_providers_get_it_inline_and_labelled(self):
+        messages = cb.build_messages(
+            system_prompt="SYS",
+            inventory=cb.render_inventory(self.plan),
+            documents=cb.build_document_payloads(self.plan, texts=self.texts),
+            corpus_volatile="",
+            step_prompt="INSTR",
+            model="gpt-4o",
+            references=cb.build_document_payloads(self.plan, texts=self.texts, references=True),
+        )
+        text = messages[1]["content"]
+        self.assertIn("INFORME DE UNA ETAPA ANTERIOR · [iet-ido]", text)
+        self.assertNotIn("DOCUMENTO 3/3 · [iet-ido]", text)

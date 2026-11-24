@@ -229,6 +229,26 @@ class InformeIdoComoEvidenciaTestCase(_Base):
         self.assertTrue(ProjectDocument.objects.filter(project=self.project, document=subido).exists())
 
 
+class InformeIdoNoEsEvidenciaTestCase(_Base):
+    """El IET IDO le llega al análisis DEC aparte, como referencia."""
+
+    def test_the_linked_report_and_an_uploaded_one_are_previous_stage_reports(self):
+        self._emitir_ido()
+        self._a_dec()
+        vinculado = ProjectDocument.objects.get(project=self.project, document__source__startswith="informe-etapa:")
+        tag = vinculado.document.evidence_tags.get(slug="iet-datbc-ido")
+        externo = Document.objects.create(owner=self.owner, name="IET IDO de otra firma", slug="iet-externo")
+        externo.evidence_tags.add(tag)
+        ProjectDocument.objects.create(project=self.project, document=externo)
+        otro = Document.objects.create(owner=self.owner, name="DEC", slug="dec-doc")
+        ProjectDocument.objects.create(project=self.project, document=otro)
+
+        self.assertEqual(
+            stage_inheritance.informes_de_etapas_anteriores(self.project),
+            {vinculado.document_id, externo.id},
+        )
+
+
 class MiradaPorEtapaTestCase(_Base):
     def test_the_ido_view_is_frozen_when_moving_to_dec(self):
         self._determinar()

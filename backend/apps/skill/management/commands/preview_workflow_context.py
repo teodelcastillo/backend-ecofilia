@@ -209,7 +209,7 @@ class Command(BaseCommand):
             context_window=context_budget.context_window_for(model),
             max_document_tokens=skill.max_document_tokens,
         )
-        parts = [corpus.inventory] + [d.text for d in corpus.documents]
+        parts = [corpus.inventory] + [d.text for d in corpus.documents + corpus.references]
         if corpus.volatile:
             parts.append(corpus.volatile)
         self.stdout.write("")
