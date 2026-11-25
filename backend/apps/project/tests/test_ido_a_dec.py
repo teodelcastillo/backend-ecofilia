@@ -558,7 +558,7 @@ class FotoIndependienteTestCase(_Base):
 
         from django.apps import apps as django_apps
 
-        migracion = importlib.import_module("apps.user.migrations.0018_caf_dec_foto_independiente")
+        migracion = importlib.import_module("apps.user.migrations.0019_caf_dec_foto_independiente")
         migracion.aplicar(django_apps, None)
         self.caf.refresh_from_db()
         dec = next(s for s in self.caf.config["stages"] if s["slug"] == "dec")

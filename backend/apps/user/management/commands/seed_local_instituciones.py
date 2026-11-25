@@ -154,7 +154,7 @@ class Command(BaseCommand):
         # El DEC hereda el contexto del IDO y lee su IET emitido.
         importlib.import_module("apps.user.migrations.0017_caf_dec_hereda_contexto").aplicar(django_apps, None)
         # El DEC corre el duplicado del asistente de IDO, como foto independiente.
-        importlib.import_module("apps.user.migrations.0018_caf_dec_foto_independiente").aplicar(django_apps, None)
+        importlib.import_module("apps.user.migrations.0019_caf_dec_foto_independiente").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 

@@ -2,7 +2,7 @@
 
 > **Desde el 25/11/2026 rige otra decisión.** El DEC es una foto independiente de la
 > operación: su informe es un duplicado del asistente de IDO
-> (`ido-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion-copia`, `user/0018`), con
+> (`ido-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion-copia`, `user/0019`), con
 > la plantilla DEC en el portal. Corre sobre los documentos del DEC (no lee el documento IDO
 > ni el IET IDO, `apps/project/services/stage_documents.py`; donde un paso pide `ido` lee
 > `dec`), la determinación del ejecutivo arranca vacía y sólo se heredan del IDO los pasos

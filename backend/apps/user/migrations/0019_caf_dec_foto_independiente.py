@@ -57,6 +57,6 @@ def revertir(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
-    dependencies = [("user", "0017_caf_dec_hereda_contexto")]
+    dependencies = [("user", "0018_configuracion_completa_caf")]
 
     operations = [migrations.RunPython(aplicar, revertir)]
