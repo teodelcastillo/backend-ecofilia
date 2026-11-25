@@ -285,6 +285,7 @@ def build_preview(
             [],
             blueprint_id=blueprint_id,
             project_id=getattr(project, "id", None),
+            stage=getattr(execution, "stage", None),
         ).documents
         corpus = build_step_corpus(
             execution=execution,

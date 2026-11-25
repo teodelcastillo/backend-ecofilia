@@ -246,6 +246,14 @@ def resolve_documents(execution: SkillExecution) -> QuerySet[Document]:
         qs = Document.objects.filter(id__in=doc_ids)
         if slug_filter:
             qs = qs.filter(slug__in=slug_filter)
+        if getattr(execution, "stage", None):
+            # Cada etapa con informe es una foto propia: el DEC no lee el
+            # documento IDO ni el IET IDO (``stage_documents``).
+            from apps.project.services.stage_documents import documentos_de_otras_etapas
+
+            excluidos = documentos_de_otras_etapas(execution.project, execution.stage)
+            if excluidos:
+                qs = qs.exclude(id__in=excluidos)
         return qs
 
     if execution.document_id:
@@ -1361,6 +1369,7 @@ def _resolve_step_documents(
     *,
     blueprint_id: int | None = None,
     project_id: int | None = None,
+    stage: str | None = None,
 ) -> StepScope:
     """
     Narrow the execution's document scope to a single step's documents.
@@ -1417,6 +1426,16 @@ def _resolve_step_documents(
 
     if selection == StepEvidenceSelection.TAGGED:
         tags = _clean_slugs(step.evidence_tags)
+        if stage and project_id is not None:
+            # En una corrida de DEC, pedir el principal de IDO es pedir el del
+            # DEC: el asistente del DEC es una copia del de IDO.
+            from apps.project.models import Project
+            from apps.project.services.stage_documents import etiquetas_equivalentes
+
+            project = Project.objects.filter(pk=project_id).first()
+            equivalentes = etiquetas_equivalentes(project, stage) if project else {}
+            if equivalentes:
+                tags = list(dict.fromkeys(equivalentes.get(tag, tag) for tag in tags))
         extra = _clean_slugs(step.document_slugs)
         diagnostics["tags_requested"] = tags
         if project_id is None:
@@ -1933,6 +1952,7 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
             step_runtime_slugs,
             blueprint_id=blueprint_id,
             project_id=execution.project_id,
+            stage=getattr(execution, "stage", None),
         )
         step_documents = step_scope.documents
 

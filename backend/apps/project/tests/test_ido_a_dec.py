@@ -266,10 +266,9 @@ class MiradaPorEtapaTestCase(_Base):
         congelada = notes["por_etapa"]["ido_cci"]
         self.assertEqual(congelada["assessment"]["determinaciones"]["ct_a1"], "Riesgo medio")
         self.assertEqual(congelada["notas"]["registro_trazabilidad"], {"participacion": ["solicitud"]})
-        self.assertEqual(notes["precarga_de"], "ido_cci")
-        # DEC arranca con una copia de la determinación, pero su registro es propio.
-        self.assertEqual(notes["alineacion_paris"]["ct_a1"], "Riesgo medio")
-        self.assertNotIn("registro_trazabilidad", notes)
+        # DEC es una foto independiente: su determinación arranca vacía.
+        for key in ("precarga_de", "alineacion_paris", "alineacion_fundamentos", "registro_trazabilidad"):
+            self.assertNotIn(key, notes)
 
     def test_editing_in_dec_does_not_touch_the_frozen_ido(self):
         self._determinar()
@@ -292,12 +291,13 @@ class MiradaPorEtapaTestCase(_Base):
 
 
 class FotosTestCase(_Base):
-    def test_the_transition_photo_is_marked(self):
+    def test_no_dec_photo_carries_the_ido_determination(self):
         self._determinar()
         self._emitir_ido()
         self._a_dec()
-        foto = ProjectAlignmentSnapshot.objects.filter(project=self.project, estado="dec").latest("id")
-        self.assertEqual(foto.source, ProjectAlignmentSnapshot.Source.TRANSITION)
+        for foto in ProjectAlignmentSnapshot.objects.filter(project=self.project, estado="dec"):
+            self.assertEqual(foto.source, ProjectAlignmentSnapshot.Source.TRANSITION)
+            self.assertNotEqual((foto.alineacion or {}).get("ct_a1"), "Riesgo medio")
 
     def test_emitting_leaves_the_official_photo(self):
         from apps.project.services.stage_reports import emit
@@ -363,7 +363,8 @@ class StageSummaryTestCase(_Base):
         self.assertEqual(ido["informe"]["estado"], "emitido")
         self.assertEqual(ido["mirada"]["fuente"], "emitido")
         self.assertEqual(dec["informe"]["estado"], "sin_informe")
-        self.assertEqual(dec["mirada"]["fuente"], "vigente")
+        # Recién pasada a DEC, el ejecutivo todavía no determinó nada en DEC.
+        self.assertIsNone(dec["mirada"])
         self.assertNotIn("ia", ido)
 
     def test_staff_also_sees_the_ai_state(self):
@@ -452,3 +453,93 @@ class GuiadoConLaNumeracionDelDecTestCase(_Base):
         }
         self.assertEqual(publicado[704], "Determinación del ejecutivo, Objetivo 1.")
         self.assertEqual(publicado[706], "Recomendaciones del ejecutivo.")
+
+
+class FotoIndependienteTestCase(_Base):
+    """Desde el 25/11/2026 cada etapa con informe es una foto propia.
+
+    El DEC corre un duplicado del asistente de IDO sobre los documentos del
+    DEC: no lee el documento IDO ni el IET IDO, y donde la copia pide el
+    principal de IDO lee el del DEC. Sólo hereda el contexto («B.»).
+    """
+
+    def _tag(self, slug):
+        tag = EvidenceTag.objects.filter(slug=slug, organization__isnull=True).first()
+        return tag or EvidenceTag.objects.create(slug=slug, name=slug.upper())
+
+    def _vincular(self, slug, tag):
+        documento = Document.objects.create(
+            owner=self.owner, name=slug, slug=slug, chunking_status="done", extracted_text="x",
+        )
+        documento.evidence_tags.add(self._tag(tag))
+        ProjectDocument.objects.create(project=self.project, document=documento)
+        return documento
+
+    def _en_dec(self):
+        self.blueprint.evidence_tags.add(self._tag("ido"))
+        self._emitir_ido()
+        self._a_dec(generar=True)
+        dec = self._vincular("doc-dec", "dec")
+        self.project.blueprint_document = dec
+        self.project.save(update_fields=["blueprint_document"])
+        return dec
+
+    def test_dec_does_not_read_the_ido_document_nor_the_ido_report(self):
+        from apps.project.services.stage_documents import documentos_de_otras_etapas
+
+        dec = self._en_dec()
+        ias = self._vincular("doc-ias", "ias")
+        iet_ido = ProjectDocument.objects.get(
+            project=self.project, document__source__startswith="informe-etapa:"
+        ).document_id
+        excluidos = documentos_de_otras_etapas(self.project, "dec")
+        self.assertEqual(excluidos, {self.blueprint.id, iet_ido})
+        self.assertNotIn(dec.id, excluidos)
+        self.assertNotIn(ias.id, excluidos)
+        # En IDO no aplica: no hay documentos de otra etapa que sacar.
+        self.assertEqual(documentos_de_otras_etapas(self.project, "ido_cci") & {ias.id, dec.id}, set())
+
+    def test_a_dec_run_resolves_without_the_ido_document(self):
+        from apps.skill.services import resolve_documents
+
+        dec = self._en_dec()
+        run = SkillExecution.objects.create(skill=self.dec, owner=self.owner, project=self.project, stage="dec")
+        slugs = set(resolve_documents(run).values_list("slug", flat=True))
+        self.assertIn(dec.slug, slugs)
+        self.assertNotIn(self.blueprint.slug, slugs)
+        sin_etapa = SkillExecution.objects.create(skill=self.dec, owner=self.owner, project=self.project)
+        self.assertIn(self.blueprint.slug, set(resolve_documents(sin_etapa).values_list("slug", flat=True)))
+
+    def test_a_step_that_asks_for_the_ido_reads_the_dec(self):
+        from apps.skill.models import StepEvidenceSelection
+        from apps.skill.services import _resolve_step_documents, resolve_documents
+
+        dec = self._en_dec()
+        step = SkillStep.objects.create(
+            skill=self.dec, title="C.1. Co-beneficios", position=9, instructions="x",
+            evidence_selection=StepEvidenceSelection.TAGGED, evidence_tags=["ido", "ias"],
+        )
+        run = SkillExecution.objects.create(skill=self.dec, owner=self.owner, project=self.project, stage="dec")
+        scope = _resolve_step_documents(
+            step, resolve_documents(run), blueprint_id=dec.id, project_id=self.project.pk, stage="dec",
+        )
+        self.assertEqual(list(scope.documents.values_list("slug", flat=True)), [dec.slug])
+        self.assertEqual(scope.diagnostics["tags_requested"], ["dec", "ias"])
+        self.assertEqual(scope.diagnostics["tags_missing"], ["ias"])
+
+    def test_the_migration_points_dec_to_the_duplicated_assistant(self):
+        import importlib
+
+        from django.apps import apps as django_apps
+
+        migracion = importlib.import_module("apps.user.migrations.0018_caf_dec_foto_independiente")
+        migracion.aplicar(django_apps, None)
+        self.caf.refresh_from_db()
+        dec = next(s for s in self.caf.config["stages"] if s["slug"] == "dec")
+        self.assertEqual(dec["report"], migracion.ASISTENTE)
+        self.assertEqual(dec["launches"], [migracion.ASISTENTE])
+        self.assertEqual(dec["hereda"], {"de": "ido_cci", "prefijo": "B."})
+        migracion.revertir(django_apps, None)
+        self.caf.refresh_from_db()
+        dec = next(s for s in self.caf.config["stages"] if s["slug"] == "dec")
+        self.assertEqual((dec["report"], dec["hereda"]["etiqueta"]), (migracion.ANTERIOR, "iet-datbc-ido"))

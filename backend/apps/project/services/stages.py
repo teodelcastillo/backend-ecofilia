@@ -307,25 +307,24 @@ def informe_sin_emitir(project: Project, stage: str, to_stage: str) -> str | Non
     )
 
 
-def congelar_etapa(project: Project, notes: dict, stage: str) -> None:
+def congelar_etapa(project: Project, notes: dict, stage: str) -> bool:
     """Congela en ``notes`` la mirada del ejecutivo de ``stage`` al salir de ella.
 
     La determinación de una etapa es parte de la historia de la operación: la
     de IDO no se pisa cuando el ejecutivo trabaja el DEC. Queda en
-    ``por_etapa[stage]`` con su informe emitido; la etapa siguiente arranca con
-    una copia (``precarga_de``) que el ejecutivo confirma o cambia. Sólo las
-    etapas con informe se congelan, y una vez: volver atrás y avanzar de nuevo
-    no reescribe lo congelado.
+    ``por_etapa[stage]`` con su informe emitido. Sólo las etapas con informe se
+    congelan, y una vez: volver atrás y avanzar de nuevo no reescribe lo
+    congelado. Devuelve si congeló.
     """
     from apps.project.models import ProjectStageReport
     from apps.project.services.caf_criteria import executive_assessment
 
     config = institution_config.config_for_project(project)
     if stage not in institution_config.report_stages(config):
-        return
+        return False
     por_etapa = dict(notes.get(POR_ETAPA_KEY) or {})
     if stage in por_etapa:
-        return
+        return False
     informe = (
         ProjectStageReport.objects.filter(
             project=project, stage=stage, voided_at__isnull=True, superseded_at__isnull=True
@@ -341,9 +340,21 @@ def congelar_etapa(project: Project, notes: dict, stage: str) -> None:
         "congelado_en": timezone.now().isoformat(),
     }
     notes[POR_ETAPA_KEY] = por_etapa
-    notes[PRECARGA_KEY] = stage
     for key in CLAVES_PROPIAS_DE_LA_ETAPA:
         notes.pop(key, None)
+    return True
+
+
+def empezar_etapa_de_cero(notes: dict) -> None:
+    """La mirada del ejecutivo de una etapa con informe arranca vacía.
+
+    Cada etapa es una foto independiente de la operación (25/11/2026): el
+    ejecutivo determina el DEC sobre el análisis del DEC, sin partir de lo que
+    determinó en IDO, que queda congelado en ``por_etapa``.
+    """
+    for key in CLAVES_DEL_EJECUTIVO:
+        notes.pop(key, None)
+    notes.pop(PRECARGA_KEY, None)
 
 
 def mirada_de_etapa(project: Project, stage: str) -> dict | None:
@@ -400,7 +411,11 @@ def transition(
         notes = dict(previous_notes)
         notes["estado"] = to_stage
         if stage_index(to_stage, locked) > stage_index(from_stage, locked):
-            congelar_etapa(locked, notes, from_stage)
+            congelada = congelar_etapa(locked, notes, from_stage)
+            if congelada and to_stage in institution_config.report_stages(
+                institution_config.config_for_project(locked)
+            ):
+                empezar_etapa_de_cero(notes)
         locked.context_notes = notes
         locked.save(update_fields=["context_notes", "updated_at"])
         record_if_changed(

@@ -318,7 +318,7 @@ class SeedLocalInstitucionesTestCase(TestCase):
         from apps.project.services.caf_criteria import ecofilia_green_components
         from apps.skill.models import SkillExecution
 
-        dec_report = "dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion"
+        dec_report = "ido-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion-copia"
         dec = next(s for s in caf.config["stages"] if s["slug"] == "dec")
         self.assertEqual(dec.get("report"), dec_report)
         self.assertIn(dec_report, dec["launches"])

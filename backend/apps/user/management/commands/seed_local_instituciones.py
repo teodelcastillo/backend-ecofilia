@@ -153,6 +153,8 @@ class Command(BaseCommand):
         importlib.import_module("apps.user.migrations.0016_caf_dec_y_mision").aplicar(django_apps, None)
         # El DEC hereda el contexto del IDO y lee su IET emitido.
         importlib.import_module("apps.user.migrations.0017_caf_dec_hereda_contexto").aplicar(django_apps, None)
+        # El DEC corre el duplicado del asistente de IDO, como foto independiente.
+        importlib.import_module("apps.user.migrations.0018_caf_dec_foto_independiente").aplicar(django_apps, None)
         caf_skills = Skill.objects.filter(scope=SkillScope.ORGANIZATION, organization=caf).exclude(slug=INSUMO_SLUG)
         caf.enabled_skills.add(*caf_skills)
 
@@ -254,7 +256,7 @@ class Command(BaseCommand):
         # con su corrida completada (contenido inventado, estructura de prod).
         etapas = seed_operaciones.sembrar(caf, caf_member, {
             "ido_cci": informes[seed_workflows.IET_IDO],
-            "dec": informes[seed_workflows.IET_DEC],
+            "dec": informes[seed_workflows.IET_DEC_COPIA],
         })
         for project in etapas:
             project.enabled_skills.add(*caf_skills)

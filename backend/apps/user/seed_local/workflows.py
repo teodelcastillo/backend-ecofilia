@@ -9,9 +9,9 @@ ninguna migración. Cada JSON de ``workflows/`` es la respuesta de
 ``GET /api/skills/<slug>/`` de producción, sin dueño ni ids. Para refrescarlos,
 ver «Prueba local» en ``backend/docs/contrato-instituciones.md``.
 
-Excepción: la IET de DEC ya tiene la estructura propuesta en ``backend/docs/workflow-dec.md``
-(los mismos códigos que IDO y el contexto B.1–B.5 primero), que todavía no está en producción.
-Refrescarla desde producción la vuelve a la estructura vieja.
+Desde el 25/11/2026 el informe de DEC es un duplicado del de IDO
+(``IET_DEC_COPIA``): su JSON es el de IDO con el slug y el nombre de producción.
+La IET de DEC anterior (``IET_DEC``) queda sembrada para las corridas viejas.
 
 Se cargan con ``update_or_create`` por slug, y los pasos por posición: las ids
 de los pasos que ya existían no cambian, así que correr el seed de nuevo no
@@ -29,8 +29,9 @@ WORKFLOWS_DIR = Path(__file__).resolve().parent / "workflows"
 
 IET_IDO = "caf-iet-datbc-evaluacion-tecnica"
 IET_DEC = "dec-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion"
+IET_DEC_COPIA = "ido-iet-datbc-informe-de-evaluacion-tecnica-de-la-operacion-copia"
 GUIADO = "caf-iet-guiado-ejecutivo"
-SLUGS = (IET_IDO, GUIADO, IET_DEC)
+SLUGS = (IET_IDO, GUIADO, IET_DEC, IET_DEC_COPIA)
 
 # Además de la definición: dónde se puede correr y quién.
 EXTRA_SKILL_FIELDS = ("allowed_contexts", "members_can_run")

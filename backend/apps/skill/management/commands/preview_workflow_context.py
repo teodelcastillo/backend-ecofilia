@@ -200,6 +200,7 @@ class Command(BaseCommand):
                 [],
                 blueprint_id=blueprint_id,
                 project_id=execution.project_id,
+                stage=getattr(execution, "stage", None),
             ).documents,
             query_text=f"{step.title}. {step.instructions}".strip(),
             reserved_tokens=reserved,
