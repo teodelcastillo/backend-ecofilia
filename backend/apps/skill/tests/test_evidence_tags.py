@@ -202,6 +202,26 @@ class StepEvidenceScopeTestCase(TestCase):
         self.assertEqual(self._slugs(scope), ["ido"])
         self.assertEqual(scope.diagnostics["empty_reason"], "sin_documentos_etiquetados")
 
+    def test_a_requested_type_the_operation_lacks_is_noted_even_if_others_match(self):
+        """Un paso que pide la NDC y el IDO-anterior, en una operación sin lo
+        segundo, corre con la NDC y queda anotado lo que falta: es lo que el
+        prompt le dice al modelo para que no lo invente."""
+        step = SkillStep.objects.create(
+            skill=self.skill,
+            title="A.4",
+            instructions="x",
+            position=9,
+            evidence_selection=StepEvidenceSelection.TAGGED,
+            evidence_tags=["ndc", "iet-datbc-ido"],
+        )
+        scope = self._scope(step)
+        self.assertEqual(self._slugs(scope), ["ido", "ndc-colombia"])
+        self.assertEqual(scope.diagnostics["tags_missing"], ["iet-datbc-ido"])
+        self.assertNotIn("empty_reason", scope.diagnostics)
+
+    def test_nothing_is_noted_when_every_type_is_there(self):
+        self.assertNotIn("tags_missing", self._scope(self._ct_m3(9)).diagnostics)
+
     def test_operation_override_adds_a_tag_the_document_lacks(self):
         link = ProjectDocument.objects.get(project=self.project, document=self.anexo)
         override_tags(link, [self.tag_ndc])

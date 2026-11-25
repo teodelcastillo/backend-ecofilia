@@ -17,11 +17,14 @@ Usage by App:
 - Chat: Uses generate_chat_completion() for conversational responses
 - Evaluations: Uses generate_chat_completion() for structured evaluations
 """
+import logging
 import os
 from typing import Generator, List, Tuple, Optional
 
 import httpx
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 from apps.document.utils.llm import (
     anthropic_chat_completion,
@@ -184,6 +187,33 @@ def generate_chunk_context(
         return ""
 
 
+# Tope de entrada de los modelos de embeddings de OpenAI: 8192 tokens. Una
+# consulta más larga hacía fallar la búsqueda entera: el paso C.1 del DEC arma
+# la suya con su instrucción, que trae el catálogo de actividades, y se quedaba
+# sin fragmentos recuperados de todos los documentos degradados. Se recorta por
+# caracteres, sin tokenizador (tiktoken baja su tabla de internet la primera
+# vez). Un token nunca abarca menos de un byte, así que 7.000 caracteres entran
+# aun en el peor caso (códigos como «M.11.7.1.» y tildes, de dos bytes), y
+# siguen siendo mucho más de lo que define a una consulta.
+EMBEDDING_MAX_INPUT_CHARS = 7_000
+
+
+def _fit_embedding_input(text: str) -> str:
+    """El texto, recortado a lo que acepta el modelo de embeddings.
+
+    El principio de una consulta es lo que la define (título e instrucción),
+    así que se conserva el principio.
+    """
+    if not text or len(text) <= EMBEDDING_MAX_INPUT_CHARS:
+        return text
+    logger.info(
+        "Entrada de embedding recortada: %d caracteres sobre un tope de %d.",
+        len(text),
+        EMBEDDING_MAX_INPUT_CHARS,
+    )
+    return text[:EMBEDDING_MAX_INPUT_CHARS]
+
+
 def embed_text(text: str, model: str | None = None) -> List[float]:
     """
     Generate embeddings for text using OpenAI's embedding model.
@@ -204,7 +234,7 @@ def embed_text(text: str, model: str | None = None) -> List[float]:
     """
     client = get_openai_client()
     embedding_model = model or MODEL_EMBEDDING
-    kwargs: dict = {"input": text, "model": embedding_model}
+    kwargs: dict = {"input": _fit_embedding_input(text), "model": embedding_model}
     if EMBEDDING_DIMENSIONS is not None:
         kwargs["dimensions"] = EMBEDDING_DIMENSIONS
     response = client.embeddings.create(**kwargs)

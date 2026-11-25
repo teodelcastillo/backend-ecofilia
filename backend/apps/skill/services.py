@@ -1439,6 +1439,16 @@ def _resolve_step_documents(
             diagnostics["empty_reason"] = "sin_documentos_etiquetados"
             return StepScope(_with_blueprint(documents.none()), diagnostics)
         diagnostics["matched_count"] = matched_count
+        # Los tipos pedidos que la operación no tiene, aunque otros sí estén.
+        # Un paso que pide el DEC y el IDO, en una operación sin IDO, corría
+        # con el DEC sin enterarse de la ausencia, y si su instrucción le pedía
+        # comparar con el IDO, lo inventaba.
+        missing = [
+            tag for tag in tags
+            if not documents.filter(tagged_in_project_q(project_id, [tag])).exists()
+        ]
+        if missing:
+            diagnostics["tags_missing"] = missing
         return StepScope(_with_blueprint(matched), diagnostics)
 
     if selection == StepEvidenceSelection.MANUAL:
@@ -2020,6 +2030,16 @@ def _run_copilot(execution: SkillExecution, documents: QuerySet[Document]) -> No
                     f"vinculados de tipo: {pedidas}. Decilo explícitamente en tu "
                     "salida y no sustituyas esa evidencia por otros documentos ni "
                     "por conocimiento general."
+                )
+            elif wants_documents and step_scope.diagnostics.get("tags_missing"):
+                faltan = ", ".join(step_scope.diagnostics["tags_missing"])
+                lines.append(
+                    f"\n## Evidencia faltante: este paso pide documentos de tipo "
+                    f"{faltan} y la operación no tiene ninguno. No los supongas: "
+                    "no describas, compares ni cites su contenido. Si la instrucción "
+                    "pide algo que depende de ellos (por ejemplo, comparar con una "
+                    "etapa anterior), decí explícitamente que la operación no tiene "
+                    "ese documento y trabajá sólo con los que sí tenés."
                 )
             # Inject typed parameter values as a context note
             if execution.input_values:
