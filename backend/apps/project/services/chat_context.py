@@ -119,17 +119,33 @@ def _usd(value) -> str:
 # ── [Operación] ──────────────────────────────────────────────────────────
 
 
-def _datos_generales(project: Project) -> list[str]:
+def _rotulos(config: dict | None) -> dict[str, str]:
+    """El rótulo de cada dato: el del formulario de la institución, si lo tiene."""
+    rotulos = dict(_ROTULOS_GENERALES)
+    if config:
+        from apps.user import operation_form
+
+        for clave, rotulo in operation_form.field_labels(institution_config.operation_form(config)).items():
+            if clave != "estado":
+                rotulos[clave] = rotulo
+    return rotulos
+
+
+def _datos_generales(project: Project, config: dict | None = None) -> list[str]:
     notes = project.context_notes if isinstance(project.context_notes, dict) else {}
+    rotulos = _rotulos(config)
     lineas = [f"- Nombre: {project.name}"]
     if _texto(project.description):
         lineas.append(f"- Descripción: {_corto(project.description, 600)}")
-    for clave, rotulo in _ROTULOS_GENERALES.items():
+    for clave, rotulo in rotulos.items():
         valor = _valor(notes.get(clave))
+        if clave == "estado" and config:
+            # La etapa se guarda como slug: al chat le llega su nombre.
+            valor = institution_config.stage_label(config, valor) if valor else valor
         if valor:
             lineas.append(f"- {rotulo}: {_corto(valor, 600)}")
     for clave, value in notes.items():
-        if clave in _ROTULOS_GENERALES or clave in _CLAVES_NO_GENERALES or clave.startswith("_"):
+        if clave in rotulos or clave in _CLAVES_NO_GENERALES or clave.startswith("_"):
             continue
         valor = _valor(value)
         if valor and len(valor) <= 600:
@@ -295,7 +311,8 @@ def operation_context(project: Project | None) -> str:
         partes = [
             INSTRUCCIONES,
             "CONTEXTO DE LA OPERACIÓN",
-            f"{ORIGEN_OPERACION} Datos generales:\n" + "\n".join(_datos_generales(project)),
+            f"{ORIGEN_OPERACION} Datos generales:\n"
+            + "\n".join(_datos_generales(project, institution_config.config_for_project(project))),
             f"{ORIGEN_EJECUTIVO} Lo que determinó el ejecutivo (la decisión de la operación):\n"
             + "\n".join(_mirada_del_ejecutivo(project, stage)),
             f"{ORIGEN_ECOFILIA} Lo que sugiere el informe de Ecofilia"

@@ -337,7 +337,7 @@ class CafConfigMigrationTestCase(TestCase):
         migration.aplicar(django_apps, None)
         caf.refresh_from_db()
         other.refresh_from_db()
-        self.assertEqual(caf.config, caf_config())
+        self.assertEqual(caf.config, migration.CAF_CONFIG)
         self.assertEqual(other.config, {})
         migration.revertir(django_apps, None)
         caf.refresh_from_db()

@@ -11,7 +11,12 @@ código, en el back y en el front:
 - los criterios de evaluación.
 
 Esto lo saca a ``Organization.config``, un documento versionado que tiene la
-forma descrita en ``backend/docs/contrato-instituciones.md`` (fase 1).
+forma descrita en ``backend/docs/contrato-instituciones.md`` (fase 1). Desde el
+25 de noviembre de 2026 suma, también opcionales: las secciones del portal
+(``portal``), las etapas en preparación (``stages[].en_preparacion``), el
+formulario de la operación (``operation_form``, ver
+``apps.user.operation_form``) y la plantilla del informe con el estilo del
+portal (``report_template`` y ``branding``, ver ``apps.user.report_template``).
 
 - :func:`effective_config` es lo que usa el resto del código: la configuración
   de la institución con lo que le falte completado desde :data:`BASE_CONFIG`,
@@ -27,6 +32,9 @@ from __future__ import annotations
 
 import copy
 import re
+
+from apps.user import operation_form as op_form
+from apps.user import report_template as template
 
 CONFIG_VERSION = 1
 
@@ -56,6 +64,11 @@ COUNTRY_CONTEXT_TAGS = [
     "reporte-nacional",
 ]
 
+# Las secciones del portal de una institución (``/{slug}/...``), en el orden de
+# su navegación. La proyección es además sólo del superadmin de Ecofilia.
+PORTAL_SECTIONS = ("biblioteca", "operaciones", "informes", "tablero", "proyeccion")
+DEFAULT_PORTAL_SECTIONS = ["biblioteca", "operaciones", "informes", "tablero"]
+
 # Para las operaciones sin institución y las instituciones sin configuración
 # propia. No tiene etapas ni workflows: nada de lo de una institución.
 BASE_CONFIG: dict = {
@@ -67,6 +80,12 @@ BASE_CONFIG: dict = {
         {"slug": "contexto", "label": "Contexto país", "tags": list(COUNTRY_CONTEXT_TAGS)},
     ],
     "evaluation": {"framework": "", "criteria": []},
+    # Qué secciones tiene su portal y qué temas de la biblioteca van fijados arriba.
+    "portal": {"sections": list(DEFAULT_PORTAL_SECTIONS), "pinned_topics": []},
+    # Los datos que se cargan de cada operación (``apps.user.operation_form``).
+    "operation_form": op_form.base_operation_form(),
+    # Sin plantilla propia, el front usa la del asistente de informe.
+    "report_template": None,
 }
 
 TOP_LEVEL_KEYS = tuple(BASE_CONFIG)
@@ -186,6 +205,34 @@ def criteria(config: dict) -> list[dict]:
     return list((config.get("evaluation") or {}).get("criteria") or [])
 
 
+def tag_uses(config: dict, slug: str) -> list[str]:
+    """Dónde nombra la configuración a la etiqueta ``slug``."""
+    uses = []
+    for stage in config.get("stages") or []:
+        label = stage.get("label") or stage.get("slug")
+        if stage.get("principal_tag") == slug:
+            uses.append(f"documento principal de la etapa «{label}»")
+        if (stage.get("hereda") or {}).get("etiqueta") == slug:
+            uses.append(f"lo que hereda la etapa «{label}»")
+    for group in config.get("evidence_tag_groups") or []:
+        if slug in (group.get("tags") or []):
+            uses.append(f"grupo «{group.get('label') or group.get('slug')}»")
+    return uses
+
+
+def portal_sections(config: dict) -> list[str]:
+    return list((config.get("portal") or {}).get("sections") or [])
+
+
+def stages_in_preparation(config: dict) -> list[str]:
+    """Las etapas que todavía sólo ve Ecofilia (en CAF, DEC mientras se prepara)."""
+    return [s["slug"] for s in config.get("stages") or [] if s.get("en_preparacion")]
+
+
+def operation_form(config: dict) -> dict:
+    return config.get("operation_form") or BASE_CONFIG["operation_form"]
+
+
 # ---------------------------------------------------------------------------
 # Escritura
 # ---------------------------------------------------------------------------
@@ -219,6 +266,11 @@ def validate_config(raw, organization) -> tuple[dict | None, list[str]]:
     config["workflows"] = _workflows(config.get("workflows"), skills, errors)
     config["evidence_tag_groups"] = _groups(config.get("evidence_tag_groups"), tags, errors)
     config["evaluation"] = _evaluation(config.get("evaluation"), errors)
+    config["portal"] = _portal(config.get("portal"), errors)
+    config["operation_form"] = op_form.validate_operation_form(
+        config.get("operation_form"), set(stage_slugs(config)), errors
+    )
+    config["report_template"] = template.report_template(config.get("report_template"), errors)
     return (None, errors) if errors else (config, [])
 
 
@@ -262,7 +314,7 @@ def _branding(value, errors: list[str]) -> dict:
     if not isinstance(value, dict):
         errors.append("branding: tiene que ser un objeto.")
         return {"display_name": "", "logo_url": ""}
-    unknown = sorted(set(value) - {"display_name", "logo_url"})
+    unknown = sorted(set(value) - {"display_name", "logo_url", *template.BRANDING_OPTIONAL})
     if unknown:
         errors.append(f"branding: claves desconocidas: {', '.join(unknown)}.")
     display_name = _text(value.get("display_name"))
@@ -271,7 +323,52 @@ def _branding(value, errors: list[str]) -> dict:
     logo_url = _text(value.get("logo_url"))
     if logo_url and not (logo_url.startswith("/") or logo_url.startswith("https://")):
         errors.append("branding.logo_url: tiene que ser una ruta del front (/...) o una URL https.")
-    return {"display_name": display_name, "logo_url": logo_url}
+    # Nombre, color y logo del portal: opcionales; sin valor, los de la plataforma.
+    return {"display_name": display_name, "logo_url": logo_url, **template.branding_optional(value, errors)}
+
+
+def _portal(value, errors: list[str]) -> dict:
+    """Las secciones del portal y los temas fijados de su biblioteca."""
+    if not isinstance(value, dict):
+        errors.append("portal: tiene que ser un objeto.")
+        return copy.deepcopy(BASE_CONFIG["portal"])
+    unknown = sorted(set(value) - {"sections", "pinned_topics"})
+    if unknown:
+        errors.append(f"portal: claves desconocidas: {', '.join(unknown)}.")
+    sections = value.get("sections", DEFAULT_PORTAL_SECTIONS)
+    if not isinstance(sections, list):
+        errors.append("portal.sections: tiene que ser una lista.")
+        sections = []
+    for i, section in enumerate(sections):
+        if section not in PORTAL_SECTIONS:
+            errors.append(f"portal.sections[{i}]: «{section}» no existe. Conocidas: {', '.join(PORTAL_SECTIONS)}.")
+    topics = value.get("pinned_topics", [])
+    if not isinstance(topics, list):
+        errors.append("portal.pinned_topics: tiene que ser una lista.")
+        topics = []
+    clean_topics, acronyms = [], set()
+    for i, topic in enumerate(topics):
+        path = f"portal.pinned_topics[{i}]"
+        if not isinstance(topic, dict):
+            errors.append(f"{path}: tiene que ser un objeto con acronym y label.")
+            continue
+        unknown = sorted(set(topic) - {"acronym", "label"})
+        if unknown:
+            errors.append(f"{path}: claves desconocidas: {', '.join(unknown)}.")
+        acronym, label = _text(topic.get("acronym")).lower(), _text(topic.get("label"))
+        if not acronym:
+            errors.append(f"{path}.acronym: no puede estar vacío.")
+        elif acronym in acronyms:
+            errors.append(f"{path}.acronym: «{acronym}» está repetido.")
+        acronyms.add(acronym)
+        if not label:
+            errors.append(f"{path}.label: no puede estar vacío.")
+        clean_topics.append({"acronym": acronym, "label": label})
+    return {
+        # En el orden de la navegación del portal, sin repetidas.
+        "sections": [s for s in PORTAL_SECTIONS if s in sections],
+        "pinned_topics": clean_topics,
+    }
 
 
 def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[dict]:
@@ -284,9 +381,19 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
         if not isinstance(item, dict):
             errors.append(f"{path}: tiene que ser un objeto.")
             continue
-        unknown = sorted(set(item) - {"slug", "label", "principal_tag", "launches", "report", "hereda"})
+        unknown = sorted(
+            set(item) - {"slug", "label", "principal_tag", "launches", "report", "hereda", "en_preparacion"}
+        )
         if unknown:
             errors.append(f"{path}: claves desconocidas: {', '.join(unknown)}.")
+        # Una etapa en preparación sólo la ve Ecofilia: sus miembros no entran a
+        # ella ni ven sus operaciones (en CAF, DEC mientras se termina).
+        en_preparacion = item.get("en_preparacion", False)
+        if not isinstance(en_preparacion, bool):
+            errors.append(f"{path}.en_preparacion: tiene que ser true o false.")
+            en_preparacion = False
+        elif en_preparacion and i == 0:
+            errors.append(f"{path}.en_preparacion: la primera etapa no puede estar en preparación.")
         slug = item.get("slug")
         if not _is_slug(slug):
             errors.append(f"{path}.slug: tiene que ser un slug (minúsculas, números, - o _).")
@@ -325,6 +432,7 @@ def _stages(value, tags: set[str], skills: set[str], errors: list[str]) -> list[
                 "launches": list(dict.fromkeys(launches)),
                 **({"report": report} if report else {}),
                 **({"hereda": hereda} if hereda else {}),
+                **({"en_preparacion": True} if en_preparacion else {}),
             }
         )
     return out

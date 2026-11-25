@@ -259,6 +259,39 @@ class AdminOrganizationDetailView(AdminView):
         return Response(after)
 
 
+class AdminOrganizationSkillsView(AdminView):
+    """Copias propias de skills de Ecofilia para una institución que ya existe.
+
+    Lo mismo que ``clone_skills`` del alta (fase 5), para después: cada copia es
+    de la institución, queda habilitada y, si corre sobre operaciones, entra
+    en las de cada operación nueva. Nunca se copia de otra institución.
+    """
+
+    def post(self, request, slug):
+        from apps.user.onboarding import OnboardingError, clone_skills_into
+
+        org = get_object_or_404(Organization, slug=slug)
+        data = request.data if isinstance(request.data, dict) else {}
+        unknown = sorted(set(data) - {"clone"})
+        if unknown:
+            return _bad({"detail": [f"Campos desconocidos: {', '.join(unknown)}."]})
+        try:
+            with transaction.atomic():
+                cloned = clone_skills_into(org, data.get("clone"))
+                audit.record(
+                    "admin.organization.skills_cloned",
+                    request=request,
+                    organization=org,
+                    target=org,
+                    data={"cloned_skills": cloned},
+                )
+        except OnboardingError as exc:
+            return _bad(exc.errors)
+        return Response(
+            {**organization_detail(org), "cloned_skills": cloned}, status=status.HTTP_201_CREATED
+        )
+
+
 class AdminOrganizationMembersView(AdminView):
     def post(self, request, slug):
         from apps.user.onboarding import OnboardingError, add_member

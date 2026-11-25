@@ -158,6 +158,43 @@ _FIELD_LIST: list[ExtractableField] = [
 EXTRACTABLE_FIELDS: dict[str, ExtractableField] = {f.key: f for f in _FIELD_LIST}
 
 
+def _with_choices(field: ExtractableField, choices) -> ExtractableField:
+    """El campo con las opciones de la institución en vez de las de CAF.
+
+    El tipo de operación es una lista cerrada, y cada institución tiene la
+    suya en su formulario (``operation_form``). Pedirle a otra institución que
+    elija entre los tipos de CAF sería darle el vocabulario de CAF.
+    """
+    choices = tuple(c for c in choices if isinstance(c, str) and c.strip())
+    if not field.choices or not choices or choices == field.choices:
+        return field
+    description = (
+        f"{field.label} según el documento, exactamente uno de estos valores, copiado tal cual: "
+        + "; ".join(f"«{c}»" for c in choices)
+        + ". Si el documento no permite saberlo, dejalo vacío."
+    )
+    return ExtractableField(key=field.key, label=field.label, description=description, choices=choices)
+
+
+def institution_fields(project) -> dict[str, ExtractableField]:
+    """Los campos que la IA completa en las operaciones de la institución.
+
+    Son los del registro que el formulario de la institución tiene con un modo
+    de IA (``fill`` o ``suggest``), con sus propias opciones. En CAF: el
+    objetivo, los componentes y el tipo de operación.
+    """
+    from apps.user import institution_config, operation_form
+
+    form = institution_config.operation_form(institution_config.config_for_project(project))
+    out = {}
+    for field in operation_form.fields(form):
+        base = EXTRACTABLE_FIELDS.get(field.get("key"))
+        if base is None or not field.get("ai"):
+            continue
+        out[base.key] = _with_choices(base, field.get("options") or ())
+    return out
+
+
 def available_fields() -> list[dict[str, str]]:
     """Return the field registry as a serializable list for API exposure."""
     return [
@@ -280,7 +317,11 @@ def _complete(messages: list[dict], field_keys: list[str], model: str) -> tuple[
         raise RuntimeError("La respuesta del modelo no es JSON válido.") from exc
 
 
-def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
+def extract_fields(
+    text: str,
+    field_keys: list[str],
+    registry: dict[str, ExtractableField] | None = None,
+) -> dict[str, Any]:
     """
     Extract structured fields from document text using an LLM.
 
@@ -302,7 +343,9 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
     if unknown:
         raise ValueError(f"Campos no reconocidos: {', '.join(unknown)}")
 
-    fields = [EXTRACTABLE_FIELDS[k] for k in field_keys]
+    # Las opciones de una lista cerrada pueden ser las de la institución.
+    registry = {**EXTRACTABLE_FIELDS, **(registry or {})}
+    fields = [registry[k] for k in field_keys]
     messages = _build_messages(text, fields)
     model = effective_chat_model(_EXTRACTION_MODEL)
 
@@ -331,7 +374,7 @@ def extract_fields(text: str, field_keys: list[str]) -> dict[str, Any]:
     # OpenAI path — normalize so callers always get a string.
     out = {k: _coerce_to_text(result.get(k)) for k in field_keys}
     for key in field_keys:
-        choices = EXTRACTABLE_FIELDS[key].choices
+        choices = registry[key].choices
         if choices and out.get(key) not in choices:
             out[key] = None
     return out
@@ -365,6 +408,11 @@ def ai_fill_project(project, field_keys: list[str]) -> dict[str, Any]:
             "El proyecto no tiene un documento fuente (blueprint) asignado. "
             "Asociá un documento blueprint antes de usar esta función."
         )
+    # Las opciones cerradas (el tipo de operación) son las de su institución,
+    # cuando no son las del registro.
+    registry = {
+        k: f for k, f in institution_fields(project).items() if k in field_keys and f is not EXTRACTABLE_FIELDS[k]
+    }
 
     doc = project.blueprint_document
     text = (doc.extracted_text or "").strip()
@@ -379,7 +427,7 @@ def ai_fill_project(project, field_keys: list[str]) -> dict[str, Any]:
             "estado en la biblioteca o reprocesalo."
         )
 
-    return extract_fields(text, field_keys)
+    return extract_fields(text, field_keys, registry) if registry else extract_fields(text, field_keys)
 
 
 def save_extracted(project_id: int, results: dict[str, Any], *, only_missing: bool) -> dict[str, str]:
@@ -425,9 +473,11 @@ def fill_missing_from_blueprint(project_id: int) -> dict[str, str]:
     """
     from apps.project.models import Project
 
-    project = Project.objects.select_related("blueprint_document").get(pk=project_id)
+    project = Project.objects.select_related("blueprint_document", "organization").get(pk=project_id)
     notes = project.context_notes if isinstance(project.context_notes, dict) else {}
-    missing = [k for k in EXTRACTABLE_FIELDS if not str(notes.get(k) or "").strip()]
+    # Sólo los que el formulario de su institución completa con IA: una
+    # institución sin tipo de operación cerrado no recibe uno de CAF.
+    missing = [k for k in institution_fields(project) if not str(notes.get(k) or "").strip()]
     if not missing or not project.blueprint_document_id:
         return {}
 

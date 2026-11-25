@@ -318,7 +318,14 @@ no en el código:
 - la etiqueta del documento principal por etapa;
 - qué workflow es el informe, el guiado y la lectura;
 - los grupos de etiquetas;
-- los criterios de evaluación.
+- los criterios de evaluación;
+- las secciones de su portal y los temas fijados de su biblioteca (`portal`);
+- las etapas en preparación, que sólo ve Ecofilia (`stages[].en_preparacion`);
+- el formulario de la operación (`operation_form`, `apps/user/operation_form.py`):
+  sus campos, la carátula del informe, los rótulos que reciben los asistentes
+  y qué completa la IA;
+- la plantilla del informe y el estilo del portal (`report_template`,
+  `apps/user/report_template.py`).
 
 Se lee con `apps.user.institution_config.effective_config` y se escribe validada
 (`validate_config`, `PUT /api/organizations/{slug}/config/`). Sin configuración

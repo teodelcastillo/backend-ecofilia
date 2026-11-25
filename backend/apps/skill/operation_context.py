@@ -108,25 +108,59 @@ def _clean(value) -> str:
     return "" if text.lower() in ("", "none", "null") else text
 
 
-def _format_notes(context_notes: dict) -> list[str]:
+def _from_config(config: dict | None) -> tuple[dict[str, str], set[str], set[str], dict[str, str]]:
+    """Rótulos, campos que van, campos que no y etapas, según la institución.
+
+    Sin configuración (los dobles de los tests, o quien no la pase) rige lo de
+    siempre: los rótulos y los datos de tramitación de CAF.
+    """
+    if not config:
+        return {}, set(), set(), dict(_ESTADO_LABELS)
+    from apps.user import institution_config, operation_form
+
+    form = institution_config.operation_form(config)
+    labels = operation_form.field_labels(form)
+    for field in operation_form.fields(form):
+        other_key = f"{field['key']}{operation_form.OTHER_SUFFIX}"
+        # Con rótulo cuidado (los de CAF), el de siempre.
+        if field.get("type") == "multiselect" and field.get("other_option") and other_key not in dict(_LABELS):
+            labels.setdefault(other_key, f"{field['label']} (otros)")
+    excluded = operation_form.keys_out_of_analysis(form)
+    stages = {s["slug"]: s["label"] for s in config.get("stages") or [] if s.get("slug")}
+    return labels, set(labels) - excluded, excluded, stages or dict(_ESTADO_LABELS)
+
+
+def _format_notes(context_notes: dict, config: dict | None = None) -> list[str]:
     notes = context_notes or {}
     lines: list[str] = []
     seen: set[str] = set()
+    labels, included, excluded, stage_labels = _from_config(config)
+
+    def skipped(key: str) -> bool:
+        # La configuración decide sobre sus campos; lo que no es un campo de
+        # la institución (datos viejos de CAF) sigue la regla de siempre.
+        if key in included:
+            return False
+        return key in excluded or key in _SKIP_KEYS
 
     for key, label in _LABELS:
         value = _clean(notes.get(key))
         seen.add(key)
+        if skipped(key):
+            continue
         if key == "estado":
-            value = _ESTADO_LABELS.get(value, value)
+            value = stage_labels.get(value, value)
         if value:
-            lines.append(f"- {label}: {value}")
+            # «Estado de avance» no es vocabulario de una institución: queda.
+            lines.append(f"- {label if key == 'estado' else labels.get(key, label)}: {value}")
 
     for key, value in notes.items():
-        if key in seen or key in _SKIP_KEYS or key in _NARRATIVE_KEYS:
+        if key in seen or skipped(key) or key in _NARRATIVE_KEYS:
             continue
         cleaned = _clean(value)
         if cleaned:
-            lines.append(f"- {key.replace('_', ' ').capitalize()}: {cleaned}")
+            label = labels.get(key) or key.replace("_", " ").capitalize()
+            lines.append(f"- {label}: {cleaned}")
 
     return lines
 
@@ -162,12 +196,17 @@ def _format_blueprint(project, *, include_summary: bool = True) -> list[str]:
     return lines
 
 
-def build_operation_context_block(project, *, include_blueprint_summary: bool = True) -> str:
+def build_operation_context_block(
+    project, *, include_blueprint_summary: bool = True, config: dict | None = None
+) -> str:
     """
     Bloque de contexto de la operación, o cadena vacía si no hay operación.
 
     Se antepone al system prompt de cada paso, de modo que todo el workflow
     comparte exactamente el mismo contexto.
+
+    ``config`` es la configuración de la institución de la operación: de ahí
+    salen el rótulo de cada dato y cuáles no van al análisis.
     """
     if project is None:
         return ""
@@ -186,7 +225,7 @@ def build_operation_context_block(project, *, include_blueprint_summary: bool = 
     if description:
         lines.append(f"- Descripción: {description}")
 
-    lines.extend(_format_notes(getattr(project, "context_notes", None)))
+    lines.extend(_format_notes(getattr(project, "context_notes", None), config))
 
     notes = getattr(project, "context_notes", None) or {}
     for key in _NARRATIVE_KEYS:

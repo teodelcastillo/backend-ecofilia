@@ -1280,4 +1280,21 @@ class EvidenceTagViewSet(viewsets.ModelViewSet):
                 "Las etiquetas provistas por Ecofilia no se borran: hay "
                 "workflows que las referencian por slug."
             )
+        # Una etiqueta que nombra la configuración de una institución (su
+        # documento principal, un grupo, lo que hereda una etapa) la dejaría
+        # rota: primero se saca de ahí.
+        from rest_framework.exceptions import ValidationError
+
+        from apps.user import institution_config
+        from apps.user.models import Organization, PlatformConfig
+
+        configs = (
+            [(instance.organization.name, instance.organization.config or {})]
+            if instance.organization_id
+            else [(o.name, o.config or {}) for o in Organization.objects.all()]
+            + [(f"configuración {p.key}", p.config or {}) for p in PlatformConfig.objects.all()]
+        )
+        uses = [f"{name}: {use}" for name, config in configs for use in institution_config.tag_uses(config, instance.slug)]
+        if uses:
+            raise ValidationError({"detail": f"La usa la configuración ({'; '.join(uses)}). Sacala de ahí primero."})
         instance.delete()

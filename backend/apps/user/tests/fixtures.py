@@ -10,7 +10,18 @@ import importlib
 
 
 def caf_config() -> dict:
-    return copy.deepcopy(importlib.import_module("apps.user.migrations.0009_config_caf").CAF_CONFIG)
+    """La de ``user/0009`` más lo que le suma ``user/0018``: su formulario de
+    operación, las secciones de su portal y DEC en preparación. (Lo de 0016 y
+    0017 depende de skills que los tests no siempre tienen.)"""
+    config = copy.deepcopy(importlib.import_module("apps.user.migrations.0009_config_caf").CAF_CONFIG)
+    completa = importlib.import_module("apps.user.migrations.0018_configuracion_completa_caf")
+    config["operation_form"] = copy.deepcopy(completa.OPERATION_FORM)
+    config["portal"] = copy.deepcopy(completa.PORTAL)
+    for stage in config["stages"]:
+        if stage["slug"] == completa.DEC_STAGE:
+            stage["en_preparacion"] = True
+    config["report_template"] = None
+    return config
 
 
 def make_superadmin(email: str = "root@ecofilia.site", **extra):

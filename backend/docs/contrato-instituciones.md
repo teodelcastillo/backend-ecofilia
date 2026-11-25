@@ -13,6 +13,7 @@ cambia, se cambia en este archivo, en el mismo PR que lo implementa.
 | 3 | Portal genérico `/{institución}` | **Implementado** (PR de `fase-3-backend`) |
 | 4 | Plantilla pública `/app` y portal base sólo superadmin | **Implementado** (PR de `fase-4-backend`) |
 | 5 | Alta de instituciones | **Implementado** (PR de `fase-5-backend`) |
+| — | Configuración completa desde la consola | **Implementado** (25 de noviembre de 2026, sección al final) |
 
 ---
 
@@ -1056,3 +1057,176 @@ Para el tablero. Sin `organization` responde 400, y con otra institución que no
 ### Conclusión de Ecofilia por criterio
 
 Cada CT sale de la línea `**Conclusión:**` de su sección del informe visible, y sólo si dice una opción válida del CT. Si no, sale de `S.1` como respaldo. Es lo que usan `evaluation-records`, el chat y el registro.
+
+---
+
+## Configuración completa desde la consola (25 de noviembre de 2026)
+
+**Objetivo:** que todo lo que hace distinta a una institución se configure
+desde la consola, sin tocar código. Lo que seguía escrito para CAF pasa a la
+configuración: el estilo del portal, la plantilla del informe, las secciones
+del portal, el bloqueo de DEC y el formulario de la operación (la carátula).
+
+**Versión:** sigue siendo `1`. Todo lo nuevo tiene valor por defecto en la
+base, y el GET lo devuelve siempre completo (`portal`, `operation_form` y
+`report_template` están siempre presentes). Así el front sabe que el back los
+acepta. Una configuración guardada sin estas claves sigue siendo válida.
+
+**Migración:** `user/0018_configuracion_completa_caf` le siembra a CAF lo que
+tenía el código: su formulario, las secciones de su portal (con la Proyección),
+sus cuatro temas fijados y DEC en preparación. Para CAF no cambia nada visible.
+Reversible.
+
+### `branding`: tres claves opcionales
+
+| Clave | Regla | Sin valor |
+|---|---|---|
+| `portal_title` | se guarda recortado | el front usa `display_name` («Asistente Virtual DATBC» con el marco `caf-datbc`) |
+| `primary_color` | hexadecimal de 6 dígitos sin `#`; se guarda en mayúsculas | el color de la plataforma |
+| `portal_logo_url` | ruta del front (`/…`) o URL `https://` | la hoja de Ecofilia |
+
+Las vacías no se guardan ni se devuelven.
+
+### `report_template`
+
+`null` (sin plantilla propia: el front usa la del asistente de informe) o la
+plantilla del informe. La forma y las reglas son las del pedido del front
+(rama `contrato-plantilla-informe`, y `ecofiliaV2/docs/contrato-plantilla-informe.md`);
+la validación está en `apps/user/report_template.py`, con los mensajes del
+front. El back guarda la plantilla, no la interpreta. Una clave desconocida en
+la plantilla, en una sección, en el membrete, la portada o el estilo es error.
+
+### `portal`
+
+```json
+{"sections": ["biblioteca", "operaciones", "informes", "tablero", "proyeccion"],
+ "pinned_topics": [{"acronym": "ndcs", "label": "NDCS: CONTRIBUCIONES DETERMINADAS A NIVEL NACIONAL"}]}
+```
+
+| Campo | Reglas |
+|---|---|
+| `sections` | subconjunto de `biblioteca`, `operaciones`, `informes`, `tablero`, `proyeccion`; se guarda en ese orden. Base: las cuatro primeras |
+| `pinned_topics[]` | `acronym` (lo que va antes de los dos puntos en el tema, se guarda en minúsculas, único) y `label`, no vacíos. Base: `[]` |
+
+El tablero se muestra además sólo con criterios de evaluación, y la Proyección
+sólo al superadmin. Una sección apagada desaparece de la navegación del portal
+y su dirección muestra un aviso (front).
+
+### `stages[].en_preparacion`
+
+`true`: la etapa sólo la ve Ecofilia. Quien no es superadmin no la ve en su
+configuración, no ve las operaciones que están en ella y no avanza desde la
+anterior (el front lo resuelve, como el bloqueo de DEC; la API sigue
+aceptando la etapa). Se guarda sólo si es `true`. La primera etapa no puede
+estar en preparación.
+
+`GET /api/organizations/{slug}/config/` la devuelve igual a miembros y
+superadmin: el que oculta es el front.
+
+### `operation_form`
+
+Los datos que se cargan de cada operación. Cada campo guarda su valor en
+`context_notes[key]`.
+
+```json
+{
+  "blocks": [
+    {"title": "Identidad", "description": "", "link": null, "stages": [], "only_edit": false,
+     "collapsible": false, "report_title": "",
+     "fields": [
+       {"key": "pais", "label": "País", "type": "select", "required": true, "placeholder": "Elegí un país",
+        "help": "", "options": ["Argentina", "…"], "other_option": null, "none_option": null, "unit": "",
+        "report_label": "", "wide": false, "in_report": true, "for_analysis": true, "ai": null, "default": null},
+       {"key": "estado", "label": "Etapa", "type": "etapa", "required": true, "…": "…"}
+     ]}
+  ],
+  "caratula": [{"key": "numero_operacion", "label": "Número de operación"}, {"key": "estado", "label": "Estado de avance"}, {"key": "pais"}]
+}
+```
+
+**Bloques**
+
+| Campo | Reglas |
+|---|---|
+| `blocks` | al menos uno. El primero es la identidad: lleva el nombre de la operación, es el único con campos obligatorios y se muestra siempre (sin `stages` ni `only_edit`) |
+| `title` | no vacío |
+| `link` | `null` o `{label, href}` con `href` `https://` o `/…`. En un bloque de un solo campo, acompaña a su fila en la carátula |
+| `stages` | etapas de la configuración: el bloque se pide sólo en ellas (o si ya tiene datos). Sus textos largos van numerados en la Sección A (en CAF, Misión de Evaluación y Antecedentes en DEC) |
+| `only_edit` | no se muestra al crear (el alta tiene su propio paso) |
+| `collapsible` | plegable, con cuántos datos tiene completos |
+| `report_title` | título de sus textos largos en la Sección A |
+| `fields` | al menos uno |
+
+**Campos**
+
+| Campo | Reglas |
+|---|---|
+| `key` | `^[a-z][a-z0-9_]{0,63}$`, única en el formulario. No puede ser una clave que escribe el sistema (`alineacion_*`, `por_etapa`, `enverdecimiento`, `year`, `extra`, `tipo_operacion_sugerido`, …) |
+| `type` | `text`, `textarea`, `number`, `date`, `url`, `select`, `multiselect` o `etapa`. La etapa es el campo `estado`, de tipo `etapa`, y ningún otro; va en la identidad |
+| `label` | no vacío. Es también el rótulo que reciben los asistentes |
+| `required` | sólo en el primer bloque |
+| `options` | `select` y `multiselect`: al menos una, sin repetir |
+| `other_option` | `select` / `multiselect`: la opción con texto libre. En una selección guarda el texto como valor; en una múltiple, el texto va en `{key}_otros` (que no puede ser otro campo) |
+| `none_option` | `multiselect`: la opción que excluye a las demás |
+| `unit` | `number`: con qué se muestra («M USD») |
+| `report_label` | rótulo en la carátula y los resúmenes si es distinto («Monto CAF») |
+| `in_report` | default `true`: fila de la carátula, o texto de la Sección A si es `textarea` |
+| `for_analysis` | default `true`: lo reciben los asistentes y el chat. `false` para datos de tramitación |
+| `ai` | `fill` (sólo `textarea` y sólo `objetivo` o `componentes`: la IA lo escribe desde el documento principal) o `suggest` (sólo `select` y sólo `tipo_operacion`: la IA lo sugiere de sus opciones). `null` si no |
+| `default` | `today` (sólo `date`: la fecha de alta) o `user_name` (`select` o `text`: quien la crea). `null` si no |
+
+**Carátula** (`caratula`): el orden de las filas después del nombre. Cada
+entrada es `{key}` de un campo (con `label` para cambiarle el rótulo) o `{key,
+label}` de una clave sin campo (datos viejos: sale sólo si tiene valor). Los
+campos de la carátula que no nombra van al final, en el orden del formulario.
+
+**Base**: un formulario genérico, sin nada de CAF (país, etapa, tipo, monto,
+fecha, ubicación, cliente, ejecutor, objetivo y componentes).
+
+### Lo que usa el back del formulario
+
+| Dónde | Qué cambia |
+|---|---|
+| Contexto de la operación en cada paso de un workflow (`apps.skill.operation_context`) | el rótulo de cada dato es el `label` de su campo; no van los de `for_analysis: false`; la etapa va con el nombre de la configuración. Lo que no es un campo de la institución sigue la regla anterior |
+| Chat de la operación (`apps.project.services.chat_context`) | ídem, con la etapa por su nombre |
+| Completar con IA (`apps.project.services.ai_fill`) | sólo completa los campos que el formulario de su institución tiene con `ai`; el tipo de operación se elige entre las opciones de **su** campo. Una institución sin tipo cerrado no recibe los de CAF |
+
+### Copias de skills para una institución que ya existe
+
+```
+POST /api/admin/organizations/{slug}/skills/
+{"clone": ["ecofilia-project-card"]}
+```
+
+Lo mismo que `clone_skills` del alta: sólo skills `public` o `platform`; cada
+copia es de la institución (`{slug}-{skill}`), queda habilitada y, si corre
+sobre operaciones, en las de cada operación nueva. Todo o nada.
+
+| Caso | Respuesta |
+|---|---|
+| válido | **201**: el detalle de la institución (fase 2) más `cloned_skills: [{from, slug}]` |
+| lista vacía, inexistente o de una institución o usuario | **400** `{"clone": [...]}`; no copia ninguna |
+| no superadmin | **403** |
+| institución inexistente | **404** |
+
+Auditoría: `admin.organization.skills_cloned`.
+
+### Etiquetas que usa una configuración
+
+`DELETE /api/document/evidence-tags/{slug}/` responde **400** si la etiqueta
+la nombra una configuración (documento principal de una etapa, un grupo o lo
+que hereda una etapa): la de su institución o, si es global, la de cualquier
+institución o de la plataforma. El mensaje dice dónde se usa. Primero se saca
+de ahí.
+
+### Slugs reservados
+
+Se suman las rutas de primer nivel del front: `categories`, `chat`,
+`document`, `documents`, `inventories`, `profile`, `repositories`,
+`repository`, `settings`, `skills`, `tableros` y `nueva`.
+
+### `enabled_features`
+
+Ya no se usa: las secciones del portal son `portal.sections`. El campo sigue
+en el modelo y en la API de la fase 2 por compatibilidad; la consola no lo
+muestra y el alta lo manda vacío.

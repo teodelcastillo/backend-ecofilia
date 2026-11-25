@@ -871,9 +871,14 @@ def _with_operation_context(
     cached = getattr(execution, attr, None)
     if cached is None:
         from apps.skill.operation_context import build_operation_context_block
+        from apps.user.institution_config import config_for_project
 
+        project = execution.project
         cached = build_operation_context_block(
-            execution.project, include_blueprint_summary=include_blueprint_summary
+            project,
+            include_blueprint_summary=include_blueprint_summary,
+            # Los rótulos y qué datos van al análisis son de su institución.
+            config=config_for_project(project) if project is not None else None,
         )
         setattr(execution, attr, cached)
 

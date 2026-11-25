@@ -35,6 +35,11 @@ RESERVED_SLUGS = frozenset(
         "admin", "api", "app", "auth", "base", "demo", "evaluations", "forgot-password",
         "home", "library", "login", "me", "my-library", "platform", "projects",
         "reset-password", "signup",
+        # Rutas de primer nivel del front: el portal quedaría tapado por ellas.
+        "categories", "chat", "document", "documents", "inventories", "profile", "repositories",
+        "repository", "settings", "skills", "tableros",
+        # La consola da de alta en /admin/instituciones/nueva.
+        "nueva",
     }
 )
 
@@ -59,8 +64,6 @@ class OnboardingResult:
 # ---------------------------------------------------------------------------
 
 def create_institution(data: dict) -> OnboardingResult:
-    from apps.skill.models import Skill, SkillScope
-
     errors: dict[str, list[str]] = {}
     known = {"name", "slug", "restricted", "enabled_features", "from_template", "clone_skills", "members"}
     unknown = sorted(set(data) - known)
@@ -91,26 +94,9 @@ def create_institution(data: dict) -> OnboardingResult:
     if not isinstance(from_template, bool):
         errors["from_template"] = ["Tiene que ser true o false."]
 
-    clone_slugs = data.get("clone_skills", [])
-    sources: list = []
-    if not isinstance(clone_slugs, list) or not all(isinstance(s, str) for s in clone_slugs):
-        errors["clone_skills"] = ["Tiene que ser una lista de slugs."]
-    else:
-        clone_slugs = list(dict.fromkeys(clone_slugs))
-        found = {s.slug: s for s in Skill.objects.filter(slug__in=clone_slugs)}
-        missing = [s for s in clone_slugs if s not in found]
-        foreign = [
-            s for s in clone_slugs
-            if s in found and found[s].scope not in (SkillScope.PUBLIC, SkillScope.PLATFORM)
-        ]
-        if missing:
-            errors["clone_skills"] = [f"No existen: {', '.join(missing)}."]
-        elif foreign:
-            errors["clone_skills"] = [
-                "Sólo se copian skills de Ecofilia (públicas o de plataforma); estas son de una "
-                f"institución o de un usuario: {', '.join(foreign)}."
-            ]
-        sources = [found[s] for s in clone_slugs if s in found]
+    sources, problems = _clone_sources(data.get("clone_skills", []))
+    if problems:
+        errors["clone_skills"] = problems
 
     members = data.get("members", [])
     if not isinstance(members, list) or not all(isinstance(m, dict) for m in members):
@@ -141,9 +127,7 @@ def create_institution(data: dict) -> OnboardingResult:
             org.save(update_fields=["config", "updated_at"])
 
         for _, clone in clones:
-            org.enabled_skills.add(clone)
-            if set(clone.allowed_contexts or []) & {"project", "any"}:
-                org.default_project_skills.add(clone)
+            _enable(org, clone)
 
         added = [add_member(org, m.get("email"), m.get("role") or UserRole.MEMBER) for m in members]
 
@@ -159,6 +143,8 @@ def _remap(config: dict, renames: dict[str, str]) -> dict:
     config = copy.deepcopy(config)
     for stage in config.get("stages") or []:
         stage["launches"] = [renames.get(s, s) for s in stage.get("launches") or []]
+        if stage.get("report"):
+            stage["report"] = renames.get(stage["report"], stage["report"])
     workflows = config.get("workflows") or {}
     for role, slug in list(workflows.items()):
         if slug:
@@ -169,6 +155,48 @@ def _remap(config: dict, renames: dict[str, str]) -> dict:
 # ---------------------------------------------------------------------------
 # Copias de skills
 # ---------------------------------------------------------------------------
+
+def _clone_sources(slugs) -> tuple[list, list[str]]:
+    """Las skills de Ecofilia a copiar, o los problemas del pedido."""
+    from apps.skill.models import Skill, SkillScope
+
+    if not isinstance(slugs, list) or not all(isinstance(s, str) for s in slugs):
+        return [], ["Tiene que ser una lista de slugs."]
+    slugs = list(dict.fromkeys(slugs))
+    found = {s.slug: s for s in Skill.objects.filter(slug__in=slugs)}
+    missing = [s for s in slugs if s not in found]
+    if missing:
+        return [], [f"No existen: {', '.join(missing)}."]
+    foreign = [s for s in slugs if found[s].scope not in (SkillScope.PUBLIC, SkillScope.PLATFORM)]
+    if foreign:
+        return [], [
+            "Sólo se copian skills de Ecofilia (públicas o de plataforma); estas son de una "
+            f"institución o de un usuario: {', '.join(foreign)}."
+        ]
+    return [found[s] for s in slugs], []
+
+
+def _enable(org: Organization, clone) -> None:
+    org.enabled_skills.add(clone)
+    if set(clone.allowed_contexts or []) & {"project", "any"}:
+        org.default_project_skills.add(clone)
+
+
+def clone_skills_into(org: Organization, slugs) -> list[dict]:
+    """Copias propias para una institución que ya existe. Todo o nada."""
+    sources, problems = _clone_sources(slugs)
+    if not problems and not sources:
+        problems = ["Elegí al menos una skill para copiar."]
+    if problems:
+        raise OnboardingError({"clone": problems})
+    out = []
+    with transaction.atomic():
+        for source in sources:
+            clone = clone_skill(source, org)
+            _enable(org, clone)
+            out.append({"from": source.slug, "slug": clone.slug})
+    return out
+
 
 def _clone_slug(org: Organization, source_slug: str) -> str:
     from apps.skill.models import Skill
