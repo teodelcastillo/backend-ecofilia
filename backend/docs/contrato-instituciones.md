@@ -1211,6 +1211,28 @@ sobre operaciones, en las de cada operación nueva. Todo o nada.
 
 Auditoría: `admin.organization.skills_cloned`.
 
+### Duplicar una skill o un workflow
+
+```
+POST /api/skills/{slug}/duplicate/
+{"name": "Mi variante"}        # opcional; sin nombre, «<nombre> (copia)»
+```
+
+Copia la definición, los pasos y los parámetros (`apps/skill/duplicate.py`).
+No copia corridas, versiones de definición ni habilitaciones: la copia no
+queda habilitada en ninguna institución, operación ni repositorio, y nunca es
+plantilla ni viene habilitada por defecto. El slug sale del nombre.
+
+| Quién | Resultado |
+|---|---|
+| superadmin | **201**, mismo `scope` e institución que el original (duplicar un workflow de CAF da otro de CAF, sin habilitar). Auditoría `skill.duplicated` si no queda en `user` |
+| miembro de una institución sin restricciones, o público | **201**, copia propia (`scope=user`, dueño él) de una `public` o de una suya |
+| miembro, sobre una skill de su institución | **403**: una copia propia se iría con él si deja la institución |
+| institución `restricted` | **403**: no crea asistentes |
+| skill que no ve | **404** |
+
+Respuesta: la skill copiada, como `GET /api/skills/{slug}/`.
+
 ### Etiquetas que usa una configuración
 
 `DELETE /api/document/evidence-tags/{slug}/` responde **400** si la etiqueta

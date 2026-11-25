@@ -68,6 +68,7 @@ from apps.skill.services import (
     resume_execution,
 )
 from apps.skill.dispatch import dispatch_execution
+from apps.skill.duplicate import duplicate_skill
 from apps.skill.launch import create_execution, resolve_effective_output
 from apps.skill.tasks import run_skill_task
 from apps.skill.visibility import user_can_see_skill, visible_skills
@@ -227,6 +228,33 @@ class SkillViewSet(viewsets.ModelViewSet):
         if not instance.can_edit(self.request.user):
             raise PermissionDenied("You cannot delete this skill.")
         instance.delete()
+
+    @action(detail=True, methods=["post"], url_path="duplicate")
+    def duplicate(self, request, slug=None):
+        """
+        Duplica un asistente (skill, copilot o workflow) con sus pasos y parámetros.
+
+        POST /api/skills/{slug}/duplicate/   body opcional: {"name": "..."}
+
+        El superadmin la deja en el mismo alcance que el original; los demás se
+        llevan una copia propia. Ver ``apps.skill.duplicate``.
+        """
+        source = self.get_object()  # lo que no ve, 404
+        name = request.data.get("name") if hasattr(request.data, "get") else None
+        if name is not None and not isinstance(name, str):
+            raise ValidationError({"name": "Tiene que ser texto."})
+        with transaction.atomic():
+            copy = duplicate_skill(source, request.user, name)
+            if copy.scope != SkillScope.USER:
+                audit.record(
+                    "skill.duplicated",
+                    request=request,
+                    organization=copy.organization,
+                    target=copy,
+                    data={"from": source.slug, "scope": _scope_of(copy)},
+                )
+        copy = self.get_queryset().get(pk=copy.pk)
+        return Response(SkillSerializer(copy, context=self.get_serializer_context()).data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"], url_path="organizations")
     def organizations(self, request):

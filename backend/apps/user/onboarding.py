@@ -215,30 +215,16 @@ def clone_skill(source, org: Organization):
 
     No copia corridas, versiones ni asignaciones: la copia arranca su historia.
     """
-    from apps.skill.models import Skill, SkillScope
+    from apps.skill.duplicate import copy_skill
+    from apps.skill.models import SkillScope
 
-    steps = list(source.steps.all())
-    parameters = list(source.parameters.all())
-
-    clone = Skill.objects.get(pk=source.pk)
-    clone.pk = None
-    clone.id = None
-    clone._state.adding = True
-    clone.slug = _clone_slug(org, source.slug)
-    clone.scope = SkillScope.ORGANIZATION
-    clone.organization = org
-    clone.owner = None
-    clone.is_template = False
-    clone.is_default_enabled = False
-    clone.save()
-
-    for item in steps + parameters:
-        item.pk = None
-        item.id = None
-        item._state.adding = True
-        item.skill = clone
-        item.save()
-    return clone
+    return copy_skill(
+        source,
+        slug=_clone_slug(org, source.slug),
+        scope=SkillScope.ORGANIZATION,
+        organization=org,
+        owner=None,
+    )
 
 
 # ---------------------------------------------------------------------------
