@@ -1426,16 +1426,25 @@ def _resolve_step_documents(
 
     if selection == StepEvidenceSelection.TAGGED:
         tags = _clean_slugs(step.evidence_tags)
+        # La etiqueta del documento principal de la etapa: el principal entra
+        # siempre (``_with_blueprint``), lleve o no la etiqueta, así que nunca
+        # cuenta como faltante.
+        principal_tag = None
         if stage and project_id is not None:
             # En una corrida de DEC, pedir el principal de IDO es pedir el del
             # DEC: el asistente del DEC es una copia del de IDO.
             from apps.project.models import Project
-            from apps.project.services.stage_documents import etiquetas_equivalentes
+            from apps.project.services.stage_documents import (
+                etiqueta_principal,
+                etiquetas_equivalentes,
+            )
 
             project = Project.objects.filter(pk=project_id).first()
             equivalentes = etiquetas_equivalentes(project, stage) if project else {}
             if equivalentes:
                 tags = list(dict.fromkeys(equivalentes.get(tag, tag) for tag in tags))
+            if project is not None and blueprint_id is not None:
+                principal_tag = etiqueta_principal(project, stage)
         extra = _clean_slugs(step.document_slugs)
         diagnostics["tags_requested"] = tags
         if project_id is None:
@@ -1459,7 +1468,8 @@ def _resolve_step_documents(
             )
             diagnostics["extra_documents"] = extra
         matched_count = matched.count()
-        if not matched_count:
+        pide_principal = principal_tag is not None and principal_tag in tags
+        if not matched_count and not pide_principal:
             diagnostics["empty_reason"] = "sin_documentos_etiquetados"
             return StepScope(_with_blueprint(documents.none()), diagnostics)
         diagnostics["matched_count"] = matched_count
@@ -1469,7 +1479,8 @@ def _resolve_step_documents(
         # comparar con el IDO, lo inventaba.
         missing = [
             tag for tag in tags
-            if not documents.filter(tagged_in_project_q(project_id, [tag])).exists()
+            if tag != principal_tag
+            and not documents.filter(tagged_in_project_q(project_id, [tag])).exists()
         ]
         if missing:
             diagnostics["tags_missing"] = missing

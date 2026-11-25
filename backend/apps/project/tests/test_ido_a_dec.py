@@ -527,6 +527,32 @@ class FotoIndependienteTestCase(_Base):
         self.assertEqual(scope.diagnostics["tags_requested"], ["dec", "ias"])
         self.assertEqual(scope.diagnostics["tags_missing"], ["ias"])
 
+    def test_the_principal_always_counts_even_without_its_tag(self):
+        """El documento principal manda siempre: un paso que pide el IDO, en
+        DEC, lee el principal del DEC aunque nadie le haya puesto la etiqueta,
+        y no se le dice al modelo que falta."""
+        from apps.skill.models import StepEvidenceSelection
+        from apps.skill.services import _resolve_step_documents, resolve_documents
+
+        self._en_dec()
+        sin_etiqueta = Document.objects.create(
+            owner=self.owner, name="DEC sin etiqueta", slug="dec-sin-etiqueta", chunking_status="done", extracted_text="x",
+        )
+        ProjectDocument.objects.create(project=self.project, document=sin_etiqueta)
+        self.project.blueprint_document = sin_etiqueta
+        self.project.save(update_fields=["blueprint_document"])
+        step = SkillStep.objects.create(
+            skill=self.dec, title="D.1.1. CT A1", position=9, instructions="x",
+            evidence_selection=StepEvidenceSelection.TAGGED, evidence_tags=["ido"],
+        )
+        run = SkillExecution.objects.create(skill=self.dec, owner=self.owner, project=self.project, stage="dec")
+        scope = _resolve_step_documents(
+            step, resolve_documents(run), blueprint_id=sin_etiqueta.id, project_id=self.project.pk, stage="dec",
+        )
+        self.assertIn(sin_etiqueta.slug, list(scope.documents.values_list("slug", flat=True)))
+        self.assertNotIn("empty_reason", scope.diagnostics)
+        self.assertNotIn("tags_missing", scope.diagnostics)
+
     def test_the_migration_points_dec_to_the_duplicated_assistant(self):
         import importlib
 

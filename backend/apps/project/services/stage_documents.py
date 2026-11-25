@@ -31,6 +31,11 @@ def _etiquetas(project: Project, stage: str | None) -> tuple[str | None, set[str
     return propia, institution_config.principal_tags(config) - {propia}
 
 
+def etiqueta_principal(project: Project, stage: str | None) -> str | None:
+    """La etiqueta del documento principal de ``stage`` (en DEC, ``dec``)."""
+    return _etiquetas(project, stage)[0]
+
+
 def etiquetas_equivalentes(project: Project, stage: str | None) -> dict[str, str]:
     """``{etiqueta del principal de otra etapa: la de esta}``; vacío si no aplica."""
     propia, otras = _etiquetas(project, stage)
