@@ -10,6 +10,7 @@ Qué se registra (``action``):
 - auth.password.reset · auth.password.change · auth.mfa.enabled · auth.mfa.disabled
 - admin.organization.created · admin.organization.updated · admin.member.added
 - admin.user.updated · skill.scope.changed · skill.duplicated · skill.version.informed_by
+- skill.removed_from_configs (al eliminar una skill que alguna etapa lanzaba)
 - config.organization.updated · config.platform.updated
 - tag.created · tag.updated · document.visibility.changed · evaluation.visibility.changed
 """

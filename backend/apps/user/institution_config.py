@@ -601,3 +601,80 @@ def _evaluation(value, errors: list[str]) -> dict:
             f"en este orden: {', '.join(FRAMEWORKS[framework])}."
         )
     return {"framework": framework, "criteria": out}
+
+
+# ---------------------------------------------------------------------------
+# Skills que se eliminan
+# ---------------------------------------------------------------------------
+#
+# Las configuraciones nombran skills por su slug, sin clave foránea: borrar una
+# skill no las toca sola. Así quedó ``caf-enverdecimiento-operacion`` en los
+# ``launches`` de CAF después de eliminarse (27/11/2026): cada cambio de etapa
+# la intentaba lanzar —y la registraba como ``unavailable``— y la consola ya no
+# podía guardar la configuración de CAF, porque la validación rechaza una skill
+# que no existe.
+
+def _configuraciones_para_editar():
+    """Toda configuración guardada, bloqueada: ``(etiqueta, fila)``."""
+    from apps.user.models import Organization, PlatformConfig
+
+    for org in Organization.objects.select_for_update().exclude(config={}):
+        yield f"institución «{org.slug}»", org
+    for platform in PlatformConfig.objects.select_for_update().all():
+        yield f"configuración de plataforma «{platform.key}»", platform
+
+
+def usos_imprescindibles_de_skill(slug: str) -> list[str]:
+    """Dónde ``slug`` es el informe de una etapa o un rol de ``workflows``.
+
+    Ahí no se puede sacar sin más: la etapa se quedaría sin informe o la
+    institución sin guiado. Hay que reemplazarla en la configuración antes de
+    eliminar la skill.
+    """
+    from apps.user.models import Organization, PlatformConfig
+
+    usos = []
+    filas = [(f"institución «{o.slug}»", o.config) for o in Organization.objects.exclude(config={})]
+    filas += [(f"configuración de plataforma «{p.key}»", p.config) for p in PlatformConfig.objects.all()]
+    for etiqueta, config in filas:
+        if not isinstance(config, dict):
+            continue
+        for stage_ in config.get("stages") or []:
+            if isinstance(stage_, dict) and stage_.get("report") == slug:
+                usos.append(f"{etiqueta}: informe de la etapa «{stage_.get('slug')}»")
+        for role, value in (config.get("workflows") or {}).items():
+            if value == slug:
+                usos.append(f"{etiqueta}: workflows.{role}")
+    return usos
+
+
+def quitar_lanzamientos(config: dict, slugs) -> bool:
+    """Saca ``slugs`` de los ``launches`` de cada etapa de ``config``. Devuelve si cambió."""
+    slugs = set(slugs)
+    cambio = False
+    stages = config.get("stages") if isinstance(config, dict) else None
+    for stage_ in stages or []:
+        if not isinstance(stage_, dict):
+            continue
+        launches = stage_.get("launches") or []
+        quedan = [s for s in launches if s not in slugs]
+        if len(quedan) != len(launches):
+            stage_["launches"] = quedan
+            cambio = True
+    return cambio
+
+
+def quitar_skill_de_configuraciones(slug: str) -> list[str]:
+    """Saca ``slug`` de lo que lanza cada etapa, en toda configuración guardada.
+
+    Se llama al eliminar la skill, dentro de su transacción. Devuelve dónde la
+    sacó.
+    """
+    tocadas = []
+    for etiqueta, fila in _configuraciones_para_editar():
+        config = copy.deepcopy(fila.config)
+        if quitar_lanzamientos(config, [slug]):
+            fila.config = config
+            fila.save(update_fields=["config"])
+            tocadas.append(etiqueta)
+    return tocadas

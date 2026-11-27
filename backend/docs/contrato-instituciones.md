@@ -593,6 +593,7 @@ valida al dar de alta).
 | `GET /api/document/evidence-tags/` | `group` sale de los `evidence_tag_groups` de la institución del usuario (superadmin con `?organization=`: de esa institución; sin institución: de la base). Mismos valores que hoy para CAF |
 | `POST /api/projects/{slug}/stage/` `{"to": ...}` | las etapas válidas son las de la institución de la operación. Una etapa que no existe en su configuración da **400**, igual que hoy una desconocida |
 | lanzamientos al entrar a una etapa | salen de `stages[].launches` de la institución de la operación |
+| `DELETE /api/skills/{slug}/` | la saca de los `stages[].launches` de toda configuración guardada (instituciones y plataforma), en la misma transacción. Si es el `stages[].report` de una etapa o un rol de `workflows`, **400** con dónde se usa: hay que reemplazarla en la configuración primero. Desde `user/0020`, ninguna etapa lanza `caf-enverdecimiento-operacion` (eliminado) |
 | informe editado / guiado / lectura | usan `workflows.report` / `.guided` / `.reading` de la institución. Sin el rol, **400** «no disponible en esta institución» |
 | `GET /api/projects/evaluation-records/?organization=` | los criterios de cada registro salen de `evaluation.criteria` de esa institución (mismos 10 para CAF) |
 | etiqueta de etapa del documento principal | sale de `stages[].principal_tag` |

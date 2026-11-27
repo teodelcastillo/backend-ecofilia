@@ -227,7 +227,28 @@ class SkillViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         if not instance.can_edit(self.request.user):
             raise PermissionDenied("You cannot delete this skill.")
-        instance.delete()
+        from apps.user import institution_config
+
+        with transaction.atomic():
+            # Las configuraciones la nombran por slug, sin clave foránea: si no
+            # se la saca, cada cambio de etapa la sigue intentando lanzar y la
+            # consola no puede volver a guardar esa configuración.
+            usos = institution_config.usos_imprescindibles_de_skill(instance.slug)
+            if usos:
+                raise ValidationError(
+                    {"detail": "No se puede eliminar: es parte de la configuración ("
+                     + "; ".join(usos) + "). Reemplazala ahí primero."}
+                )
+            tocadas = institution_config.quitar_skill_de_configuraciones(instance.slug)
+            if tocadas:
+                audit.record(
+                    "skill.removed_from_configs",
+                    request=self.request,
+                    organization=instance.organization,
+                    target=instance,
+                    data={"slug": instance.slug, "configs": tocadas},
+                )
+            instance.delete()
 
     @action(detail=True, methods=["post"], url_path="duplicate")
     def duplicate(self, request, slug=None):
